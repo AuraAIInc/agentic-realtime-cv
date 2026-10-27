@@ -27,7 +27,7 @@ From the agentic_realtime_cv_agent/ folder (Python ≥ 3.10; the repo venv is 3.
 pip install -r requirements.txt
 ```
 
-Add to `.env`:
+Add to `.env` (the full list for every component is in the repo's [`.env.example`](../../.env.example)):
 
 ```bash
 MODEL_API_KEY=<Meta Model API key>
