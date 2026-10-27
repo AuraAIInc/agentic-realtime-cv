@@ -57,13 +57,13 @@ All of these are tool arguments, along with `speed_threshold` (3 px/s).
 
 ## Run
 
-`detection_ingest_server.py` starts it automatically when a token is set:
+`detection_ingest_server.py` starts it by default. Set a token so it requires auth:
 
 ```bash
 # .env on the websocket server host
 TRACKING_MCP_AUTH_TOKEN=<random string>
 TRACKING_MCP_PORT=10002          # default
-# TRACKING_MCP_ENABLED=false     # never start; =true starts even without a token (no auth)
+# TRACKING_MCP_ENABLED=true      # default; =false never starts, =auto starts only when a token is set
 # TRACKING_IMAGE_ROOT=/mnt/extreme/Cat_monitor_data  # only for get_arrival_path include_images=true
 
 python detection_ingest_server.py
