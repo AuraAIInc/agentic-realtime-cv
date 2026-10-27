@@ -11,3 +11,5 @@ fi
 [ -n "$ORIGINAL_VENV" ] && [ -f "$ORIGINAL_VENV/bin/activate" ] && source "$ORIGINAL_VENV/bin/activate"
 nohup python detection_ingest_server.py >> ingest_server.log 2>&1 &
 echo "detection_ingest_server.py started (pid $!), log: $(pwd)/ingest_server.log (venv: ${VIRTUAL_ENV:-system python})"
+# Stream the log; Ctrl-C stops only the tail, the server keeps running.
+tail -f ingest_server.log

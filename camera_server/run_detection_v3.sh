@@ -12,3 +12,5 @@ VENV="${ORIGINAL_VENV:-$HOME/camera_server/.venv}"
 [ -f "$VENV/bin/activate" ] && source "$VENV/bin/activate"
 nohup python -m camera_v3 >> detect_log.log 2>&1 &
 echo "camera_v3 started (pid $!), log: $(pwd)/detect_log.log (venv: ${VIRTUAL_ENV:-system python})"
+# Stream the log; Ctrl-C stops only the tail, the server keeps running.
+tail -f detect_log.log

@@ -12,3 +12,5 @@ VENV="${ORIGINAL_VENV:-$HOME/camera_server/.venv}"
 [ -f "$VENV/bin/activate" ] && source "$VENV/bin/activate"
 nohup python -m mcp_image_server >> mcp_server.log 2>&1 &
 echo "mcp_image_server started (pid $!), log: $(pwd)/mcp_server.log (venv: ${VIRTUAL_ENV:-system python})"
+# Stream the log; Ctrl-C stops only the tail, the server keeps running.
+tail -f mcp_server.log
