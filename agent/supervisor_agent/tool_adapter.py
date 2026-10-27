@@ -1,6 +1,6 @@
-"""Translation between MCP and the OpenAI Responses API.
+"""Translation between MCP and the Responses API (Meta Model API).
 
-* MCP tool definitions  -> OpenAI function tools
+* MCP tool definitions  -> function tools
 * MCP tool results      -> function_call_output items (text + images), so the
   model can actually look at frames returned by capture_frame / get_image.
 """
@@ -14,7 +14,7 @@ import os
 from supervisor_agent.mcp_hub import CallOutcome, HubTool
 
 
-def to_openai_tool(tool: HubTool) -> dict:
+def to_function_tool(tool: HubTool) -> dict:
     schema = dict(tool.input_schema or {})
     schema.setdefault("type", "object")
     schema.setdefault("properties", {})

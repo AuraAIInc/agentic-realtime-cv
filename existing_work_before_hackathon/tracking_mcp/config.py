@@ -11,8 +11,9 @@ class Settings:
     host: str = "0.0.0.0"
     port: int = 10002  # Flask API is on 10000, image MCP on 10001
     auth_token: str | None = None
-    # "auto": start only when a token is set; "true": start even without auth; "false": never
-    enabled: str = "auto"
+    # "true" (default): always start, with auth only if a token is set; "auto": start only when a
+    # token is set; "false": never
+    enabled: str = "true"
     # Optional: the image SSD root (same layout as image-server), for include_images=true
     image_root: str | None = None
 

@@ -158,11 +158,11 @@ def main() -> None:
     from dotenv import load_dotenv
 
     load_dotenv()
-    p = argparse.ArgumentParser(description="OpenAI agent over the RCAT MCP servers")
+    p = argparse.ArgumentParser(description="Muse Spark agent over the RCAT MCP servers")
     p.add_argument("query", nargs="*", help="question to answer (omit for interactive mode)")
     p.add_argument("--servers", help="JSON file: list of {name, url, token}")
-    p.add_argument("--model-config", help="models.json with the model to use and token pricing (default: next to config.py)")
-    p.add_argument("--model", help="override the model set in the model config")
+    p.add_argument("--model-config", help="models.json with the provider, per-role models and token pricing (default: next to config.py)")
+    p.add_argument("--model", help="override the agent model (roles.agent.model) set in the model config")
     p.add_argument("--max-steps", type=int)
     p.add_argument("--image-detail", choices=["low", "high", "auto"], default="auto")
     p.add_argument("--list-tools", action="store_true")

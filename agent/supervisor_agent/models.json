@@ -1,143 +1,65 @@
 {
-  "model": "gpt-6.1-sol",
+  "provider": "Meta Model API",
+  "base_url": "https://api.meta.ai/v1",
+  "api_key_env": "MODEL_API_KEY",
   "reasoning_effort": null,
-  "pricing_source": "https://developers.openai.com/api/docs/pricing (Standard tier, <=272K context)",
-  "pricing_retrieved": "2026-10-25",
-  "pricing_usd_per_1m_tokens": {
-    "gpt-6-astra": {
-      "input": 10.0,
-      "cached_input": 1.0,
-      "output": 50.0
+  "roles": {
+    "agent": {
+      "model": "muse-spark-1.3",
+      "use": "Agent reasoning, vision, tool calls; escalation teacher",
+      "api": "responses"
     },
-    "gpt-6.1-sol": {
-      "input": 2.0,
-      "cached_input": 0.1,
-      "output": 10.0
+    "segmentation": {
+      "model": "sam-3.1",
+      "use": "Masks/boxes for training data (open-vocabulary finding is out of scope, §2)",
+      "api": "responses"
     },
-    "gpt-6-luna": {
-      "input": 0.1,
-      "cached_input": 0.01,
-      "output": 0.5
+    "voice": {
+      "model": "muse-voice-transcribe-1.0",
+      "use": "Voice questions (if we build voice)",
+      "api": "POST /v1/asr/transcribe, wss://api.meta.ai/v1/asr/realtime"
     },
-    "gpt-6-sol": {
-      "input": 2.0,
-      "cached_input": 0.2,
-      "output": 10.0
+    "creative": {
+      "model": "muse-image-1.0",
+      "writer_model": "muse-wonder-1.0",
+      "use": "Creative output, e.g. a daily \"cat diary\" comic (Best Creative Build): Muse Wonder writes it, Muse Image draws it",
+      "api": "POST /v1/images/generations, /v1/images/edits"
     },
-    "gpt-5.6-sol": {
-      "input": 4.0,
-      "cached_input": 0.4,
-      "output": 20.0
+    "open_weight": {
+      "model": "meta-models/muse-spark-open-1026",
+      "use": "Local or partner-hosted model (Best Open Weight; privacy). Muse Glimmer is the self-hosted alternative",
+      "base_url": "https://inference.baseten.co/v1",
+      "api_key_env": "BASETEN_API_KEY",
+      "api": "chat_completions"
     },
-    "gpt-5.6-terra": {
-      "input": 2.0,
-      "cached_input": 0.2,
-      "output": 12.0
-    },
-    "gpt-5.6-luna": {
-      "input": 0.2,
-      "cached_input": 0.02,
-      "output": 1.2
-    },
-    "gpt-5.5": {
-      "input": 5.0,
-      "cached_input": 0.5,
-      "output": 30.0
-    },
-    "gpt-5.5-pro": {
-      "input": 30.0,
-      "output": 180.0
-    },
-    "gpt-5.4": {
-      "input": 2.5,
-      "cached_input": 0.25,
-      "output": 15.0
-    },
-    "gpt-5.4-pro": {
-      "input": 30.0,
-      "output": 180.0
-    },
-    "gpt-5.4-mini": {
-      "input": 0.75,
-      "cached_input": 0.075,
-      "output": 4.5
-    },
-    "gpt-5.4-nano": {
-      "input": 0.2,
-      "cached_input": 0.02,
-      "output": 1.25
-    },
-    "gpt-5.2": {
-      "input": 1.75,
-      "cached_input": 0.175,
-      "output": 14.0
-    },
-    "gpt-5.2-pro": {
-      "input": 21.0,
-      "output": 168.0
-    },
-    "gpt-5.1": {
-      "input": 1.25,
-      "cached_input": 0.125,
-      "output": 10.0
-    },
-    "gpt-5": {
-      "input": 1.25,
-      "cached_input": 0.125,
-      "output": 10.0
-    },
-    "gpt-5-mini": {
-      "input": 0.25,
-      "cached_input": 0.025,
-      "output": 2.0
-    },
-    "gpt-5-nano": {
-      "input": 0.05,
-      "cached_input": 0.005,
-      "output": 0.4
-    },
-    "gpt-5-pro": {
-      "input": 15.0,
-      "output": 120.0
-    },
-    "gpt-4.1": {
-      "input": 2.0,
-      "cached_input": 0.5,
-      "output": 8.0
-    },
-    "gpt-4.1-mini": {
-      "input": 0.4,
-      "cached_input": 0.1,
-      "output": 1.6
-    },
-    "gpt-4.1-nano": {
-      "input": 0.1,
-      "cached_input": 0.025,
-      "output": 0.4
-    },
-    "gpt-4o": {
-      "input": 2.5,
-      "cached_input": 1.25,
-      "output": 10.0
-    },
-    "gpt-4o-mini": {
-      "input": 0.15,
-      "cached_input": 0.075,
-      "output": 0.6
-    },
-    "o3": {
-      "input": 2.0,
-      "cached_input": 0.5,
-      "output": 8.0
-    },
-    "o3-pro": {
-      "input": 20.0,
-      "output": 80.0
-    },
-    "o4-mini": {
-      "input": 1.1,
-      "cached_input": 0.275,
-      "output": 4.4
+    "coding": {
+      "model": null,
+      "product": "Muse Code",
+      "use": "Coding (a coding-agent product, not an API model)"
     }
+  },
+  "pricing_source": "https://dev.meta.ai/docs/pricing-rate-limits (Standard mode)",
+  "pricing_retrieved": "2026-10-26",
+  "pricing_usd_per_1m_tokens": {
+    "muse-spark-1.3": {
+      "input": 1.25,
+      "cached_input": 0.15,
+      "output": 4.25
+    },
+    "muse-spark-1.3-contributor": {
+      "input": 0.1,
+      "cached_input": 0.002,
+      "output": 0.2
+    },
+    "muse-spark-1.1": {
+      "input": 1.25,
+      "cached_input": 0.15,
+      "output": 4.25
+    }
+  },
+  "pricing_other_usd": {
+    "muse-image-1.0": "0.01 per image",
+    "sam-3.1": "2.50 per 1,000 images, 0.20 per 1,000 video frames",
+    "muse-voice-transcribe-1.0": "0.18 per hour of audio"
   }
 }
