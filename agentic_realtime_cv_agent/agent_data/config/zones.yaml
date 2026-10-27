@@ -1,0 +1,18 @@
+# Named regions per camera view, in that view's pixels (tracking__list_views gives the size;
+# view 3 "black living room" is 800x600). A zone is a box [x1, y1, x2, y2] or a polygon
+# [[x, y], ...]. kind:
+#   place     - somewhere a cat does something (sofa, food_bowl, water, bed, tent)
+#   occluder  - something a cat can walk behind; a track gap across it is not a teleport
+#   entry     - a doorway or opening a cat can appear from / disappear into
+# Add zones by hand, or ask the agent ("label the cat when it sits on the sofa") and confirm
+# the box it proposes. Nothing below is measured yet; the commented lines are examples.
+
+version: 1
+views:
+  "3":
+    size: [800, 600]
+    zones: []
+    # - {name: sofa, kind: place, box: [0, 80, 320, 420]}
+    # - {name: litter_box, kind: place, box: [170, 500, 310, 600]}
+    # - {name: doorway, kind: entry, box: [690, 0, 800, 110]}
+    # - {name: behind_sofa, kind: occluder, box: [0, 60, 300, 160]}

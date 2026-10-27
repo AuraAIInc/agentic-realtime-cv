@@ -1,0 +1,80 @@
+# Cat profiles for the RCAT validation agent.
+# cat_id must match tracking__list_views. Descriptions were drafted from owner
+# photos on 2026-10-25; edit freely. The agent checks low_res_cues first
+# (wide-angle camera crops), and only asks for a zoom when a high_res cue decides.
+
+version: 1
+cats:
+  - cat_id: 0
+    name: Qb
+    folder: references/qb
+    tracking_ids:            # same cat under different ids per camera
+      view_1_old_living_room: 0     # "6253 Living Room", last seen 2025-12-19
+      view_3_black_living_room: 25  # tracker label "Qb-2", live camera
+    summary: Short-haired white cat with faint silver shading, round face and blue-green eyes.
+    description: >
+      A compact, cobby short-haired cat (British Shorthair type). Coat is dense,
+      plush and short, nearly white overall with light silver-grey shading
+      along the back and flanks. The tail is shorter and thinner than Qbo's,
+      with faint grey rings and a darker grey tip. Round head with full cheeks,
+      small rounded ears with pink insides. Large, round aqua / blue-green eyes
+      with dark rims, a small pink nose and pink paw pads. Body outline is
+      smooth and clean because the fur is short.
+    low_res_cues:
+      - Cool white to light silver colour, no warm cream or brown tones
+      - Smooth, sharp body outline (short fur, no fluffy halo)
+      - Thin tail with grey rings or a grey tip, often carried upright when walking
+      - Round head that looks large relative to a compact body
+      - Legs and paws white, same colour as the body
+    camera_cues:             # seen on the live overhead camera (view 3)
+      - From above, a compact bright-white oval with a smooth edge
+      - At night (purple low light or grey IR) still the brightest, most uniform blob
+      - No dark tail tip visible from above
+    high_res_cues:
+      - Round aqua / blue-green eyes with dark eyeliner
+      - Pink nose leather
+      - Short plush fur texture, no neck ruff
+      - Silver-tipped fur on back visible up close
+    confused_with:
+      - cat_id: 2
+        how_to_tell: Qbo is long-haired, warmer cream/beige, with darker brown paws and a big plume tail.
+      - decoy: white fluffy blankets, towels or bags (pure white, no head or tail shape)
+    habits: []   # add favourite spots and times later; weak prior only
+
+  - cat_id: 2              # as given by Muyang; old database had Qbo as 1, confirm
+    name: Qbo
+    folder: references/qbo
+    tracking_ids:
+      view_1_old_living_room: 1     # per DB lookup on 2026-10-25; check vs cat_id 2
+      view_3_black_living_room: 26  # tracker label "Qbo-2", live camera
+    summary: Long-haired cream and golden-beige cat with darker brown paws, face and plume tail.
+    description: >
+      A long-haired, very fluffy cat (Persian / British Longhair type). Coat is
+      cream to pale beige, with warmer golden-brown shading on the back and
+      flanks. Darker points: the centre of the face and nose bridge are
+      golden-brown, the lower legs and paws are brown to sable, and the large
+      bushy plume tail is grey-brown, darkest toward the tip. Thick white-cream
+      ruff around the neck and chest. Flat-ish face with small, fur-covered
+      rounded ears, blue-grey eyes and a brownish-pink nose. Outline looks soft
+      and irregular because of the long fur; the cat often looks much bigger
+      than its body.
+    low_res_cues:
+      - Warm cream / beige colour, clearly warmer than Qb
+      - Fuzzy, soft body outline with a fluffy halo
+      - Big bushy plume tail, wider than the leg, grey-brown
+      - Darker brown lower legs and paws against a pale body
+      - Darker golden-brown patch in the centre of the face
+    camera_cues:             # seen on the live overhead camera (view 3)
+      - Dark brown plume tail tip clearly visible from above, even in low light (strongest cue)
+      - Fluffy, larger-looking body with a soft halo edge
+      - In daylight, warm cream body with darker hind legs
+    high_res_cues:
+      - Blue-grey eyes in a flatter face with a short nose
+      - Long fur and a thick neck ruff
+      - Small ears partly hidden in fur
+      - Golden-brown mask on the nose bridge and forehead
+    confused_with:
+      - cat_id: 0
+        how_to_tell: Qb is short-haired, cool white/silver, with a thin ringed tail and white paws.
+      - decoy: cream or beige plush toys, fluffy rugs and blankets
+    habits: []

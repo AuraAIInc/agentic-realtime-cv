@@ -1,0 +1,6 @@
+openai>=3.37,<4
+mcp>=2.3,<3
+python-dotenv
+pyyaml
+pillow
+pytest  # tests only

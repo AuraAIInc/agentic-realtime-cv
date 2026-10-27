@@ -1,0 +1,62 @@
+# Task agent settings: budgets, thresholds and which tools each task sees.
+# The model itself is chosen in agentic_realtime_cv_agent/models.json.
+
+tasks:
+  validate_detection:
+    skill: validate-cat-identity
+    image_budget: 3          # image-returning tool calls per task (a contact sheet counts as 1)
+    high_res_budget: 1       # camera__capture_high_res pauses detection ~3 s
+    max_steps: 8
+    reasoning_effort: null   # e.g. "low"; null = models.json default
+    tools: [tracking__get_period_detail, tracking__get_live_status, tracking__get_last_seen,
+            tracking__get_raw_detections, images__get_image, camera__capture_high_res,
+            local__find_references, local__get_reference_image, local__make_contact_sheet,
+            local__get_cat_profiles]
+  check_trajectory:
+    skill: check-trajectory
+    image_budget: 2
+    high_res_budget: 0
+    max_steps: 6
+    reasoning_effort: null
+    tools: [images__get_image, local__make_contact_sheet, local__get_cat_profiles,
+            local__find_references, local__get_reference_image]
+  assign_label:
+    skill: assign-activity-label
+    image_budget: 2
+    high_res_budget: 0
+    max_steps: 6
+    reasoning_effort: null
+    tools: [images__get_image, local__make_contact_sheet, local__get_label_set, local__zones_for_box]
+  manage_labels:
+    skill: manage-labels
+    image_budget: 2
+    high_res_budget: 0
+    max_steps: 10
+    reasoning_effort: null
+    tools: [local__get_label_set, local__add_label, local__get_zones, local__save_zone,
+            camera__capture_frame, images__get_image]
+
+validate:
+  visit_consensus:           # accept the visit's cat without the model when the visit is this solid
+    min_frames: 20
+    min_agree: 0.8
+
+trajectory:                  # starting points; tune on hand-reviewed visits
+  teleport_body_lengths_per_s: 3.0
+  teleport_min_body_lengths: 1.5
+  long_gap_s: 8.0
+  size_jump_ratio: 2.5
+  edge_margin: 0.12          # entry / exit within this fraction of the frame counts as an edge
+  overlap_body_lengths: 1.0
+  static_min_s: 600          # a box that never moves for this long is checked for decoys
+  identity_min_frames: 3     # identity flips shorter than this are treated as noise
+  max_keyframes: 6
+  accept_without_model_if_no_flags: true
+
+labels:
+  rules_only_when_decisive: true   # skip the model when rules leave exactly one answer
+  visit_max_segments: 8            # label_visit samples at most this many segments
+
+references:
+  max_per_cat: 2
+  weights: {view: 1.0, position: 1.0, size: 1.0, pose: 0.5, lighting: 1.0, quality: 0.5}

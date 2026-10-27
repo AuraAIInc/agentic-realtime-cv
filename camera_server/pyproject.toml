@@ -1,0 +1,23 @@
+[project]
+name = "camera-server"
+version = "0.1.0"
+description = "Camera detection server: YOLO tracking streamed over WebSocket, plus an MCP control server (camera_v3)."
+readme = "camera_v3/README.md"
+# The mcp SDK used by camera_v3 needs Python >= 3.10.
+requires-python = ">=3.10"
+dependencies = [
+    "boto3>=1.35.95",
+    "fire>=0.7",
+    "mcp>=2.3,<3",
+    "numpy>=1.26.4",
+    "opencv-python>=4.11.0.86,<5",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.3",
+    "ultralytics>=8.3.107,<8.4",
+    "uvicorn>=0.30",
+    "websocket-client>=1.8.0",
+]
+
+[tool.uv]
+# Run as scripts / `python -m camera_v3` from the repo root; nothing to build or install.
+package = false

@@ -1,0 +1,272 @@
+{
+  "cat_id": 0,
+  "name": "Qb",
+  "images": [
+    {
+      "file": "profile/IMG_2636_standing_front.jpg",
+      "cat_id": 0,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 5,
+      "pose": "standing",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        725,
+        161,
+        2328,
+        3749
+      ],
+      "width": 3024,
+      "height": 4032,
+      "confirmed_by": "human",
+      "note": "Face-on, full body, tail up; best ID photo",
+      "crop_file": "profile/IMG_2636_standing_front_crop.jpg",
+      "box_space": "source_px_3024x4032",
+      "crop_size": [
+        229,
+        512
+      ]
+    },
+    {
+      "file": "profile/IMG_7275_lying_face.jpg",
+      "cat_id": 0,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 5,
+      "pose": "lying",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        766,
+        997,
+        3467,
+        2449
+      ],
+      "width": 4032,
+      "height": 3024,
+      "confirmed_by": "human",
+      "note": "Lying on mat, face and eyes clear",
+      "crop_file": "profile/IMG_7275_lying_face_crop.jpg",
+      "box_space": "source_px_4032x3024",
+      "crop_size": [
+        512,
+        275
+      ]
+    },
+    {
+      "file": "profile/IMG_1498_crouching_topdown.jpg",
+      "cat_id": 0,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 3,
+      "pose": "crouching",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        604,
+        483,
+        2842,
+        3225
+      ],
+      "width": 3024,
+      "height": 4032,
+      "confirmed_by": "human",
+      "note": "Top-down view like a ceiling camera; face down, ringed tail visible",
+      "crop_file": "profile/IMG_1498_crouching_topdown_crop.jpg",
+      "box_space": "source_px_3024x4032",
+      "crop_size": [
+        418,
+        512
+      ]
+    },
+    {
+      "file": "scene/2026-10-25-23-21-09-942893.jpg",
+      "crop_file": "scene/2026-10-25-23-21-09-942893_crop.jpg",
+      "cat_id": 0,
+      "tracking_cat_id": 25,
+      "source": "scene",
+      "use_for_matching": true,
+      "quality": 5,
+      "pose": "walking",
+      "lighting": "day",
+      "view_id": 3,
+      "box": [
+        513,
+        77,
+        575,
+        134
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8142,
+      "captured_at": "2026-10-25T23:21:09.942893",
+      "image_name": "2026-10-25-23-21-09-942893.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-25/23/21/2026-10-25-23-21-09-942893.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "consistent",
+      "note": "Clear white short-haired cat walking, side view",
+      "crop_size": [
+        99,
+        92
+      ]
+    },
+    {
+      "file": "scene/2026-10-26-00-55-19-606948.jpg",
+      "crop_file": "scene/2026-10-26-00-55-19-606948_crop.jpg",
+      "cat_id": 0,
+      "tracking_cat_id": 25,
+      "source": "scene",
+      "use_for_matching": true,
+      "quality": 4,
+      "pose": "walking",
+      "lighting": "day",
+      "view_id": 3,
+      "box": [
+        498,
+        67,
+        576,
+        118
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8269,
+      "captured_at": "2026-10-26T00:55:19.606948",
+      "image_name": "2026-10-26-00-55-19-606948.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-26/00/55/2026-10-26-00-55-19-606948.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "consistent",
+      "note": "White short-haired cat walking, far from camera",
+      "crop_size": [
+        125,
+        82
+      ]
+    },
+    {
+      "file": "scene/2026-10-25-04-45-33-230610.jpg",
+      "crop_file": "scene/2026-10-25-04-45-33-230610_crop.jpg",
+      "cat_id": 0,
+      "tracking_cat_id": 25,
+      "source": "scene",
+      "use_for_matching": true,
+      "quality": 3,
+      "pose": "walking",
+      "lighting": "low_light",
+      "view_id": 3,
+      "box": [
+        677,
+        350,
+        800,
+        490
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8286,
+      "captured_at": "2026-10-25T04:45:33.230610",
+      "image_name": "2026-10-25-04-45-33-230610.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-25/04/45/2026-10-25-04-45-33-230610.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "consistent",
+      "note": "White smooth short-coat body, walking; purple night tint",
+      "crop_size": [
+        160,
+        224
+      ]
+    },
+    {
+      "file": "scene/2026-10-26-02-41-52-634415.jpg",
+      "crop_file": "scene/2026-10-26-02-41-52-634415_crop.jpg",
+      "cat_id": 0,
+      "tracking_cat_id": 25,
+      "source": "scene",
+      "use_for_matching": false,
+      "quality": 2,
+      "pose": null,
+      "lighting": "night_ir",
+      "view_id": 3,
+      "box": [
+        310,
+        388,
+        385,
+        542
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8274,
+      "captured_at": "2026-10-26T02:41:52.634415",
+      "image_name": "2026-10-26-02-41-52-634415.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-26/02/41/2026-10-26-02-41-52-634415.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "uncertain",
+      "note": "Grayscale IR, overhead; coat length hard to judge",
+      "crop_size": [
+        120,
+        247
+      ]
+    },
+    {
+      "file": "extra/IMG_7046_painted_portrait.jpg",
+      "cat_id": 0,
+      "source": "extra",
+      "use_for_matching": false,
+      "quality": 1,
+      "pose": "sitting",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        816,
+        1451,
+        2207,
+        3064
+      ],
+      "width": 3024,
+      "height": 4032,
+      "confirmed_by": "human",
+      "note": "Painted portrait in a frame, not a photo; do not use for matching",
+      "crop_file": "extra/IMG_7046_painted_portrait_crop.jpg",
+      "box_space": "source_px_3024x4032",
+      "crop_size": [
+        442,
+        512
+      ]
+    },
+    {
+      "file": "scene/2026-10-25-08-03-23-379178.jpg",
+      "crop_file": "scene/2026-10-25-08-03-23-379178_crop.jpg",
+      "cat_id": 0,
+      "tracking_cat_id": 25,
+      "source": "scene",
+      "use_for_matching": false,
+      "quality": 1,
+      "pose": null,
+      "lighting": "low_light",
+      "view_id": 3,
+      "box": [
+        651,
+        89,
+        737,
+        149
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8237,
+      "captured_at": "2026-10-25T08:03:23.379178",
+      "image_name": "2026-10-25-08-03-23-379178.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-25/08/03/2026-10-25-08-03-23-379178.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "uncertain",
+      "note": "Small and dark, eyeshine only; identity not visible",
+      "crop_size": [
+        137,
+        96
+      ]
+    }
+  ],
+  "video": [],
+  "usage": "Send crop_file to the model (cat only, <=512 px owner photos, <=384 px camera crops). file is the original, kept for re-cropping."
+}

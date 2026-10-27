@@ -1,0 +1,349 @@
+{
+  "cat_id": 2,
+  "name": "Qbo",
+  "images": [
+    {
+      "file": "profile/chat_crouching_face.jpg",
+      "cat_id": 2,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 5,
+      "pose": "crouching",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        183,
+        403,
+        766,
+        844
+      ],
+      "width": 1080,
+      "height": 1920,
+      "confirmed_by": "human",
+      "note": "Face and eyes clear, full body on carpet",
+      "crop_file": "profile/chat_crouching_face_crop.jpg",
+      "box_space": "source_px_1080x1920",
+      "crop_size": [
+        512,
+        387
+      ]
+    },
+    {
+      "file": "profile/IMG_2895_t12s_lying_face.jpg",
+      "cat_id": 2,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 5,
+      "pose": "lying",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        0,
+        787,
+        1080,
+        1344
+      ],
+      "width": 1080,
+      "height": 1920,
+      "confirmed_by": "human",
+      "note": "Frame from video; face, dark paws and tail visible",
+      "crop_file": "profile/IMG_2895_t12s_lying_face_crop.jpg",
+      "box_space": "source_px_1080x1920",
+      "crop_size": [
+        512,
+        264
+      ]
+    },
+    {
+      "file": "profile/IMG_2895_t07s_lying_face.jpg",
+      "cat_id": 2,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 4,
+      "pose": "lying",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        0,
+        748,
+        1080,
+        1305
+      ],
+      "width": 1080,
+      "height": 1920,
+      "confirmed_by": "human",
+      "note": "Frame from video; face visible",
+      "crop_file": "profile/IMG_2895_t07s_lying_face_crop.jpg",
+      "box_space": "source_px_1080x1920",
+      "crop_size": [
+        512,
+        264
+      ]
+    },
+    {
+      "file": "profile/IMG_2128_on_back_face.jpg",
+      "cat_id": 2,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 4,
+      "pose": "lying",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        483,
+        1209,
+        2540,
+        3225
+      ],
+      "width": 3024,
+      "height": 4032,
+      "confirmed_by": "human",
+      "note": "Rolling on back; face, ruff and brown paws visible",
+      "crop_file": "profile/IMG_2128_on_back_face_crop.jpg",
+      "box_space": "source_px_3024x4032",
+      "crop_size": [
+        512,
+        502
+      ]
+    },
+    {
+      "file": "profile/IMG_3058_lying_side.jpg",
+      "cat_id": 2,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 4,
+      "pose": "lying",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        403,
+        1088,
+        3306,
+        2237
+      ],
+      "width": 4032,
+      "height": 3024,
+      "confirmed_by": "human",
+      "note": "Side view, full body and plume tail",
+      "crop_file": "profile/IMG_3058_lying_side_crop.jpg",
+      "box_space": "source_px_4032x3024",
+      "crop_size": [
+        512,
+        203
+      ]
+    },
+    {
+      "file": "profile/IMG_2895_t02s_playing.jpg",
+      "cat_id": 2,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 2,
+      "pose": "playing",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        0,
+        806,
+        1047,
+        1382
+      ],
+      "width": 1080,
+      "height": 1920,
+      "confirmed_by": "human",
+      "note": "Frame from video; face hidden by feather toy",
+      "crop_file": "profile/IMG_2895_t02s_playing_crop.jpg",
+      "box_space": "source_px_1080x1920",
+      "crop_size": [
+        512,
+        282
+      ]
+    },
+    {
+      "file": "profile/IMG_2356_sleeping_sofa_dim.jpg",
+      "cat_id": 2,
+      "source": "profile",
+      "use_for_matching": true,
+      "quality": 2,
+      "pose": "sleeping",
+      "lighting": "day",
+      "view_id": null,
+      "box": [
+        403,
+        846,
+        3225,
+        2540
+      ],
+      "width": 4032,
+      "height": 3024,
+      "confirmed_by": "human",
+      "note": "Dim light, curled on sofa",
+      "crop_file": "profile/IMG_2356_sleeping_sofa_dim_crop.jpg",
+      "box_space": "source_px_4032x3024",
+      "crop_size": [
+        512,
+        307
+      ]
+    },
+    {
+      "file": "scene/2026-10-25-02-00-03-692778.jpg",
+      "crop_file": "scene/2026-10-25-02-00-03-692778_crop.jpg",
+      "cat_id": 2,
+      "tracking_cat_id": 26,
+      "source": "scene",
+      "use_for_matching": true,
+      "quality": 5,
+      "pose": null,
+      "lighting": "day",
+      "view_id": 3,
+      "box": [
+        109,
+        383,
+        254,
+        538
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8592,
+      "captured_at": "2026-10-25T02:00:03.692778",
+      "image_name": "2026-10-25-02-00-03-692778.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-25/02/00/2026-10-25-02-00-03-692778.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "consistent",
+      "note": "Fluffy long coat, cream with darker shading; overhead",
+      "crop_size": [
+        232,
+        248
+      ]
+    },
+    {
+      "file": "scene/2026-10-26-05-41-47-645026.jpg",
+      "crop_file": "scene/2026-10-26-05-41-47-645026_crop.jpg",
+      "cat_id": 2,
+      "tracking_cat_id": 26,
+      "source": "scene",
+      "use_for_matching": true,
+      "quality": 4,
+      "pose": "walking",
+      "lighting": "day",
+      "view_id": 3,
+      "box": [
+        218,
+        340,
+        314,
+        517
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8599,
+      "captured_at": "2026-10-26T05:41:47.645026",
+      "image_name": "2026-10-26-05-41-47-645026.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-26/05/41/2026-10-26-05-41-47-645026.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "consistent",
+      "note": "Overhead walking; cream body, dark tail, warm light",
+      "crop_size": [
+        153,
+        284
+      ]
+    },
+    {
+      "file": "scene/2026-10-26-02-06-02-444093.jpg",
+      "crop_file": "scene/2026-10-26-02-06-02-444093_crop.jpg",
+      "cat_id": 2,
+      "tracking_cat_id": 26,
+      "source": "scene",
+      "use_for_matching": true,
+      "quality": 3,
+      "pose": null,
+      "lighting": "low_light",
+      "view_id": 3,
+      "box": [
+        223,
+        346,
+        310,
+        526
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8717,
+      "captured_at": "2026-10-26T02:06:02.444093",
+      "image_name": "2026-10-26-02-06-02-444093.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-26/02/06/2026-10-26-02-06-02-444093.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "consistent",
+      "note": "Overhead, dark plume tail tip visible (earlier note said box was on the white cat; crop looks like Qbo)",
+      "crop_size": [
+        140,
+        288
+      ]
+    },
+    {
+      "file": "scene/2026-10-26-04-15-57-726174.jpg",
+      "crop_file": "scene/2026-10-26-04-15-57-726174_crop.jpg",
+      "cat_id": 2,
+      "tracking_cat_id": 26,
+      "source": "scene",
+      "use_for_matching": true,
+      "quality": 3,
+      "pose": null,
+      "lighting": "low_light",
+      "view_id": 3,
+      "box": [
+        350,
+        459,
+        515,
+        600
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8558,
+      "captured_at": "2026-10-26T04:15:57.726174",
+      "image_name": "2026-10-26-04-15-57-726174.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-26/04/15/2026-10-26-04-15-57-726174.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "consistent",
+      "note": "Fluffy body with dark plume tail, motion blur",
+      "crop_size": [
+        264,
+        184
+      ]
+    },
+    {
+      "file": "scene/2026-10-25-06-44-58-202282.jpg",
+      "crop_file": "scene/2026-10-25-06-44-58-202282_crop.jpg",
+      "cat_id": 2,
+      "tracking_cat_id": 26,
+      "source": "scene",
+      "use_for_matching": false,
+      "quality": 1,
+      "pose": null,
+      "lighting": "night_ir",
+      "view_id": 3,
+      "box": [
+        199,
+        378,
+        356,
+        536
+      ],
+      "box_space": "source_px_800x600",
+      "width": 800,
+      "height": 600,
+      "detector_conf": 0.8591,
+      "captured_at": "2026-10-25T06:44:58.202282",
+      "image_name": "2026-10-25-06-44-58-202282.jpg",
+      "s3_key": "14/c2d5f3ce14067817/2026-10-25/06/44/2026-10-25-06-44-58-202282.jpg",
+      "confirmed_by": "detector",
+      "agent_check": "uncertain",
+      "note": "Very dark IR frame; identity not visible",
+      "crop_size": [
+        252,
+        253
+      ]
+    }
+  ],
+  "usage": "Send crop_file to the model (cat only, <=512 px owner photos, <=384 px camera crops). file is the original, kept for re-cropping."
+}
