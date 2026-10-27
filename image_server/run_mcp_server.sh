@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the MCP image server in the background. Run from the image_server folder.
+# Start the MCP image server in the background. Runs the code in this repo folder.
 # Hackathon-temporary: use the host's ORIGINAL server venv (reverts after the hackathon).
 cd "$(dirname "$0")" || exit 1
 VENV="${ORIGINAL_VENV:-$HOME/camera_server/.venv}"

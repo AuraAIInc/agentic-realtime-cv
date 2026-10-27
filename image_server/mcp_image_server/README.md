@@ -59,3 +59,15 @@ Needs Python ≥ 3.10.
 ```
 pip install -r requirements-mcp.txt
 ```
+
+**Hackathon-temporary:** on the SSD host, `../run_mcp_server.sh` runs the code in
+this repo folder (`~/agentic-realtime-cv/image_server`) but with the original
+server's venv (`~/camera_server/.venv`, override with `ORIGINAL_VENV`), logging to
+`mcp_server.log` there. By hand that is:
+
+```
+source ~/camera_server/.venv/bin/activate
+cd ~/agentic-realtime-cv/image_server
+nohup python -m mcp_image_server >> mcp_server.log 2>&1 &
+tail -f mcp_server.log
+```

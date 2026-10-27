@@ -6,7 +6,7 @@ also runs an MCP server, so the backend supervisor (VLM) can inspect frames, zoo
 escalate to bigger models and temporarily change how the loop runs.
 
 ```
-uv run python -m camera_v3   # from the repo root (run_detection_v3.sh does this)
+uv run python -m camera_v3   # from camera_server/ (run_detection_v3.sh runs it in the original venv)
 ```
 
 ## How the pieces fit
@@ -151,6 +151,18 @@ uv run python -m camera_v3            # v3: detection + MCP server
 uv run python camera_main_v2.py       # v2
 ./run_detection_v3.sh                 # v3 in the background via nohup, logs to detect_log.log
 ./run_detection.sh                    # v2 in the background
+```
+
+**Hackathon-temporary:** on the Pi, `run_detection_v3.sh` runs the code in this
+repo folder (`~/agentic-realtime-cv/camera_server`) but with the original server's
+venv (`~/camera_server/.venv`, override with `ORIGINAL_VENV`), logging to
+`detect_log.log` here. By hand that is:
+
+```
+source ~/camera_server/.venv/bin/activate
+cd ~/agentic-realtime-cv/camera_server
+nohup python -m camera_v3 >> detect_log.log 2>&1 &
+tail -f detect_log.log
 ```
 
 `uv run` syncs `.venv` with the lock before starting, so a fresh `git pull` that
