@@ -2,5 +2,6 @@ openai>=3.37,<4  # HTTP client for the OpenAI-compatible Meta Model API
 mcp>=2.3,<3
 python-dotenv
 pyyaml
+pymysql  # agent_invoke / tool_invoke dump (AGENT_INVOKE_DUMP=true)
 pillow
 pytest  # tests only
