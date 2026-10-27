@@ -10,16 +10,16 @@ YOLO per image ──► TrackCorrector ──► revised detections ──► P
                     the same animal?"                           track, really?"        cat_id, score)
 ```
 
-- **[TrackCorrector](model/track_corrector.py)** works frame by frame with a short delay (15 s).
+- **[TrackCorrector](../existing_work_before_hackathon/model/track_corrector.py)** works frame by frame with a short delay (15 s).
   It fixes boxes and labels locally and groups consecutive boxes into **periods**: one
   continuous stretch of one animal on screen.
-- **[PeriodCorrector](model/period_corrector.py)** waits until a group of periods has ended,
+- **[PeriodCorrector](../existing_work_before_hackathon/model/period_corrector.py)** waits until a group of periods has ended,
   then votes on the whole period to decide which cat it was. It also enforces that one
   cat can't be in two overlapping periods.
 
 Both are created per camera view (`TrackCorrector(view_id)`). The view's `cat_ids` (from
 the `view` table) fix which cats exist. Internally each cat is addressed by its index
-(`cat_idx`) into that list. Live, both run inside [detection_ingest_server.py](detection_ingest_server.py) on every image.
+(`cat_idx`) into that list. Live, both run inside [detection_ingest_server.py](../existing_work_before_hackathon/detection_ingest_server.py) on every image.
 
 ---
 
@@ -170,7 +170,7 @@ Results are written to the `period` row that the tracker allocated: start, end,
 
 ## Reading the visualization with this in mind
 
-In each frame from [run_tracking_viz.py](run_tracking_viz.py) (see [TRACKING_VIZ.md](TRACKING_VIZ.md)):
+In each frame from [run_tracking_viz.py](../existing_work_before_hackathon/run_tracking_viz.py) (see [TRACKING_VIZ.md](TRACKING_VIZ.md)):
 
 - **Shaded area**: the 15 s buffer. Everything inside can still change.
 - **Green thick line**: `base`. **Purple thick line**: `target`. Boxes between them are
