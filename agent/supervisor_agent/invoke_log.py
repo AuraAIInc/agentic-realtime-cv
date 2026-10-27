@@ -248,6 +248,11 @@ def get_invoke_log() -> InvokeLog | None:
     global _instance
     if not enabled():
         return None
+    try:
+        import pymysql  # noqa: F401
+    except ImportError:
+        logger.error("AGENT_INVOKE_DUMP is on but pymysql is not installed (pip install -r requirements.txt); not dumping invokes")
+        return None
     with _lock:
         if _instance is None:
             _instance = InvokeLog()

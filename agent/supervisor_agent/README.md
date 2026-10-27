@@ -113,7 +113,21 @@ existing tables:
 The agent only puts a snapshot on a queue at the end of a run; a background thread builds the
 rows and inserts them, so the dump adds no time to a response. If the database is unreachable,
 the record is dropped with a warning and the agent carries on. Runs that raise (e.g. the model
-API fails) are not recorded.
+API fails) are not recorded. If `pymysql` is missing, the agent logs one error at startup and
+does not dump.
+
+To check it, ask the agent one question and look at the newest rows:
+
+```bash
+python -m supervisor_agent "Is any cat on camera right now?"
+```
+
+```sql
+SELECT invoke_time, model, total_ms, input_tokens, output_tokens, est_cost_usd, tool_names
+FROM agent_invoke ORDER BY invoke_time DESC LIMIT 5;
+SELECT tool_name, response_ms, is_error FROM tool_invoke
+WHERE agent_invoke_id = (SELECT invoke_id FROM agent_invoke ORDER BY invoke_time DESC LIMIT 1);
+```
 
 ## Options
 
