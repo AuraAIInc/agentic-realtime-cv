@@ -1,6 +1,6 @@
 # tracking_mcp: MCP tools over the cat tracker
 
-Gives the [MCP agent](../../agentic_realtime_cv_agent/agentic_realtime_cv_agent/README.md) the tracker's results as `tracking__*` tools:
+Gives the [MCP agent](../../agent/supervisor_agent/README.md) the tracker's results as `tracking__*` tools:
 when and where each cat was last seen, its current and past periods with their scores,
 where it came from, and when it last moved.
 

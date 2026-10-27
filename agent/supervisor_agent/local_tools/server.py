@@ -12,8 +12,8 @@ import logging
 
 from mcp.types import CallToolResult, ImageContent, TextContent
 
-from agentic_realtime_cv_agent.local_tools import imaging, trajectory
-from agentic_realtime_cv_agent.local_tools.store import Store
+from supervisor_agent.local_tools import imaging, trajectory
+from supervisor_agent.local_tools.store import Store
 
 logger = logging.getLogger(__name__)
 

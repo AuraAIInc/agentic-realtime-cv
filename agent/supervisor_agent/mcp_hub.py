@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from mcp import ClientSession
 from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
 
-from agentic_realtime_cv_agent.config import ServerConfig
+from supervisor_agent.config import ServerConfig
 
 logger = logging.getLogger(__name__)
 

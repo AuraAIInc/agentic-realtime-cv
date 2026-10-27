@@ -11,7 +11,7 @@ import base64
 import json
 import os
 
-from agentic_realtime_cv_agent.mcp_hub import CallOutcome, HubTool
+from supervisor_agent.mcp_hub import CallOutcome, HubTool
 
 
 def to_function_tool(tool: HubTool) -> dict:

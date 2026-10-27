@@ -17,10 +17,10 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 
-from agentic_realtime_cv_agent.config import AgentConfig
-from agentic_realtime_cv_agent.mcp_hub import MCPHub
-from agentic_realtime_cv_agent.prompts import build_instructions
-from agentic_realtime_cv_agent.tool_adapter import server_timing, to_function_output, to_function_tool
+from supervisor_agent.config import AgentConfig
+from supervisor_agent.mcp_hub import MCPHub
+from supervisor_agent.prompts import build_instructions
+from supervisor_agent.tool_adapter import server_timing, to_function_output, to_function_tool
 
 logger = logging.getLogger(__name__)
 
