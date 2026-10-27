@@ -1,0 +1,5 @@
+# Dependencies for mcp_image_server. Needs Python >= 3.10.
+mcp>=2.3,<3
+uvicorn>=0.30
+python-dotenv
+Pillow  # only used by get_image when cropping / resizing / re-encoding

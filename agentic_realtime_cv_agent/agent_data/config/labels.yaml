@@ -1,0 +1,26 @@
+# Label set for Task 3 (activity + custom labels).
+# activity: exactly one per crop.  context: zero or more, often place-based.
+# needs: which evidence decides the label
+#   image            - the model must look at the crop
+#   motion           - moving / resting state of the visit at that time
+#   zone: <name>     - box overlaps that zone (zones.yaml)
+#   other_cat_nearby - another cat within ~1 body length at the same time
+# rule (context labels): decided in code, no model call, when the label has no `image` need.
+# Bump `version` on every change; every log row records the version it used.
+
+version: 1
+activity:
+  - {name: sleeping,  description: "Lying still, eyes closed or curled up", needs: [image, motion]}
+  - {name: resting,   description: "Lying or loafing, awake, not moving", needs: [image, motion]}
+  - {name: sitting,   description: "Upright on haunches, not moving", needs: [image]}
+  - {name: standing,  description: "On four legs, not walking", needs: [image]}
+  - {name: walking,   description: "Moving at walking pace", needs: [motion]}
+  - {name: eating,    description: "Head down at the food bowl", needs: [image, {zone: food_bowl}]}
+  - {name: drinking,  description: "Head down at the water bowl", needs: [image, {zone: water}]}
+  - {name: grooming,  description: "Licking own fur or paws", needs: [image]}
+  - {name: playing,   description: "Pouncing, batting a toy, chasing", needs: [image, motion]}
+  - {name: playing_with_cat, description: "Wrestling or chasing another cat", needs: [image, other_cat_nearby]}
+  - {name: unknown,   description: "None of the above fits; suggest a new label"}
+context:
+  - {name: on_sofa, description: "Cat is on the sofa", rule: {zone: sofa, min_overlap: 0.5}}
+  - {name: in_tent, description: "Cat is inside the toy tent", rule: {zone: tent, min_overlap: 0.6}, needs: [image]}

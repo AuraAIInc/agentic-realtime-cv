@@ -1,0 +1,12 @@
+{
+  "default": {
+    "description": "This user's cat-identity model (best.pt). Classes are the user's cats, so detections carry cat_id. Use it first.",
+    "weights": "./best.pt",
+    "cat_classes": true
+  },
+  "yolov8s": {
+    "description": "Generic COCO model (80 classes, e.g. cat, dog, person). Larger and slower than default; no cat identities (cat_id -1). Use it to check whether something is a cat at all.",
+    "weights": "yolov8s.pt",
+    "cat_classes": false
+  }
+}
