@@ -1,7 +1,7 @@
 """Offline tests for the task agent: fake tracking / image servers and a scripted model.
 
-Run from the agentic_realtime_cv_agent/ folder:
-    python -m pytest agentic_realtime_cv_agent/tests -q
+Run from the agent/ folder:
+    python -m pytest supervisor_agent/tests -q
 """
 
 from __future__ import annotations
@@ -19,11 +19,11 @@ import pytest
 from mcp.types import CallToolResult, ImageContent, TextContent
 from PIL import Image
 
-from agentic_realtime_cv_agent.agent import MCPAgent
-from agentic_realtime_cv_agent.config import AgentConfig
-from agentic_realtime_cv_agent.local_tools import LocalTools, Store, trajectory
-from agentic_realtime_cv_agent.mcp_hub import MCPHub
-from agentic_realtime_cv_agent.tasks import VALIDATE_SCHEMA, TaskRunner, _strict, label_schema
+from supervisor_agent.agent import MCPAgent
+from supervisor_agent.config import AgentConfig
+from supervisor_agent.local_tools import LocalTools, Store, trajectory
+from supervisor_agent.mcp_hub import MCPHub
+from supervisor_agent.tasks import VALIDATE_SCHEMA, TaskRunner, _strict, label_schema
 
 DATA = Path(__file__).resolve().parents[2] / "agent_data"
 T0 = dt.datetime(2026, 10, 26, 2, 0, 0)

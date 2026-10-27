@@ -1,13 +1,13 @@
 """Command line: one query, or an interactive session.
 
-python -m agentic_realtime_cv_agent "Is any cat on camera right now?"
-python -m agentic_realtime_cv_agent            # interactive, keeps context
-python -m agentic_realtime_cv_agent --list-tools
+python -m supervisor_agent "Is any cat on camera right now?"
+python -m supervisor_agent            # interactive, keeps context
+python -m supervisor_agent --list-tools
 
 Tasks from the CV pipeline (see tasks.py for payloads; @file reads JSON from a file):
-python -m agentic_realtime_cv_agent --task check_trajectory --payload '{"period_id": 8812}'
-python -m agentic_realtime_cv_agent --task validate_detection --payload @detection.json
-python -m agentic_realtime_cv_agent --labels     # chat to add labels / zones
+python -m supervisor_agent --task check_trajectory --payload '{"period_id": 8812}'
+python -m supervisor_agent --task validate_detection --payload @detection.json
+python -m supervisor_agent --labels     # chat to add labels / zones
 """
 
 from __future__ import annotations
@@ -19,11 +19,11 @@ import logging
 import os
 import sys
 
-from agentic_realtime_cv_agent.agent import MCPAgent, RunResult, ToolStep
-from agentic_realtime_cv_agent.config import AgentConfig
-from agentic_realtime_cv_agent.local_tools import LocalTools
-from agentic_realtime_cv_agent.mcp_hub import MCPHub
-from agentic_realtime_cv_agent.tasks import TaskRunner, chat_options
+from supervisor_agent.agent import MCPAgent, RunResult, ToolStep
+from supervisor_agent.config import AgentConfig
+from supervisor_agent.local_tools import LocalTools
+from supervisor_agent.mcp_hub import MCPHub
+from supervisor_agent.tasks import TaskRunner, chat_options
 
 _COLOR = sys.stdout.isatty() and not os.getenv("NO_COLOR")
 
@@ -176,7 +176,7 @@ def main() -> None:
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     # Always show the servers and tools loaded at startup.
-    logging.getLogger("agentic_realtime_cv_agent.mcp_hub").setLevel(logging.INFO)
+    logging.getLogger("supervisor_agent.mcp_hub").setLevel(logging.INFO)
     sys.exit(asyncio.run(amain(args)))
 
 

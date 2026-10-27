@@ -1,5 +1,5 @@
 # Task agent settings: budgets, thresholds and which tools each task sees.
-# The model itself is chosen in agentic_realtime_cv_agent/models.json.
+# The model itself is chosen in supervisor_agent/models.json.
 
 tasks:
   validate_detection:

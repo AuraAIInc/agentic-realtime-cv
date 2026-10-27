@@ -31,8 +31,8 @@ import logging
 import re
 from pathlib import Path
 
-from agentic_realtime_cv_agent.agent import MCPAgent, RunOptions, RunResult
-from agentic_realtime_cv_agent.local_tools import LocalTools, Store, trajectory
+from supervisor_agent.agent import MCPAgent, RunOptions, RunResult
+from supervisor_agent.local_tools import LocalTools, Store, trajectory
 
 logger = logging.getLogger(__name__)
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"

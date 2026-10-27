@@ -221,8 +221,8 @@ __marimo__/
 
 # Runtime output (tracking viz frames / MP4, agent run logs)
 existing_work_before_hackathon/output/
-agentic_realtime_cv_agent/output/
-agentic_realtime_cv_agent/agent_data/logs/
-agentic_realtime_cv_agent/agent_data/label_suggestions/
-agentic_realtime_cv_agent/agent_data/references/**/video/
+agent/output/
+agent/agent_data/logs/
+agent/agent_data/label_suggestions/
+agent/agent_data/references/**/video/
 .DS_Store

@@ -1,4 +1,4 @@
-# agentic_realtime_cv_agent: OpenAI agent over the RCAT MCP tools
+# supervisor_agent: OpenAI agent over the RCAT MCP tools
 
 An LLM agent that answers questions about the cats by calling tools on three MCP servers:
 
@@ -21,7 +21,7 @@ query ─► OpenAI ─► function calls ─► MCPHub ─► camera / image MC
 
 ## Setup
 
-From the agentic_realtime_cv_agent/ folder (Python ≥ 3.10; the repo venv is 3.12):
+From the agent/ folder (Python ≥ 3.10; the repo venv is 3.12):
 
 ```bash
 pip install -r requirements.txt
@@ -48,13 +48,13 @@ which also holds `reasoning_effort` and the OpenAI per-1M-token prices used for 
 
 ```bash
 # one query
-python -m agentic_realtime_cv_agent "Is any cat on camera right now? Show me."
+python -m supervisor_agent "Is any cat on camera right now? Show me."
 
 # interactive (follow-up questions keep context)
-python -m agentic_realtime_cv_agent
+python -m supervisor_agent
 
 # what the agent can call
-python -m agentic_realtime_cv_agent --list-tools
+python -m supervisor_agent --list-tools
 ```
 
 Example queries:
@@ -116,9 +116,9 @@ Set `"reasoning_effort": "low" | "medium" | "high"` in `models.json` for reasoni
 ## Using it from code
 
 ```python
-from agentic_realtime_cv_agent.agent import MCPAgent
-from agentic_realtime_cv_agent.config import AgentConfig
-from agentic_realtime_cv_agent.mcp_hub import MCPHub
+from supervisor_agent.agent import MCPAgent
+from supervisor_agent.config import AgentConfig
+from supervisor_agent.mcp_hub import MCPHub
 
 cfg = AgentConfig.from_env()
 async with MCPHub(cfg.servers) as hub:
@@ -141,9 +141,9 @@ one skill with a strict JSON answer. Design: "RCAT Agent Tasks" doc. Code: [task
 | `label_visit` | `period_id` | one `assign_label` per motion segment, not per frame | as above |
 
 ```bash
-python -m agentic_realtime_cv_agent --task check_trajectory --payload '{"period_id": 8812}'
-python -m agentic_realtime_cv_agent --task validate_detection --payload @detection.json
-python -m agentic_realtime_cv_agent --labels   # "label the cat when it sits in the tent"
+python -m supervisor_agent --task check_trajectory --payload '{"period_id": 8812}'
+python -m supervisor_agent --task validate_detection --payload @detection.json
+python -m supervisor_agent --labels   # "label the cat when it sits in the tent"
 ```
 
 - **Cheapest evidence first.** Every task has an image budget in
@@ -165,5 +165,5 @@ python -m agentic_realtime_cv_agent --labels   # "label the cat when it sits in 
 Tests (offline: fake servers and a scripted model):
 
 ```bash
-python -m pytest agentic_realtime_cv_agent/tests -q
+python -m pytest supervisor_agent/tests -q
 ```

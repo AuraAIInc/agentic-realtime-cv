@@ -1,6 +1,6 @@
 # agent_data
 
-Data for the RCAT task agent (`agentic_realtime_cv_agent/tasks.py`). Edit these files by hand; no code changes needed.
+Data for the RCAT task agent (`supervisor_agent/tasks.py`). Edit these files by hand; no code changes needed.
 
 | Path | What | Who writes it |
 |---|---|---|
