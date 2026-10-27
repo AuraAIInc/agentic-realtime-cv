@@ -98,6 +98,22 @@ Each run writes `output/agent_runs/<timestamp>/run.json` (query, answer, every t
 with arguments and timings, token usage) plus every image the tools returned. `output/` is
 gitignored. Use `--no-save` to skip this, or `--json` to also print the trace.
 
+### Invoke dump to MySQL
+
+With `AGENT_INVOKE_DUMP=true` in `.env`, every `MCPAgent.run` (chat query or pipeline task) is
+also written to the MySQL database in the `MYSQL_*` settings (the ingest server's database;
+needs `pymysql`). The two tables are created on first use:
+
+| Table | One row per | Columns |
+|---|---|---|
+| `agent_invoke` | agent run | `invoke_id`, `invoke_time`, `model`, `tag` (task name), `input_query`, `agent_response`, `input_tokens` / `output_tokens` / `cached_tokens` / `total_tokens`, `est_cost_usd`, `images_sent` (images in the query + tool results sent to the LLM), `tool_count`, `tool_names` (JSON list), `tools_ms`, `llm_ms`, `total_ms` (input to answer), `turns`, `stopped_reason`, `reasoning_effort`, `previous_response_id`, `last_response_id`, `run_dir` |
+| `tool_invoke` | tool call | `invoke_id`, `agent_invoke_id` (→ `agent_invoke.invoke_id`), `invoke_time`, `turn`, `call_id`, `tool_name`, `tool_input` (arguments JSON), `tool_output` (text; images replaced by a size placeholder), `images_returned`, `response_ms` (round trip), `server_elapsed_ms`, `server_steps_ms`, `is_error`, `error` |
+
+The agent only puts a snapshot on a queue at the end of a run; a background thread builds the
+rows and inserts them, so the dump adds no time to a response. If the database is unreachable,
+the record is dropped with a warning and the agent carries on. Runs that raise (e.g. the model
+API fails) are not recorded.
+
 ## Options
 
 | Flag | Meaning |
@@ -1688,6 +1704,7 @@ Skill 'validate-cat-identity': Decide whether a detection is a cat and which hou
 | `tool_adapter.py` | MCP tool schema → Responses API function tool; MCP result → function output (text + images), timing extraction |
 | `prompts.py` | system instructions (plus each server's own instructions) |
 | `agent.py` | the tool-calling loop, run trace |
+| `invoke_log.py` | background-thread dump of each run and tool call to MySQL (`agent_invoke`, `tool_invoke`) |
 | `cli.py` | one-shot and interactive command line |
 
 ## Using it from code

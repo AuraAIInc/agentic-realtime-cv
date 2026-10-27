@@ -15,9 +15,11 @@ import json
 import logging
 import os
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 
 from supervisor_agent.config import AgentConfig
+from supervisor_agent.invoke_log import get_invoke_log
 from supervisor_agent.mcp_hub import MCPHub
 from supervisor_agent.prompts import build_instructions
 from supervisor_agent.tool_adapter import server_timing, to_function_output, to_function_tool
@@ -59,6 +61,7 @@ class ToolStep:
     error: str | None
     images_saved: list[str]
     preview: str  # first part of the text result
+    call_id: str = ""
 
 
 @dataclass
@@ -96,6 +99,7 @@ class MCPAgent:
             client = AsyncOpenAI(base_url=cfg.base_url, api_key=api_key)
         self.client = client
         self.on_event = on_event or (lambda kind, data: None)
+        self.invoke_log = get_invoke_log()  # None unless AGENT_INVOKE_DUMP=true
 
     def _tools(self, names: list[str] | None = None) -> list[dict]:
         if names is None:
@@ -108,6 +112,7 @@ class MCPAgent:
     async def run(self, query: str | list, previous_response_id: str | None = None, options: RunOptions | None = None) -> RunResult:
         opts = options or RunOptions()
         t_start = time.perf_counter()
+        invoke_time = datetime.datetime.now()
         run_dir = None
         if self.cfg.save_dir:
             stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -127,6 +132,7 @@ class MCPAgent:
         next_input: list | str = query
         prev_id = previous_response_id
         response = None
+        turns_log = []  # (turn, started_at, calls, outputs) for the invoke dump
         max_steps = opts.max_steps or self.cfg.max_steps
         for turn in range(1, max_steps + 1):
             result.turns = turn
@@ -152,8 +158,10 @@ class MCPAgent:
 
             self.on_event("tool_calls", [(c.name, c.arguments) for c in calls])
             t1 = time.perf_counter()
+            started_at = datetime.datetime.now()
             outputs = await asyncio.gather(*[self._execute(c, turn, run_dir, result) for c in calls])
             result.tools_ms += (time.perf_counter() - t1) * 1000
+            turns_log.append((turn, started_at, calls, outputs))
             next_input = list(outputs)
         else:
             result.stopped_reason = f"max_steps ({max_steps}) reached"
@@ -162,6 +170,15 @@ class MCPAgent:
         result.last_response_id = prev_id
         result.total_ms = (time.perf_counter() - t_start) * 1000
         result.llm_ms, result.tools_ms, result.total_ms = (round(v, 1) for v in (result.llm_ms, result.tools_ms, result.total_ms))
+        if self.invoke_log:
+            # Snapshot only (no serialisation here); the writer thread builds and inserts the rows.
+            self.invoke_log.submit(dict(
+                invoke_id=str(uuid.uuid4()), invoke_time=invoke_time, model=self.cfg.model, tag=opts.tag, query=query,
+                answer=result.answer, usage=dict(result.usage), est_cost_usd=self.cfg.estimate_cost_usd(result.usage),
+                tool_steps=list(result.tool_steps), turns=turns_log, tools_ms=result.tools_ms, llm_ms=result.llm_ms,
+                total_ms=result.total_ms, turns_count=result.turns, stopped_reason=result.stopped_reason, reasoning_effort=effort,
+                previous_response_id=previous_response_id, last_response_id=prev_id, run_dir=run_dir,
+            ))
         if run_dir:
             os.makedirs(run_dir, exist_ok=True)
             with open(os.path.join(run_dir, "run.json"), "w") as f:
@@ -179,14 +196,14 @@ class MCPAgent:
         refused = None if bad else self._budget_refusal(call.name, args, result)
         if refused:
             items = [{"type": "input_text", "text": json.dumps({"tool": call.name, "error": refused})}]
-            step = ToolStep(turn, call.name, args, 0.0, None, None, True, refused, [], "")
+            step = ToolStep(turn, call.name, args, 0.0, None, None, True, refused, [], "", call.call_id)
             result.tool_steps.append(step)
             self.on_event("tool_result", step)
             return {"type": "function_call_output", "call_id": call.call_id, "output": items}
         if bad:
             outcome = None
             items = [{"type": "input_text", "text": json.dumps({"error": bad})}]
-            step = ToolStep(turn, call.name, {}, 0.0, None, None, True, bad, [], "")
+            step = ToolStep(turn, call.name, {}, 0.0, None, None, True, bad, [], "", call.call_id)
         else:
             outcome = await self.hub.call(call.name, args)
             items, saved = to_function_output(outcome, self.cfg.image_detail, run_dir, step=len(result.tool_steps) + 1)
@@ -204,6 +221,7 @@ class MCPAgent:
                 error=outcome.error,
                 images_saved=saved,
                 preview=(texts[0] if texts else "")[:300],
+                call_id=call.call_id,
             )
         result.tool_steps.append(step)
         self.on_event("tool_result", step)
