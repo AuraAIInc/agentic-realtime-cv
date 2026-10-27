@@ -1,10 +1,11 @@
-"""Agent settings: which MCP servers to use and which OpenAI model.
+"""Agent settings: which MCP servers to use and which Meta Model API model.
 
-The model, reasoning effort and per-model token pricing come from models.json next to this
-file (or the file named by --model-config / $MODEL_CONFIG). Everything else comes from
-environment variables (the repo's .env is loaded by the CLI):
+The provider endpoint, the model for each role (the agent uses roles.agent), reasoning effort
+and per-model token pricing come from models.json next to this file (or the file named by
+--model-config / $MODEL_CONFIG). Everything else comes from environment variables (the repo's
+.env is loaded by the CLI):
 
-    OPENAI_API_KEY      required
+    MODEL_API_KEY       required (Meta Model API key; the variable name is api_key_env in models.json)
     CAMERA_MCP_URL      default http://raspberrypi.local:8765/mcp   (camera_server / camera_v3)
     CAMERA_MCP_TOKEN    the camera's MCP_AUTH_TOKEN
     IMAGE_MCP_URL       default http://10.0.0.63:10001/mcp          (image-server / mcp_image_server)
@@ -35,6 +36,8 @@ class ServerConfig:
 @dataclass
 class AgentConfig:
     model: str = ""
+    base_url: str = "https://api.meta.ai/v1"  # Meta Model API (OpenAI-compatible Responses API)
+    api_key_env: str = "MODEL_API_KEY"
     servers: list[ServerConfig] = field(default_factory=list)
     max_steps: int = 12  # model turns before giving up
     image_detail: str = "auto"  # "low" | "high" | "auto" for images sent to the model
@@ -69,7 +72,9 @@ class AgentConfig:
                 ),
             ]
         return cls(
-            model=models["model"],
+            model=models["roles"]["agent"]["model"],
+            base_url=models["base_url"],
+            api_key_env=models["api_key_env"],
             servers=servers,
             reasoning_effort=models.get("reasoning_effort") or None,
             pricing=models.get("pricing_usd_per_1m_tokens", {}),

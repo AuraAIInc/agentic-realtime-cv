@@ -81,7 +81,7 @@ class FakeServer:
 
 
 class ScriptedModel:
-    """Fake AsyncOpenAI: returns the scripted responses in order and records requests."""
+    """Fake Responses API client: returns the scripted responses in order and records requests."""
 
     def __init__(self, script):
         self.script = list(script)

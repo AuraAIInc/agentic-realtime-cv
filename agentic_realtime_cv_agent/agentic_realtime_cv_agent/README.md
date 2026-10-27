@@ -1,4 +1,4 @@
-# agentic_realtime_cv_agent: OpenAI agent over the RCAT MCP tools
+# agentic_realtime_cv_agent: Muse Spark agent over the RCAT MCP tools
 
 An LLM agent that answers questions about the cats by calling tools on three MCP servers:
 
@@ -8,15 +8,15 @@ An LLM agent that answers questions about the cats by calling tools on three MCP
 | `images__` | stored images on the SSD | `image-server` (`python -m mcp_image_server`) | image_exists, images_exist, get_image, list_images |
 | `tracking__` | tracker / period results, live and saved | this repo, inside `existing_work_before_hackathon/detection_ingest_server.py` ([tracking_mcp](../../existing_work_before_hackathon/tracking_mcp/README.md)) | list_views, get_live_status, get_last_seen, get_current_periods, get_periods, get_period_detail, get_arrival_path, get_last_movement, get_raw_detections |
 
-The model (OpenAI Responses API, default `gpt-6.1-sol`) picks the tools a query needs. The
+The model (Muse Spark `muse-spark-1.3` on the Meta Model API, via its Responses endpoint) picks the tools a query needs. The
 hub runs them (several at once when the model asks for several), and the results go back to
 the model. Images go back as real images, so the model can look at what it fetched. This
 repeats until the model answers.
 
 ```
-query ─► OpenAI ─► function calls ─► MCPHub ─► camera / image MCP servers
-            ▲                                         │
-            └──── text + images + timing ◄────────────┘
+query ─► Muse Spark ─► function calls ─► MCPHub ─► camera / image MCP servers
+               ▲                                         │
+               └──── text + images + timing ◄────────────┘
 ```
 
 ## Setup
@@ -30,7 +30,7 @@ pip install -r requirements.txt
 Add to `.env`:
 
 ```bash
-OPENAI_API_KEY=sk-...
+MODEL_API_KEY=<Meta Model API key>
 CAMERA_MCP_URL=http://<pi>:8765/mcp
 CAMERA_MCP_TOKEN=<camera MCP_AUTH_TOKEN>
 IMAGE_MCP_URL=http://10.0.0.63:10001/mcp
@@ -41,8 +41,19 @@ TRACKING_MCP_TOKEN=<websocket server TRACKING_MCP_AUTH_TOKEN>
 
 If a server is down, the agent warns and runs with the others.
 
-The model is chosen in [models.json](models.json) (`"model"`; `gpt-6-luna` is the cheap option),
-which also holds `reasoning_effort` and the OpenAI per-1M-token prices used for the cost estimate.
+Models are set per role in [models.json](models.json):
+
+| Role | Model | Use |
+|---|---|---|
+| `agent` | `muse-spark-1.3` | Agent reasoning, vision, tool calls; escalation teacher (the only role this agent calls today) |
+| `segmentation` | `sam-3.1` | Masks/boxes for training data |
+| `voice` | `muse-voice-transcribe-1.0` | Voice questions (if we build voice) |
+| `creative` | `muse-image-1.0` + `muse-wonder-1.0` | Creative output, e.g. a daily "cat diary" comic |
+| `open_weight` | `meta-models/muse-spark-open-1026` (Baseten) | Local or partner-hosted model; Muse Glimmer to self-host |
+| `coding` | Muse Code | Coding (a product, not an API model) |
+
+The file also holds the provider `base_url` / `api_key_env`, `reasoning_effort`, and the
+per-1M-token prices used for the cost estimate. `muse-spark-1.3-contributor` is the cheap option.
 
 ## Run
 
@@ -79,7 +90,7 @@ Live output shows every tool call with its timing:
 
 Yes: Mochi is on camera, and the stored image exists.
 
-[gpt-6.1-sol | turns 3 | tool calls 5 | LLM 0.214 s | tools 0.181 s | total 0.395 s | tokens in 300 / out 60 / total 360 | est. cost $0.0012]
+[muse-spark-1.3 | turns 3 | tool calls 5 | LLM 0.214 s | tools 0.181 s | total 0.395 s | tokens in 300 / out 60 / total 360 | est. cost $0.0012]
 ```
 
 - **round trip**: measured by the agent (network + server).
@@ -94,7 +105,7 @@ gitignored. Use `--no-save` to skip this, or `--json` to also print the trace.
 | Flag | Meaning |
 |---|---|
 | `--model-config file.json` | use another model/pricing file instead of `models.json` |
-| `--model` | OpenAI model id (overrides the one in `models.json`) |
+| `--model` | Meta Model API model id (overrides `roles.agent.model` in `models.json`) |
 | `--servers file.json` | use `[{"name", "url", "token"}]` instead of the env vars |
 | `--max-steps N` | max model turns per query (default 12) |
 | `--image-detail low/high/auto` | how much detail images are sent with (`low` is cheaper) |
@@ -108,7 +119,7 @@ Set `"reasoning_effort": "low" | "medium" | "high"` in `models.json` for reasoni
 |---|---|
 | `config.py` | env / JSON settings for model and servers |
 | `mcp_hub.py` | connect to several MCP servers, namespace and route tool calls |
-| `tool_adapter.py` | MCP tool schema → OpenAI function tool; MCP result → function output (text + images), timing extraction |
+| `tool_adapter.py` | MCP tool schema → Responses API function tool; MCP result → function output (text + images), timing extraction |
 | `prompts.py` | system instructions (plus each server's own instructions) |
 | `agent.py` | the tool-calling loop, run trace |
 | `cli.py` | one-shot and interactive command line |
