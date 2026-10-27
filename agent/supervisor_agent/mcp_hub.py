@@ -128,6 +128,7 @@ class MCPHub:
             q = f"{name}{SEP}{spec['name']}"
             self.tools[q] = HubTool(name, spec["name"], q, spec.get("description", ""), spec.get("input_schema") or {"type": "object", "properties": {}},
                                     meta={"returns_image": True} if spec.get("returns_image") else None)
+            _log_tool(self.tools[q])
         logger.info(f"Registered in-process '{name}' tools: {len(toolset.specs())}")
 
     async def call(self, qualified_name: str, arguments: dict) -> CallOutcome:

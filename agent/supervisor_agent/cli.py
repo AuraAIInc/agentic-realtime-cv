@@ -22,6 +22,7 @@ import sys
 from supervisor_agent.agent import MCPAgent, RunResult, ToolStep
 from supervisor_agent.config import AgentConfig
 from supervisor_agent.local_tools import LocalTools
+from supervisor_agent.local_tools.skills import SkillTools
 from supervisor_agent.mcp_hub import MCPHub
 from supervisor_agent.tasks import TaskRunner, chat_options
 
@@ -104,6 +105,7 @@ async def amain(args) -> int:
     async with MCPHub(cfg.servers) as hub:
         local = LocalTools()
         hub.add_local(local, "Cat profiles, reference images, trajectory checks, contact sheets, label set and zones (agent_data/).")
+        hub.add_local(SkillTools(), "Task skills (skills/): invoking one loads its full instructions.")
         for name, err in hub.failed.items():
             print(f"[warning] {name} server unavailable: {err}", file=sys.stderr)
         if not any(t.server not in hub.local for t in hub.tools.values()):
