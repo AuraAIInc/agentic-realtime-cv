@@ -1,4 +1,4 @@
-"""The agent loop (OpenAI Responses API + MCP tools).
+"""The agent loop (Meta Model API Responses endpoint + MCP tools).
 
     user query
       -> model decides which tools to call (0..n per turn, run concurrently)
@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass, field
 from agentic_realtime_cv_agent.config import AgentConfig
 from agentic_realtime_cv_agent.mcp_hub import MCPHub
 from agentic_realtime_cv_agent.prompts import build_instructions
-from agentic_realtime_cv_agent.tool_adapter import server_timing, to_function_output, to_openai_tool
+from agentic_realtime_cv_agent.tool_adapter import server_timing, to_function_output, to_function_tool
 
 logger = logging.getLogger(__name__)
 
@@ -87,19 +87,23 @@ class MCPAgent:
         self.cfg = cfg
         self.hub = hub
         if client is None:
+            # The Meta Model API is OpenAI-compatible, so the openai SDK is only the HTTP client here.
             from openai import AsyncOpenAI
 
-            client = AsyncOpenAI()
+            api_key = os.getenv(cfg.api_key_env)
+            if not api_key:
+                raise RuntimeError(f"{cfg.api_key_env} is not set (Meta Model API key)")
+            client = AsyncOpenAI(base_url=cfg.base_url, api_key=api_key)
         self.client = client
         self.on_event = on_event or (lambda kind, data: None)
 
     def _tools(self, names: list[str] | None = None) -> list[dict]:
         if names is None:
-            return [to_openai_tool(t) for t in self.hub.tools.values()]
+            return [to_function_tool(t) for t in self.hub.tools.values()]
         missing = [n for n in names if n not in self.hub.tools]
         if missing:
             logger.warning(f"tools not available (server down?): {missing}")
-        return [to_openai_tool(self.hub.tools[n]) for n in names if n in self.hub.tools]
+        return [to_function_tool(self.hub.tools[n]) for n in names if n in self.hub.tools]
 
     async def run(self, query: str | list, previous_response_id: str | None = None, options: RunOptions | None = None) -> RunResult:
         opts = options or RunOptions()

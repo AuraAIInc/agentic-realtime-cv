@@ -1,4 +1,4 @@
-openai>=3.37,<4
+openai>=3.37,<4  # HTTP client for the OpenAI-compatible Meta Model API
 mcp>=2.3,<3
 python-dotenv
 pyyaml
