@@ -175,6 +175,7 @@ class MCPAgent:
             self.invoke_log.submit(dict(
                 invoke_id=str(uuid.uuid4()), invoke_time=invoke_time, model=self.cfg.model, tag=opts.tag, query=query,
                 answer=result.answer, usage=dict(result.usage), est_cost_usd=self.cfg.estimate_cost_usd(result.usage),
+                pricing=self.cfg.pricing.get(self.cfg.model),
                 tool_steps=list(result.tool_steps), turns=turns_log, tools_ms=result.tools_ms, llm_ms=result.llm_ms,
                 total_ms=result.total_ms, turns_count=result.turns, stopped_reason=result.stopped_reason, reasoning_effort=effort,
                 previous_response_id=previous_response_id, last_response_id=prev_id, run_dir=run_dir,

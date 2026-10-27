@@ -34,6 +34,9 @@ CREATE TABLE IF NOT EXISTS agent_invoke (
     cached_tokens        INT           NULL,
     total_tokens         INT           NULL,
     est_cost_usd         DECIMAL(12,6) NULL,
+    price_input_per_1m   DECIMAL(12,6) NULL,
+    price_cached_per_1m  DECIMAL(12,6) NULL,
+    price_output_per_1m  DECIMAL(12,6) NULL,
     images_sent          INT           NOT NULL DEFAULT 0,
     tool_count           INT           NOT NULL DEFAULT 0,
     tool_names           TEXT          NULL,
@@ -72,8 +75,15 @@ CREATE TABLE IF NOT EXISTS tool_invoke (
 """
 
 _COLS_AGENT = ("invoke_id", "invoke_time", "model", "tag", "input_query", "agent_response", "input_tokens", "output_tokens",
-               "cached_tokens", "total_tokens", "est_cost_usd", "images_sent", "tool_count", "tool_names", "tools_ms", "llm_ms",
+               "cached_tokens", "total_tokens", "est_cost_usd", "price_input_per_1m", "price_cached_per_1m",
+               "price_output_per_1m", "images_sent", "tool_count", "tool_names", "tools_ms", "llm_ms",
                "total_ms", "turns", "stopped_reason", "reasoning_effort", "previous_response_id", "last_response_id", "run_dir")
+# Columns added after the first release: ALTER TABLE adds them to an existing agent_invoke.
+_ADDED_AGENT_COLS = {
+    "price_input_per_1m": "DECIMAL(12,6) NULL AFTER est_cost_usd",
+    "price_cached_per_1m": "DECIMAL(12,6) NULL AFTER price_input_per_1m",
+    "price_output_per_1m": "DECIMAL(12,6) NULL AFTER price_cached_per_1m",
+}
 _COLS_TOOL = ("invoke_id", "agent_invoke_id", "invoke_time", "turn", "call_id", "tool_name", "tool_input", "tool_output",
               "images_returned", "response_ms", "server_elapsed_ms", "server_steps_ms", "is_error", "error")
 _STOP = object()
@@ -165,6 +175,11 @@ class InvokeLog:
             with self._conn.cursor() as cur:
                 cur.execute(AGENT_INVOKE_DDL)
                 cur.execute(TOOL_INVOKE_DDL)
+                cur.execute("SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'agent_invoke'")
+                have = {r[0].lower() for r in cur.fetchall()}
+                for col, spec in _ADDED_AGENT_COLS.items():
+                    if col not in have:
+                        cur.execute(f"ALTER TABLE agent_invoke ADD COLUMN {col} {spec}")
             self._conn.commit()
         else:
             self._conn.ping(reconnect=True)
@@ -194,6 +209,7 @@ class InvokeLog:
 def _rows(s: dict) -> tuple[tuple, list[tuple]]:
     """Build the DB rows from a snapshot taken by MCPAgent.run (runs in the writer thread)."""
     usage = s["usage"]
+    price = s["pricing"] or {}  # USD per 1M tokens; cached falls back to input, as in estimate_cost_usd
     steps = {st.call_id: st for st in s["tool_steps"]}
     tool_rows, names, images = [], [], count_images(s["query"])
     for turn, started_at, calls, outputs in s["turns"]:
@@ -217,7 +233,7 @@ def _rows(s: dict) -> tuple[tuple, list[tuple]]:
     agent_row = (
         s["invoke_id"], s["invoke_time"], s["model"], s["tag"], _text(s["query"]), s["answer"],
         usage.get("input_tokens"), usage.get("output_tokens"), usage.get("cached_tokens"), usage.get("total_tokens"),
-        s["est_cost_usd"], images, len(names), json.dumps(names), s["tools_ms"], s["llm_ms"], s["total_ms"],
+        s["est_cost_usd"], price.get("input"), price.get("cached_input", price.get("input")), price.get("output"), images, len(names), json.dumps(names), s["tools_ms"], s["llm_ms"], s["total_ms"],
         s["turns_count"], s["stopped_reason"], s["reasoning_effort"], s["previous_response_id"], s["last_response_id"], s["run_dir"],
     )
     return agent_row, tool_rows

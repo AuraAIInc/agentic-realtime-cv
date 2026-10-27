@@ -102,11 +102,12 @@ gitignored. Use `--no-save` to skip this, or `--json` to also print the trace.
 
 With `AGENT_INVOKE_DUMP=true` in `.env`, every `MCPAgent.run` (chat query or pipeline task) is
 also written to the MySQL database in the `MYSQL_*` settings (the ingest server's database;
-needs `pymysql`). The two tables are created on first use:
+needs `pymysql`). The two tables are created on first use, and columns added later are added to
+existing tables:
 
 | Table | One row per | Columns |
 |---|---|---|
-| `agent_invoke` | agent run | `invoke_id`, `invoke_time`, `model`, `tag` (task name), `input_query`, `agent_response`, `input_tokens` / `output_tokens` / `cached_tokens` / `total_tokens`, `est_cost_usd`, `images_sent` (images in the query + tool results sent to the LLM), `tool_count`, `tool_names` (JSON list), `tools_ms`, `llm_ms`, `total_ms` (input to answer), `turns`, `stopped_reason`, `reasoning_effort`, `previous_response_id`, `last_response_id`, `run_dir` |
+| `agent_invoke` | agent run | `invoke_id`, `invoke_time`, `model`, `tag` (task name), `input_query`, `agent_response`, `input_tokens` / `output_tokens` / `cached_tokens` / `total_tokens`, `est_cost_usd` (total, from the token counts and the prices below), `price_input_per_1m` / `price_cached_per_1m` / `price_output_per_1m` (USD per 1M tokens from [models.json](models.json); NULL when the model has no pricing entry), `images_sent` (images in the query + tool results sent to the LLM), `tool_count`, `tool_names` (JSON list), `tools_ms`, `llm_ms`, `total_ms` (input to answer), `turns`, `stopped_reason`, `reasoning_effort`, `previous_response_id`, `last_response_id`, `run_dir` |
 | `tool_invoke` | tool call | `invoke_id`, `agent_invoke_id` (→ `agent_invoke.invoke_id`), `invoke_time`, `turn`, `call_id`, `tool_name`, `tool_input` (arguments JSON), `tool_output` (text; images replaced by a size placeholder), `images_returned`, `response_ms` (round trip), `server_elapsed_ms`, `server_steps_ms`, `is_error`, `error` |
 
 The agent only puts a snapshot on a queue at the end of a run; a background thread builds the
