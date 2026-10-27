@@ -69,6 +69,10 @@ TRACKING_MCP_PORT=10002          # default
 python detection_ingest_server.py
 ```
 
+Or in the background: `../run_ingest_server.sh` stops any running instance, starts a
+new one with nohup and logs to `existing_work_before_hackathon/ingest_server.log`
+(`tail -f` it). Set `ORIGINAL_VENV=<path>` to run it in a specific venv.
+
 Agent side (`.env` where the agent runs):
 
 ```bash

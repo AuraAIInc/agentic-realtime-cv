@@ -75,7 +75,7 @@ Python ≥ 3.10 everywhere (the MCP SDK needs it).
 
 | Component | Install | Run | Port |
 |---|---|---|---|
-| Ingest server + tracking MCP | `pip install -r existing_work_before_hackathon/requirements.txt` | `cd existing_work_before_hackathon && python detection_ingest_server.py` | WebSocket 8000, MCP 10002 |
+| Ingest server + tracking MCP | `pip install -r existing_work_before_hackathon/requirements.txt` | `cd existing_work_before_hackathon && python detection_ingest_server.py` (or `run_ingest_server.sh`) | WebSocket 8000, MCP 10002 |
 | Camera (on the Pi) | `cd camera_server && uv sync` | `cd camera_server && uv run python -m camera_v3` (or `run_detection_v3.sh`, which uses `~/camera_server/.venv`) | MCP 8765 |
 | Image server | `pip install -r image_server/requirements-mcp.txt` | `cd image_server && python -m mcp_image_server` (or `run_mcp_server.sh`, which uses `~/camera_server/.venv`) | MCP 10001 |
 | Agent | `pip install -r agent/requirements.txt` | `cd agent && python -m supervisor_agent "Is any cat on camera right now?"` | — |
