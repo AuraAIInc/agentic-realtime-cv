@@ -134,7 +134,12 @@ def parse_list(v):
 
 def period_summary(period_id, view_id, status: str, start, end, cat_id, cat_ids, lengths, confs, scores) -> dict:
     """One period in the shape every tool returns. lengths / confs / scores are per-cat
-    values in cat_ids order (lists, numpy arrays or the DB's '[...]' strings)."""
+    values in cat_ids order (lists, numpy arrays or the DB's '[...]' strings); start / end
+    are datetimes or the DB's 'YYYY-MM-DD HH:MM:SS.ffffff' strings."""
+    if isinstance(start, str):
+        start = parse_time(start)
+    if isinstance(end, str):
+        end = parse_time(end)
     vals = [parse_list(v) for v in (lengths, confs, scores)]
     evidence = None
     if cat_ids and all(v is not None and not isinstance(v, str) and len(v) == len(cat_ids) for v in vals):
