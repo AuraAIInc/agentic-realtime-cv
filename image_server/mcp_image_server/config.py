@@ -21,5 +21,5 @@ class Settings:
             image_root=os.getenv("IMAGE_ROOT", cls.image_root),
             host=os.getenv("IMAGE_MCP_HOST", cls.host),
             port=int(os.getenv("IMAGE_MCP_PORT", str(cls.port))),
-            auth_token=os.getenv("IMAGE_MCP_AUTH_TOKEN") or None,
+            auth_token=os.getenv("MCP_AUTH_TOKEN") or None,
         )

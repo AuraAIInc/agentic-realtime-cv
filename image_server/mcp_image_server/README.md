@@ -43,7 +43,7 @@ re-encode ≈ 110 ms (JPEG decode dominates). Expect several times slower on a P
 ## Configuration (.env)
 
 ```
-IMAGE_MCP_AUTH_TOKEN=<long random string>   # clients send Authorization: Bearer <token>
+MCP_AUTH_TOKEN=<long random string>   # the single shared value: same line in every server's .env and the agent's
 IMAGE_MCP_PORT=10001
 IMAGE_MCP_HOST=0.0.0.0
 IMAGE_ROOT=/mnt/extreme/Cat_monitor_data

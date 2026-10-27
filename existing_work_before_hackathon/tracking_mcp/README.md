@@ -61,7 +61,7 @@ All of these are tool arguments, along with `speed_threshold` (3 px/s).
 
 ```bash
 # .env on the websocket server host
-TRACKING_MCP_AUTH_TOKEN=<random string>
+MCP_AUTH_TOKEN=<random string>   # the single shared value; same line in every .env
 TRACKING_MCP_PORT=10002          # default
 # TRACKING_MCP_ENABLED=true      # default; =false never starts, =auto starts only when a token is set
 # TRACKING_IMAGE_ROOT=/mnt/extreme/Cat_monitor_data  # only for get_arrival_path include_images=true
@@ -73,7 +73,7 @@ Agent side (`.env` where the agent runs):
 
 ```bash
 TRACKING_MCP_URL=http://<websocket host>:10002/mcp
-TRACKING_MCP_TOKEN=<same token>
+MCP_AUTH_TOKEN=<same value>
 ```
 
 If `mcp` / `uvicorn` aren't installed, the websocket server logs a warning and runs without it.

@@ -22,7 +22,7 @@ class Settings:
         return cls(
             host=os.getenv("TRACKING_MCP_HOST", cls.host),
             port=int(os.getenv("TRACKING_MCP_PORT", str(cls.port))),
-            auth_token=os.getenv("TRACKING_MCP_AUTH_TOKEN") or None,
+            auth_token=os.getenv("MCP_AUTH_TOKEN") or None,
             enabled=os.getenv("TRACKING_MCP_ENABLED", cls.enabled).lower(),
             image_root=os.getenv("TRACKING_IMAGE_ROOT") or None,
         )

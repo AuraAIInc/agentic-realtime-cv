@@ -654,7 +654,7 @@ def start_in_loop(live: LiveState, history: History, settings: Settings | None =
     """Serve the MCP app on the running event loop (call from inside detection_ingest_server's main())."""
     settings = settings or Settings.from_env()
     if not settings.should_start:
-        logger.info("Tracking MCP server disabled (TRACKING_MCP_ENABLED is false, or auto without TRACKING_MCP_AUTH_TOKEN)")
+        logger.info("Tracking MCP server disabled (TRACKING_MCP_ENABLED is false, or auto without MCP_AUTH_TOKEN)")
         return None
     import uvicorn
 
@@ -685,7 +685,7 @@ def start_in_loop(live: LiveState, history: History, settings: Settings | None =
         logger.error(f"Tracking MCP server still not listening on {url} after 30s")
 
     if not settings.auth_token:
-        logger.warning("TRACKING_MCP_AUTH_TOKEN is not set: the tracking MCP server accepts requests without auth")
+        logger.warning("MCP_AUTH_TOKEN is not set: the tracking MCP server accepts requests without auth")
     logger.info(f"Starting tracking MCP server on {url}")
     task = asyncio.create_task(serve())
     asyncio.create_task(report_started())

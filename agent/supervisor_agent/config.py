@@ -6,12 +6,10 @@ and per-model token pricing come from models.json next to this file (or the file
 .env is loaded by the CLI):
 
     MODEL_API_KEY       required (Meta Model API key; the variable name is api_key_env in models.json)
+    MCP_AUTH_TOKEN      shared by the agent and all three MCP servers below
     CAMERA_MCP_URL      default http://raspberrypi.local:8765/mcp   (camera_server / camera_v3)
-    CAMERA_MCP_TOKEN    the camera's MCP_AUTH_TOKEN
     IMAGE_MCP_URL       default http://10.0.0.63:10001/mcp          (image-server / mcp_image_server)
-    IMAGE_MCP_TOKEN     the image server's IMAGE_MCP_AUTH_TOKEN
     TRACKING_MCP_URL    default http://10.0.0.165:10002/mcp         (tracking_mcp, inside existing_work_before_hackathon/detection_ingest_server.py)
-    TRACKING_MCP_TOKEN  the websocket server's TRACKING_MCP_AUTH_TOKEN
 
 Or pass --servers servers.json with a list of {"name", "url", "token"} objects.
 """
@@ -54,21 +52,22 @@ class AgentConfig:
             with open(servers_file) as f:
                 servers = [ServerConfig(**s) for s in json.load(f)]
         else:
+            token = os.getenv("MCP_AUTH_TOKEN") or None  # one token for every MCP server
             servers = [
                 ServerConfig(
                     "camera",
                     os.getenv("CAMERA_MCP_URL", "http://10.0.0.21:8765/mcp"),
-                    os.getenv("CAMERA_MCP_TOKEN") or None,
+                    token,
                 ),
                 ServerConfig(
                     "images",
                     os.getenv("IMAGE_MCP_URL", "http://10.0.0.165:10001/mcp"),
-                    os.getenv("IMAGE_MCP_TOKEN") or None,
+                    token,
                 ),
                 ServerConfig(
                     "tracking",
                     os.getenv("TRACKING_MCP_URL", "http://10.0.0.165:10002/mcp"),
-                    os.getenv("TRACKING_MCP_TOKEN") or None,
+                    token,
                 ),
             ]
         return cls(

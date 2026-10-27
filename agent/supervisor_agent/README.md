@@ -31,12 +31,10 @@ Add to `.env` (the full list for every component is in the repo's [`.env.example
 
 ```bash
 MODEL_API_KEY=<Meta Model API key>
+MCP_AUTH_TOKEN=<the single shared value for all three MCP servers>
 CAMERA_MCP_URL=http://<pi>:8765/mcp
-CAMERA_MCP_TOKEN=<camera MCP_AUTH_TOKEN>
 IMAGE_MCP_URL=http://10.0.0.63:10001/mcp
-IMAGE_MCP_TOKEN=<image server IMAGE_MCP_AUTH_TOKEN>
 TRACKING_MCP_URL=http://<websocket server host>:10002/mcp
-TRACKING_MCP_TOKEN=<websocket server TRACKING_MCP_AUTH_TOKEN>
 ```
 
 If a server is down, the agent warns and runs with the others.
