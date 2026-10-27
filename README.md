@@ -24,7 +24,7 @@ What the agent verifies becomes training data for the edge model.
           └──────── MCP ───────┴─────── MCP ───────┤
                                                    │
                                ┌───────────────────┴───────────────┐
-                               │ agentic_realtime_cv_agent         │
+                               │ agent/supervisor_agent            │
                                │  Muse Spark (Meta Model API)      │
                                │  + local tools over agent_data/   │
                                └───────────────────────────────────┘
@@ -37,15 +37,15 @@ What the agent verifies becomes training data for the edge model.
 | [`existing_work_before_hackathon/`](existing_work_before_hackathon/) | `detection_ingest_server.py` (WebSocket ingest; was `websocket_server.py`), the TrackCorrector / PeriodCorrector (`model/`), the tracking MCP server (`tracking_mcp/`) and the tracker visualization (`run_tracking_viz.py`) | Correctors and ingest 2025; tracking MCP and viz Oct 23-25 |
 | [`camera_server/`](camera_server/) | `camera_v3`: always-on YOLO detection on the Pi, streaming to the ingest server, plus an MCP control server (capture, zoom, high-res stills, detect, schedules) | camera_v3 + MCP added Oct 24-25 |
 | [`image_server/`](image_server/) | `mcp_image_server`: MCP server over the stored camera images | Added Oct 25 |
-| [`agentic_realtime_cv_agent/`](agentic_realtime_cv_agent/) | The agent (was `mcp_agent`): a tool-calling loop over the three MCP servers, pipeline tasks (validate identity, check trajectory, assign labels), skills and `agent_data/` (cat profiles, reference images, labels, zones) | Built Oct 23-25, ported to Meta models |
+| [`agent/`](agent/) | The agent (`supervisor_agent` package, was `mcp_agent`): a tool-calling loop over the three MCP servers, pipeline tasks (validate identity, check trajectory, assign labels), skills and `agent_data/` (cat profiles, reference images, labels, zones); design notes in `memory/`, `escalation/`, `generalization/` | Built Oct 23-25, ported to Meta models, restructured Oct 26 |
 | [`documents/`](documents/) | How the correctors work, the tracker visualization, the hackathon guide and the project plan | |
 
-Each folder is run from inside itself (for example `cd agentic_realtime_cv_agent`).
+Each folder is run from inside itself (for example `cd agent`).
 
 ## Models (LLM)
 
 All LLM use goes through Meta models. They're set per role in
-[`agentic_realtime_cv_agent/agentic_realtime_cv_agent/models.json`](agentic_realtime_cv_agent/agentic_realtime_cv_agent/models.json),
+[`agent/supervisor_agent/models.json`](agent/supervisor_agent/models.json),
 together with the provider endpoint and token prices.
 
 | Role | Model | Use | Wired in code |
@@ -78,16 +78,16 @@ Python ≥ 3.10 everywhere (the MCP SDK needs it).
 | Ingest server + tracking MCP | `pip install -r existing_work_before_hackathon/requirements.txt` | `cd existing_work_before_hackathon && python detection_ingest_server.py` | WebSocket 8000, MCP 10002 |
 | Camera (on the Pi) | `cd camera_server && uv sync` | `uv run python -m camera_v3` (or `run_detection_v3.sh`) | MCP 8765 |
 | Image server | `pip install -r image_server/requirements-mcp.txt` | `cd image_server && python -m mcp_image_server` (or `run_mcp_server.sh`) | MCP 10001 |
-| Agent | `pip install -r agentic_realtime_cv_agent/requirements.txt` | `cd agentic_realtime_cv_agent && python -m agentic_realtime_cv_agent "Is any cat on camera right now?"` | — |
+| Agent | `pip install -r agent/requirements.txt` | `cd agent && python -m supervisor_agent "Is any cat on camera right now?"` | — |
 
 Agent modes:
 
 ```bash
-cd agentic_realtime_cv_agent
-python -m agentic_realtime_cv_agent                    # interactive chat
-python -m agentic_realtime_cv_agent --list-tools       # what the agent can call
-python -m agentic_realtime_cv_agent --task check_trajectory --payload '{"period_id": 8812}'
-python -m agentic_realtime_cv_agent --labels           # add labels / zones by chatting
+cd agent
+python -m supervisor_agent  # interactive chat
+python -m supervisor_agent --list-tools  # what the agent can call
+python -m supervisor_agent --task check_trajectory --payload '{"period_id": 8812}'
+python -m supervisor_agent --labels  # add labels / zones by chatting
 ```
 
 If an MCP server is down, the agent warns and carries on with the others.
@@ -95,13 +95,13 @@ If an MCP server is down, the agent warns and carries on with the others.
 ## Tests
 
 ```bash
-cd agentic_realtime_cv_agent && python -m pytest agentic_realtime_cv_agent/tests -q   # fake model client, no API key needed
+cd agent && python -m pytest supervisor_agent/tests -q   # fake model client, no API key needed
 cd existing_work_before_hackathon && python -m tracking_mcp.test_motion              # tracker motion helpers
 ```
 
 ## More docs
 
-- Agent: [`agentic_realtime_cv_agent/agentic_realtime_cv_agent/README.md`](agentic_realtime_cv_agent/agentic_realtime_cv_agent/README.md)
+- Agent: [`agent/supervisor_agent/README.md`](agent/supervisor_agent/README.md)
 - Camera: [`camera_server/camera_v3/README.md`](camera_server/camera_v3/README.md)
 - Image server: [`image_server/mcp_image_server/README.md`](image_server/mcp_image_server/README.md)
 - Tracking MCP: [`existing_work_before_hackathon/tracking_mcp/README.md`](existing_work_before_hackathon/tracking_mcp/README.md)
