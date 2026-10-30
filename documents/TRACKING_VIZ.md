@@ -49,3 +49,11 @@ bottom band = y range (`y / 480 + 1`, mostly clipped by `ylim(0, 1)`).
 - **Cat-colored bars**: revised (committed) detections
 - **Blue bars**: upcoming raw detections for this cat (grey = other cats)
 - **Green / purple thick lines**: current base / target
+- **Red vertical lines**: frame escalation points — images where the tracker faced a
+  difficult choice (ambiguous relabel, duplicate tie, jump reset, target guess,
+  teleport split, long interpolation). The reason is printed as a JSON line on stdout.
+- **Light red spans**: period escalation spans — shaky PeriodCorrector verdicts (close
+  vote, weak winner, forced reassignment, long unknown track, low quality) or gaps
+  where a new period may connect to the previous one (merge candidate, static /
+  sleeping-cat link). See "Escalation points" in
+  [HOW_IT_WORKS.md](HOW_IT_WORKS.md) and `model/README.md` for the full catalog.
