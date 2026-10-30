@@ -92,6 +92,13 @@ python -m supervisor_agent --labels  # add labels / zones by chatting
 
 If an MCP server is down, the agent warns and carries on with the others.
 
+Download one hour of images from the image server (into `image_server/retrieved_images/`,
+git-ignored; see the [image server README](image_server/mcp_image_server/README.md#download-an-hour-of-images)):
+
+```bash
+python image_server/fetch_hour_images.py 2025-05-05-19
+```
+
 ## Tests
 
 ```bash

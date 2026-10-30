@@ -14,23 +14,26 @@ import base64
 import hmac
 import json
 import logging
+from dataclasses import replace
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult, ImageContent, TextContent
 
 from mcp_image_server.config import Settings
 from mcp_image_server.image_store import ImageStore, InvalidName, transform
+from mcp_image_server.s3_store import S3Store
 from mcp_image_server.timing import Timer
 
 logger = logging.getLogger("mcp_image_server")
 
 INSTRUCTIONS = """\
-Serves cat-monitor images stored on the image server's SSD.
+Serves cat-monitor images: the SSD archive, plus AWS S3 for captures newer
+than the cutoff day (default 2026-10-20, see IMAGE_S3_CUTOFF_DATE).
 Image names are capture timestamps: YYYY-MM-DD-HH-MM-SS-ffffff.jpg
 (the same names the camera writes and the /v1/image-server/query API uses).
-Use image_exists / images_exist first (sub-millisecond, no image data), then
+Use image_exists / images_exist first (no image data), then
 get_image only for the images you actually need. Every response includes
-timing.elapsed_ms (server-side time for that call).
+timing.elapsed_ms (server-side time for that call) and source (s3 or local).
 """
 
 
@@ -51,7 +54,12 @@ def _error(e: Exception, timer: Timer, **context) -> CallToolResult:
 
 
 def build_server(settings: Settings) -> MCPServer:
-    store = ImageStore(settings.image_root)
+    s3 = S3Store.from_settings(settings)
+    if s3 is not None:
+        logger.info(f"S3 backend on: s3://{s3.bucket}/{s3.prefix}/ for captures after {s3.cutoff}")
+    else:
+        logger.info("S3 backend off (no S3_AWS_ACCESS_KEY / S3_AWS_SECRET_ACCESS_KEY): local SSD only")
+    store = ImageStore(settings.image_root, s3=s3, s3_cutoff=settings.s3_cutoff_date)
     mcp = MCPServer(name="rcat-image-server", instructions=INSTRUCTIONS)
 
     @mcp.tool(structured_output=False)
@@ -164,7 +172,7 @@ def main() -> None:
     p.add_argument("--port", type=int, default=settings.port)
     p.add_argument("--root", default=settings.image_root)
     a = p.parse_args()
-    settings = Settings(a.root, a.host, a.port, settings.auth_token)
+    settings = replace(settings, image_root=a.root, host=a.host, port=a.port)
 
     logger.info(f"Image root: {settings.image_root}")
     if a.transport == "stdio":

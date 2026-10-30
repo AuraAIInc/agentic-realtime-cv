@@ -31,13 +31,13 @@ from model.track_corrector import TrackCorrector
 MIN_CONFIDENCE = 0.5
 
 
-def load_detections(db, view_id, start_time, end_time):
+def load_detections(db, view_id, start_time, end_time, table="detection"):
     # Rows before ~2025-05 predate views and have view_id NULL, so include them too.
     columns = ["create_time", "cat_id", "box_x1", "box_y1", "box_x2", "box_y2", "conf"]
     sql = f"""
     SELECT img.create_time, det.{", det.".join(columns[1:])}
     FROM images img
-    LEFT JOIN detection det
+    LEFT JOIN {table} det
     ON img.create_time = det.create_time AND det.view_id <=> img.view_id
     WHERE (img.view_id = %s OR img.view_id IS NULL) AND img.create_time BETWEEN %s AND %s
     """
@@ -92,6 +92,8 @@ def main():
     parser.add_argument("--start", required=True, help='e.g. "2024-12-05 21:00"')
     parser.add_argument("--end", required=True, help='e.g. "2024-12-05 21:05"')
     parser.add_argument("--cat-idx", type=int, default=0, help="index into the view's cat_ids to plot")
+    parser.add_argument("--table", choices=["detection", "revised_detection"], default="detection",
+                        help="detections to replay: raw model output or the stored revised ones")
     parser.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "output"))
     parser.add_argument("--fps", type=int, default=5)
     parser.add_argument("--no-video", action="store_true")
@@ -100,7 +102,7 @@ def main():
     start_time = datetime.datetime.strptime(args.start, "%Y-%m-%d %H:%M")
     end_time = datetime.datetime.strptime(args.end, "%Y-%m-%d %H:%M")
 
-    detections = load_detections(MysqlDB(), args.view_id, start_time, end_time)
+    detections = load_detections(MysqlDB(), args.view_id, start_time, end_time, args.table)
     print(f"Loaded {len(detections)} rows, {detections['create_time'].nunique()} frames")
 
     track_corrector = make_read_only(TrackCorrector(view_id=args.view_id))

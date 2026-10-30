@@ -225,4 +225,5 @@ agent/output/
 agent/agent_data/logs/
 agent/agent_data/label_suggestions/
 agent/agent_data/references/**/video/
+image_server/retrieved_images/
 .DS_Store

@@ -3,3 +3,4 @@ mcp>=2.3,<3
 uvicorn>=0.30
 python-dotenv
 Pillow  # only used by get_image when cropping / resizing / re-encoding
+boto3>=1.35  # only used for images newer than IMAGE_S3_CUTOFF_DATE (S3 backend)

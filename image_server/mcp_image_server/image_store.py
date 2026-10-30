@@ -1,9 +1,14 @@
-"""Image lookup on the SSD, using the same layout as the Flask API:
+"""Image lookup: SSD archive plus S3 for recent captures.
+
+Local layout (same as the Flask API):
 
     <root>/YYYY-MM-DD/HH/MM/YYYY-MM-DD-HH-MM-SS-ffffff.jpg
 
 The folder is derived from the file name, so checking an image is a single
 stat() call: no directory listing, no index, no database.
+
+Images captured after the S3 cutoff day (default 2026-10-20) live on S3 at
+s3://<bucket>/<prefix>/YYYY-MM-DD/HH/MM/<name>.jpg instead; see s3_store.py.
 """
 
 from __future__ import annotations
@@ -29,8 +34,18 @@ class InvalidName(ValueError):
 
 
 class ImageStore:
-    def __init__(self, root: str):
+    def __init__(self, root: str, s3=None, s3_cutoff: datetime.date | None = None):
         self.root = root
+        self.s3 = s3
+        self._cutoff = s3_cutoff or (s3.cutoff if s3 is not None else None)
+
+    # ---------------------------------------------------------------- routing
+    def _use_s3(self, t: datetime.datetime) -> bool:
+        return self.s3 is not None and self._cutoff is not None and t.date() > self._cutoff
+
+    def _use_s3_day(self, day: str) -> bool:
+        # Day prefixes are zero-padded YYYY-MM-DD, so string order matches date order.
+        return self.s3 is not None and self._cutoff is not None and day > self._cutoff.isoformat()
 
     # ---------------------------------------------------------------- paths
     def resolve(self, image_name: str) -> tuple[datetime.datetime, str]:
@@ -47,16 +62,23 @@ class ImageStore:
     # ---------------------------------------------------------------- lookup
     def info(self, image_name: str, include_dimensions: bool, timer: Timer) -> dict:
         t, path = self.resolve(image_name)
-        timer.mark("resolve")
+        if self._use_s3(t):
+            out = self.s3.info(image_name, t, include_dimensions, timer)
+            if out.get("exists"):
+                return out
+            # fall through to the SSD copy when S3 has no such key
+        else:
+            timer.mark("resolve")
         try:
             st = os.stat(path)
         except FileNotFoundError:
             timer.mark("stat")
-            return {"image_name": image_name, "exists": False}
+            return {"image_name": image_name.strip(), "exists": False, "source": "local"}
         timer.mark("stat")
         out = {
-            "image_name": image_name,
+            "image_name": image_name.strip(),
             "exists": True,
+            "source": "local",
             "size_bytes": st.st_size,
             "captured_at": t.isoformat(timespec="microseconds"),
             "modified_at": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(timespec="milliseconds"),
@@ -71,13 +93,33 @@ class ImageStore:
         return out
 
     def read(self, image_name: str, timer: Timer) -> tuple[dict, bytes | None]:
-        info = self.info(image_name, include_dimensions=False, timer=timer)
-        if not info["exists"]:
-            return info, None
-        _, path = self.resolve(image_name)
+        t, path = self.resolve(image_name)
+        if self._use_s3(t):
+            info, data = self.s3.read(image_name, t, timer)
+            if data is not None:
+                return info, data
+            # fall through to the SSD copy when S3 has no such key
+        else:
+            timer.mark("resolve")
+        try:
+            st = os.stat(path)
+        except FileNotFoundError:
+            timer.mark("stat")
+            return {"image_name": image_name.strip(), "exists": False, "source": "local"}, None
+        timer.mark("stat")
         with open(path, "rb") as f:
             data = f.read()
         timer.mark("read_file")
+        info = {
+            "image_name": image_name.strip(),
+            "exists": True,
+            "source": "local",
+            "size_bytes": st.st_size,
+            "captured_at": t.isoformat(timespec="microseconds"),
+            "modified_at": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(timespec="milliseconds"),
+            "relative_path": os.path.relpath(path, self.root),
+            "mime_type": "image/jpeg",
+        }
         return info, data
 
     def list(self, prefix: str, limit: int, timer: Timer) -> dict:
@@ -86,6 +128,8 @@ class ImageStore:
         if not PREFIX_RE.match(prefix):
             raise InvalidName("prefix must be YYYY-MM-DD, YYYY-MM-DD-HH or YYYY-MM-DD-HH-MM")
         parts = prefix.split("-")
+        if self._use_s3_day("-".join(parts[:3])):
+            return self.s3.list(prefix, limit, timer)
         folder = os.path.join(self.root, "-".join(parts[:3]), *parts[3:])
         timer.mark("resolve")
         names: list[str] = []
@@ -102,7 +146,7 @@ class ImageStore:
                 if truncated:
                     break
         timer.mark("list")
-        return {"prefix": prefix, "count": len(names), "truncated": truncated, "images": names}
+        return {"prefix": prefix, "count": len(names), "truncated": truncated, "images": names, "source": "local"}
 
 
 def transform(data: bytes, max_side: int | None, box: list[int] | None, timer: Timer) -> tuple[bytes, dict]:
