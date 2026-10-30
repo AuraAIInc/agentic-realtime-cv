@@ -57,7 +57,7 @@ def make_read_only(corrector):
     return corrector
 
 
-def plot_cat(track_corrector, cat_idx):
+def plot_cat(track_corrector, period_corrector, cat_idx):
     # process_images(plot_progress=True) only plots cat index 0; hook select_target instead,
     # which is where process_images plots, so any cat can be visualized.
     select_target = track_corrector.select_target
@@ -66,7 +66,10 @@ def plot_cat(track_corrector, cat_idx):
         select_target(idx)
         if idx == cat_idx:
             tc = track_corrector
-            tc.plot_2mins(tc.buffer, tc.revised_detection, idx, tc.base, tc.target)
+            tc.plot_2mins(
+                tc.buffer, tc.revised_detection, idx, tc.base, tc.target,
+                frame_escalations=tc.escalations, period_escalations=period_corrector.escalations,
+            )
 
     track_corrector.select_target = select_target_and_plot
 
@@ -89,8 +92,8 @@ def frames_to_video(frame_dir, video_path, fps):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--view-id", type=int, required=True)
-    parser.add_argument("--start", required=True, help='e.g. "2024-12-05 21:00"')
-    parser.add_argument("--end", required=True, help='e.g. "2024-12-05 21:05"')
+    parser.add_argument("--start", required=True, help='e.g. "2024-12-05 21:00" (seconds optional: "21:00:30.5")')
+    parser.add_argument("--end", required=True, help='e.g. "2024-12-05 21:05" (seconds optional)')
     parser.add_argument("--cat-idx", type=int, default=0, help="index into the view's cat_ids to plot")
     parser.add_argument("--table", choices=["detection", "revised_detection"], default="detection",
                         help="detections to replay: raw model output or the stored revised ones")
@@ -98,9 +101,11 @@ def main():
     parser.add_argument("--fps", type=int, default=5)
     parser.add_argument("--no-video", action="store_true")
     args = parser.parse_args()
+    # absolute, because main() chdirs into it before writing the MP4
+    args.out = os.path.abspath(args.out)
 
-    start_time = datetime.datetime.strptime(args.start, "%Y-%m-%d %H:%M")
-    end_time = datetime.datetime.strptime(args.end, "%Y-%m-%d %H:%M")
+    start_time = datetime.datetime.fromisoformat(args.start)
+    end_time = datetime.datetime.fromisoformat(args.end)
 
     detections = load_detections(MysqlDB(), args.view_id, start_time, end_time, args.table)
     print(f"Loaded {len(detections)} rows, {detections['create_time'].nunique()} frames")
@@ -109,7 +114,7 @@ def main():
     period_corrector = make_read_only(PeriodCorrector(view_id=args.view_id))
     # plot_2mins draws upcoming raw detections from this and can't handle empty images
     track_corrector.images = detections.dropna(subset=["cat_id"])
-    plot_cat(track_corrector, args.cat_idx)
+    plot_cat(track_corrector, period_corrector, args.cat_idx)
     counts = detections["cat_id"].dropna().astype(int).value_counts()
     print("Detections per cat_idx:", {track_corrector.id_to_idx.get(c, f"?{c}"): n for c, n in counts.items()})
     print(f"Plotting cat_idx {args.cat_idx} (cat_id {track_corrector.idx_to_id[args.cat_idx]})")

@@ -11,13 +11,17 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 from model.db import MysqlDB
+from model.escalation import Escalation, emit as emit_escalation
+from model.escalation_config import EscalationConfig
 from model.visualization import CAT_COLORS
 
 
 class TrackCorrector:
-    def __init__(self, view_id):
+    def __init__(self, view_id, escalation_config=None):
         self.db = MysqlDB()
         self.cat_ids = self._get_view_cat_ids(view_id)
+        self.escalation_config = escalation_config or EscalationConfig.from_env()
+        self.escalations = []
         self.min_conf = 0.4
         self.buffer_range = 15  # sec
         self.max_undetected_gap = 60  # sec
@@ -41,6 +45,7 @@ class TrackCorrector:
         self.max_period_conf = [0 for _ in range(self.number_of_cats)]
         self.detecting = [False for _ in range(self.number_of_cats)]
         self.last_revised_detection = [None for _ in range(self.number_of_cats)]
+        self._synth_run = [[None, False] for _ in range(self.number_of_cats)]
         logger.info("TrackCorrector initialized")
         self.images = None
         self.bulk_revised_detection_insert = []
@@ -92,9 +97,10 @@ class TrackCorrector:
                 return True
         return False
 
-    def match_buffer_history(self, new_cat_id, img_detected, cat_idx):
+    def match_buffer_history_rule(self, new_cat_id, img_detected, cat_idx):
+        """Which history rule the detection matches ("iou_last", "distance", "iou_buffer"), else None."""
         if self.last_detection[cat_idx] is None and self.base[cat_idx] is None:
-            return False
+            return None
 
         det_reference = self.last_detection[cat_idx] if self.last_detection[cat_idx] is not None else self.base[cat_idx]
         new_box = img_detected[new_cat_id][:4]
@@ -102,18 +108,27 @@ class TrackCorrector:
         logger.debug(f"{new_cat_id}, {cat_idx}, IOU: {iou}. new_box: {new_box}, ref_box:{det_reference[1:5]}")
 
         if iou > 0.2:
-            return True
+            return "iou_last"
 
         if cat_idx not in img_detected and get_distance(new_box, det_reference[1:5]) < self.img_width / 4:
-            return True
+            return "distance"
 
         for b in self.buffer[cat_idx]:
             if b[1] is None:
                 continue
             iou = get_iou(new_box, b[1:5])
             if iou > 0.8:
-                return True
-        return False
+                return "iou_buffer"
+        return None
+
+    def match_buffer_history(self, new_cat_id, img_detected, cat_idx):
+        return self.match_buffer_history_rule(new_cat_id, img_detected, cat_idx) is not None
+
+    def _escalate(self, code, reason, time, cat_id=None, period_id=None, metrics=None):
+        emit_escalation(
+            self.escalations,
+            Escalation(time=time, scope="frame", code=code, reason=reason, cat_id=cat_id, period_id=period_id, metrics=metrics or {}),
+        )
 
     def smooth_buffer(self, cat_idx):
         original_detections = []
@@ -142,7 +157,17 @@ class TrackCorrector:
                     self.last_detection_index[cat_idx] -= 1
             return
 
-        img_detected = remove_multi_labeling(img_detected)
+        multi_label_kills = []
+        img_detected = remove_multi_labeling(img_detected, multi_label_kills)
+        for killed_id, kept_id, dup_iou, conf_margin in multi_label_kills:
+            if conf_margin < self.escalation_config.duplicate_tie_margin:
+                self._escalate(
+                    "T3",
+                    f"duplicate boxes (IoU {dup_iou:.2f}) kept cat {kept_id} over cat {killed_id} on a {conf_margin:.2f} confidence margin",
+                    self.right_time,
+                    cat_id=kept_id,
+                    metrics={"killed_cat_id": killed_id, "iou": dup_iou, "conf_margin": conf_margin},
+                )
 
         correct_from_to = {}
         logger.debug(f"Last detection: {self.last_detection}")
@@ -165,6 +190,31 @@ class TrackCorrector:
                     correct_from_to[new_detected_cat_id] = cat_id
                     logger.debug(f"Corrected cat {new_detected_cat_id} to {cat_id}: {img_detected}")
                     break
+        # T1/T2: relabel ambiguity, reassessed read-only (same img_detected the loop used).
+        for relabeled_id, assigned_id in correct_from_to.items():
+            matched = {}
+            for c_idx, c_id in enumerate(self.cat_ids):
+                if c_id == relabeled_id:
+                    continue
+                rule = self.match_buffer_history_rule(relabeled_id, img_detected, c_idx)
+                if rule is not None:
+                    matched[c_id] = rule
+            if len(matched) >= 2:
+                self._escalate(
+                    "T1",
+                    f"detection labeled cat {relabeled_id} fits {len(matched)} cats {sorted(matched)}; kept first match cat {assigned_id}",
+                    self.right_time,
+                    cat_id=assigned_id,
+                    metrics={"original_cat_id": relabeled_id, "candidates": matched, "chosen_cat_id": assigned_id},
+                )
+            elif matched.get(assigned_id) == "distance":
+                self._escalate(
+                    "T2",
+                    f"detection labeled cat {relabeled_id} relabeled to cat {assigned_id} by center distance alone, no IoU support",
+                    self.right_time,
+                    cat_id=assigned_id,
+                    metrics={"original_cat_id": relabeled_id, "rule": "distance"},
+                )
         corrected_img_detected = {}
         for cat_id in img_detected:
             corrected_img_detected[correct_from_to.get(cat_id, cat_id)] = img_detected[cat_id]
@@ -177,7 +227,20 @@ class TrackCorrector:
                 x1, y1, x2, y2, original_cat_id, conf = img_detected[cat_id]
                 new_det = [self.right_time, x1, y1, x2, y2, original_cat_id, conf] + [correct_from_to.get(cat_id, cat_id)]
 
-                if self.last_detection[cat_idx] is None and self.base[cat_idx] is not None and get_iou(self.base[cat_idx][1:5], [x1, y1, x2, y2]) < 0.2:
+                jump_iou = (
+                    get_iou(self.base[cat_idx][1:5], [x1, y1, x2, y2])
+                    if self.last_detection[cat_idx] is None and self.base[cat_idx] is not None
+                    else None
+                )
+                if jump_iou is not None and jump_iou < 0.2:
+                    self._escalate(
+                        "T4",
+                        f"cat {cat_id} new box missed the base (IoU {jump_iou:.2f}); wiped {len(self.buffer[cat_idx])} buffered rows and closed the period",
+                        self.right_time,
+                        cat_id=cat_id,
+                        period_id=self.period_id[cat_idx] or None,
+                        metrics={"base_iou": jump_iou, "wiped_rows": len(self.buffer[cat_idx])},
+                    )
                     for k in range(len(self.buffer[cat_idx])):
                         self.buffer[cat_idx][k][1:7] = [None] * 5 + [0]
                         self.buffer_origin[cat_idx][k][1:7] = [None] * 5 + [0]
@@ -260,6 +323,23 @@ class TrackCorrector:
         self.target[cat_idx] = target_det
         logger.debug(f"Cat: {cat_idx} --- Target (normal): {list(target_det) if target_det is not None else None}")
         self.max_buffer_conf[cat_idx] = max_conf
+        if target_det is not None:
+            self._escalate(
+                "T5",
+                f"cat {self.idx_to_id[cat_idx]} target is a fallback guess: nothing overlaps the base and nothing above 0.5 conf (best {max_conf:.2f})",
+                self.right_time,
+                cat_id=self.idx_to_id[cat_idx],
+                metrics={"target_conf": max_conf, "target_time": target_det[0]},
+            )
+        elif self.detecting[cat_idx] and any(b[1] is not None for b in self.buffer[cat_idx]):
+            self._escalate(
+                "T5",
+                f"cat {self.idx_to_id[cat_idx]} has an open period but no target: buffer holds only empty or interpolated rows",
+                self.right_time,
+                cat_id=self.idx_to_id[cat_idx],
+                period_id=self.period_id[cat_idx] or None,
+                metrics={"buffer_rows": len(self.buffer[cat_idx])},
+            )
 
     def collect_buffer(self, cat_idx, save_db, view_id):
         # self.check_buffer_label()
@@ -289,13 +369,24 @@ class TrackCorrector:
                         # speed = get_speed(last_revised, revised)
                         # logger.debug(f"Continuous distance: {distance:.2f} (Time:{revised[0]} - Cat:{revised[-2]})")
                         if distance > 300:
+                            old_period_id = self.period_id[cat_idx]
                             self.period_id[cat_idx] = self.get_new_period_id()
+                            retracted = 0
                             while len(self.revised_detection[cat_idx]) > 0 and self.revised_detection[cat_idx][-1][5] is None:
                                 remove_detection = self.revised_detection[cat_idx].pop()
                                 self.original_detection[cat_idx].pop()
                                 self.remove_revised_detection_from_db(remove_detection)
                                 # print("Remove detection:", list(remove_detection))
+                                retracted += 1
                                 yield False, remove_detection
+                            self._escalate(
+                                "T6",
+                                f"cat {self.idx_to_id[cat_idx]} box jumped {distance:.0f} px; split period {old_period_id} -> {self.period_id[cat_idx]} and retracted {retracted} interpolated rows",
+                                revised[0],
+                                cat_id=self.idx_to_id[cat_idx],
+                                period_id=self.period_id[cat_idx],
+                                metrics={"distance_px": distance, "box_conf": revised[6], "old_period_id": old_period_id, "retracted_rows": retracted},
+                            )
                 # create_time, box_x1, box_y1, box_x2, box_y2, conf, cat_id, period_id = revised_detection
 
                 # Create Time, Box_x1, Box_y1, Box_x2, Box_y2, Original_Cat_ID, Conf, Cat_ID, Period_ID
@@ -336,6 +427,22 @@ class TrackCorrector:
             poop[7] = self.idx_to_id[cat_idx]
             # print(f"pooped cat: {cat_idx} - {kk}: {list(poop)}")
             yield True, poop
+            if poop[1] is not None and poop[5] is None:
+                run_start, run_flagged = self._synth_run[cat_idx]
+                if run_start is None:
+                    self._synth_run[cat_idx] = [poop[0], False]
+                elif not run_flagged and (poop[0] - run_start).total_seconds() > self.escalation_config.synth_gap_seconds:
+                    self._escalate(
+                        "T7",
+                        f"cat {self.idx_to_id[cat_idx]} committed {(poop[0] - run_start).total_seconds():.1f} s of interpolated-only frames with no real detection",
+                        poop[0],
+                        cat_id=self.idx_to_id[cat_idx],
+                        period_id=self.period_id[cat_idx] or None,
+                        metrics={"gap_start": run_start, "gap_seconds": (poop[0] - run_start).total_seconds()},
+                    )
+                    self._synth_run[cat_idx][1] = True
+            else:
+                self._synth_run[cat_idx] = [None, False]
             if poop[1] is None:
                 self.detecting[cat_idx] = False
                 self.last_revised_detection[cat_idx] = None
@@ -428,7 +535,7 @@ class TrackCorrector:
         shutil.rmtree("tracking_process", ignore_errors=True)
         os.mkdir("tracking_process")
 
-    def plot_2mins(self, buffer, revised_detection, cat_idx, base, target, width=640, height=480):
+    def plot_2mins(self, buffer, revised_detection, cat_idx, base, target, width=640, height=480, frame_escalations=None, period_escalations=None):
 
         time_range = 90
 
@@ -488,6 +595,16 @@ class TrackCorrector:
                 [target[cat_idx][0], target[cat_idx][0]], [target[cat_idx][1] / width, target[cat_idx][4] / height + 1], color="#9392BE", lw=10, alpha=0.5
             )
 
+        window_left = create_time - datetime.timedelta(seconds=time_range)
+        window_right = create_time + datetime.timedelta(seconds=time_range)
+        for esc in frame_escalations or []:
+            if window_left <= esc.time <= window_right:
+                plt.axvline(esc.time, color="red", lw=1.5, alpha=0.85)
+        for esc in period_escalations or []:
+            span_start, span_end = esc.time, esc.end_time or esc.time
+            if span_end >= window_left and span_start <= window_right:
+                plt.axvspan(max(span_start, window_left), min(span_end, window_right), color="red", alpha=0.12)
+
         # plt.text(buffer[cat_id][-1][0], 2.05, buffer[cat_id][-1][0], ha='center')
         plt.title(
             f"Create Time: {create_time}, \nBase: {list(base[cat_idx]) if base[cat_idx] is not None else None}\n,"
@@ -544,6 +661,8 @@ class TrackCorrector:
         self.max_period_conf = [0 for _ in range(self.number_of_cats)]
         self.detecting = [False for _ in range(self.number_of_cats)]
         self.last_revised_detection = [None for _ in range(self.number_of_cats)]
+        self.escalations = []
+        self._synth_run = [[None, False] for _ in range(self.number_of_cats)]
         self.images = None
         self.bulk_revised_detection_insert = []
         self.bulf_original_detection_insert = []
@@ -581,7 +700,7 @@ class TrackCorrector:
             self.bulf_original_detection_insert = []
 
 
-def remove_multi_labeling(img_detected):
+def remove_multi_labeling(img_detected, kills=None):
     keys = list(img_detected.keys())
     for i in range(len(keys)):
         for j in range(i + 1, len(keys)):
@@ -590,6 +709,9 @@ def remove_multi_labeling(img_detected):
             iou = get_iou(img_detected[keys[i]][:4], img_detected[keys[j]][:4])
             if iou > 0.7:
                 kill_detection = keys[i] if img_detected[keys[i]][5] < img_detected[keys[j]][5] else keys[j]
+                kept_detection = keys[j] if kill_detection == keys[i] else keys[i]
+                if kills is not None:
+                    kills.append((kill_detection, kept_detection, iou, abs(img_detected[keys[i]][5] - img_detected[keys[j]][5])))
                 img_detected.pop(kill_detection)
                 logger.debug(f"Remove multi labeling of cat {kill_detection}: {img_detected}")
     return img_detected

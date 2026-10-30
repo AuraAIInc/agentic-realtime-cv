@@ -181,6 +181,21 @@ In each frame from [run_tracking_viz.py](../existing_work_before_hackathon/run_t
 - `Period: [...]` lines printed by the script are PeriodCorrector output. They appear only
   when a whole group of overlapping periods has ended.
 
+## Escalation points
+
+Both correctors flag the exact spots they could not decide confidently, for
+human/AI review: frame-level branch points (`T1`–`T7`: ambiguous relabels,
+duplicate ties, jump resets, target guesses, teleports, long interpolation)
+and period-level verdicts (`P1`–`P7`: close votes, weak winners, forced
+reassignments, long unknowns, low quality, merge candidates, static links).
+Each point is one
+JSON line on stdout and one record in the corrector's `escalations` list, drawn
+by the viz as red lines (frames) and light red spans (periods). Strategy,
+thresholds, and tuning are documented in
+[`model/README.md`](../existing_work_before_hackathon/model/README.md); all
+knobs live in
+[`model/escalation_config.py`](../existing_work_before_hackathon/model/escalation_config.py).
+
 ## Known quirks
 
 - `remove_revised_detection_from_db` loops with `for k, q in self.bulk_revised_detection_insert`,
