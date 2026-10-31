@@ -1,0 +1,52 @@
+# camera_sim configuration. Fill in the <...> values; CLI flags override the
+# replay range / speed (see README.md). Run from agent/: python -m camera_sim
+
+# --- identity: stamped on every streamed message, same keys as camera_server ---
+device_id: "sim-camera-01"
+view_id: <view id, e.g. 3>
+model_id: <model id>
+user_id: <user id>
+user_name: "<user name>"
+cat_names:
+  # <cat tracker id>: "<name>"  (used only by models with cat_classes: true)
+  0: "<cat 0 name>"
+  1: "<cat 1 name>"
+
+# --- replay source: images are YYYY-MM-DD-HH-MM-SS-ffffff.jpg, any subfolders ---
+image_dir: "/Users/muyang/Documents/Personal/Github/agentic-realtime-cv/image_server/retrieved_images"
+replay_start: "2026-10-26-02-00-00"  # inclusive; hour dir, name prefix, or full name
+replay_end: ""  # inclusive; "" = to the last image
+replay_speed: 1.0  # 1.0 = realtime pacing from the file timestamps; 0 = as fast as possible
+max_gap_sleep: 2.0  # never sleep longer than this between frames (skips long gaps)
+loop: false  # restart from the first image when the range is exhausted
+limit: 0  # max frames to serve, 0 = all
+exit_when_done: true  # shut down once the range is fully streamed (ignored with loop)
+
+# --- image geometry (retrieved images are 800x600) ---
+camera_img_size: [800, 600]  # display space; detection boxes use this, as on the Pi
+capture_size: null  # null = same as camera_img_size
+
+# --- detection output: byte-identical schema to the camera_server stream ---
+ws_enabled: true
+ws_url: "ws://127.0.0.1:8000"  # detection_ingest_server.py listens here
+q_max: 100
+output_jsonl: ""  # e.g. "sim_output.jsonl" to also tee every message to a file
+loop_model: "yolov8s"  # model the always-on loop runs; "default" once best.pt is set up
+
+# --- models: same schema as camera_v3/models.json ---
+models_config: "models.json"  # relative to this folder unless absolute
+model_s3_save_path: ""  # <s3 key of best.pt> fallback s3_key for the default model
+model_training_bucket_name: ""  # <training bucket> for the S3 model download
+extra_models: {}
+
+# --- frame look-back / tracks, same as camera_server ---
+frame_buffer_size: 120
+frame_buffer_jpeg_quality: 85
+
+# --- MCP control server: same tools as camera_server ---
+mcp_enabled: true
+mcp_host: "127.0.0.1"
+mcp_port: 8766
+mcp_auth_token: null  # null = use $MCP_AUTH_TOKEN; set a string to override
+
+log_level: "INFO"
