@@ -5,3 +5,7 @@ pyyaml
 pymysql  # agent_invoke / tool_invoke dump (AGENT_INVOKE_DUMP=true)
 pillow
 pytest  # tests only
+websockets  # live camera ingest (agent/main.py --live)
+matplotlib  # tracking charts + process viz
+numpy  # tracking correctors
+pandas  # period stats
