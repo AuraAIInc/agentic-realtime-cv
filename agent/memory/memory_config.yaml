@@ -1,0 +1,19 @@
+version: 1
+view_id: 3
+frame_size: [800, 600]
+spatial_levels:
+  - {name: cells, grid: [8, 6]}      # L0: 100px cells, 48 total
+  - {name: zones, grid: [4, 3]}       # L1: each covers 2x2 L0 cells
+  - {name: full_view, grid: [1, 1]}   # L2: whole camera view
+temporal_levels:
+  - {name: slot_5min, minutes: 5}
+  - {name: hour, minutes: 60}
+  - {name: day, minutes: 1440}
+  - {name: week, minutes: 10080}       # month deferred to keep v1 simple
+retention_days: {slot_5min: 7, hour: 30, day: 180, week: 0}  # 0 = keep
+retrieval: {spatial_chebyshev_radius: 1, temporal_history_days: 7, semantic_top_k: 5}
+promotion: {idle_seconds: 300, min_pattern_support: 3, stable_weight_cap: 50,
+            flip_threshold: 3, recent_kept: 5}
+worker: {queue_warn_depth: 100, promote_coalesce: true}
+store_dir: "agent/memory/data"          # per-view file view_<id>_long_term.yaml (durable; git-ignored)
+llm: {model_role: memory, max_units_per_call: 8}
