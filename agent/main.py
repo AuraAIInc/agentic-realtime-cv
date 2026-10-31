@@ -75,6 +75,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fps", type=int, default=5, help="MP4 frame rate for --process-viz (default 5)")
     parser.add_argument("--no-video", action="store_true", help="render process frames but skip stitching process.mp4")
     parser.add_argument("--out", default=str(DEFAULT_RUNS_DIR), help=f"run output base dir (default {DEFAULT_RUNS_DIR})")
+    parser.add_argument(
+        "--memory",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="feed period verdicts + escalations to spatial-temporal memory (default --memory; --no-memory skips it entirely)",
+    )
+    parser.add_argument(
+        "--bootstrap-frame",
+        metavar="PATH",
+        default=None,
+        help="image file used once to bootstrap memory vision descriptions (optional)",
+    )
     return parser
 
 
@@ -207,6 +219,104 @@ class _EscCollector:
         return new
 
 
+# ---------------------------------------------------------------- memory builders
+# agent.memory is imported lazily (inside these helpers) so tracking runs even
+# when memory is disabled or the memory package cannot load.
+
+
+PERIOD_ROW_TS_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
+
+
+def _parse_period_ts(value) -> datetime.datetime:
+    if isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.datetime.strptime(value, PERIOD_ROW_TS_FORMAT)
+        except ValueError:
+            pass
+        return datetime.datetime.fromisoformat(value)
+    raise ValueError(f"bad period timestamp {value!r}")
+
+
+def _period_text(period_id, start, end, coord_cat, name, det_len, det_conf, score) -> str:
+    span = f"{start:%H:%M}-{end:%H:%M}"
+    who = f"{name} (cat {coord_cat})" if coord_cat is not None else "no cat assigned"
+    bits = [f"Period {period_id} ({span}): {who}."]
+    if det_len is not None:
+        bits.append(f"{int(det_len)} detections")
+    if det_conf is not None:
+        bits.append(f"mean conf {float(det_conf):.2f}")
+    if score is not None:
+        bits.append(f"score {float(score):.1f}")
+    if len(bits) > 1:
+        return bits[0] + " " + ", ".join(bits[1:]) + "."
+    return bits[0]
+
+
+def period_row_to_memory_event(row: list, *, view_id: int, id_to_name=None, box=None):
+    """Build a MemoryEvent from a PeriodCorrector list row (live hook)."""
+    from agent.memory import MemoryEvent
+
+    start = _parse_period_ts(row[0])
+    end = _parse_period_ts(row[1])
+    coord = row[2]
+    pid = row[14] if len(row) > 14 else None
+    name = (id_to_name or {}).get(coord) if coord is not None else None
+    text = _period_text(pid, start, end, coord, name, row[3], row[4], row[7])
+    return MemoryEvent(
+        time=start, end_time=end, view_id=int(view_id), box=box,
+        cat_id=int(coord) if coord is not None else None, period_id=pid,
+        kind="period", text=text,
+    )
+
+
+def period_dict_to_memory_event(row: dict, *, view_id: int, id_to_name=None, box=None):
+    """Build a MemoryEvent from a periods.jsonl dict (replay hook)."""
+    from agent.memory import MemoryEvent
+
+    start = _parse_period_ts(row["start"])
+    end = _parse_period_ts(row["end"])
+    coord = row.get("coordinated_cat_id")
+    pid = row.get("period_id")
+    winner = row.get("winner") or {}
+    name = (id_to_name or {}).get(coord) if coord is not None else None
+    text = _period_text(
+        pid, start, end, coord, name,
+        winner.get("detect_length"), winner.get("detect_conf"), winner.get("score"),
+    )
+    return MemoryEvent(
+        time=start, end_time=end, view_id=int(view_id), box=box,
+        cat_id=int(coord) if coord is not None else None, period_id=pid,
+        kind="period", text=text,
+    )
+
+
+def escalation_to_memory_event(esc, *, view_id: int, box=None):
+    """Build a MemoryEvent from an Escalation object (live hook)."""
+    from agent.memory import MemoryEvent
+
+    return MemoryEvent(
+        time=esc.time, end_time=esc.end_time, view_id=int(view_id), box=box,
+        cat_id=esc.cat_id, period_id=esc.period_id, kind="escalation",
+        text=f"[{esc.code}] {esc.reason}", code=esc.code,
+    )
+
+
+def escalation_dict_to_memory_event(row: dict, *, view_id: int, box=None):
+    """Build a MemoryEvent from an escalations.jsonl dict (replay hook)."""
+    from agent.memory import MemoryEvent
+
+    time = parse_message_time(row["time"])
+    end_raw = row.get("end_time")
+    return MemoryEvent(
+        time=time, end_time=parse_message_time(end_raw) if end_raw else None,
+        view_id=int(view_id), box=box, cat_id=row.get("cat_id"),
+        period_id=row.get("period_id"), kind="escalation",
+        text=f"[{row.get('code')}] {row.get('reason')}", code=row.get("code"),
+    )
+
+
 class TrackingRun:
     """One bounded tracking run: ingest loop + artifacts + run.json."""
 
@@ -228,6 +338,10 @@ class TrackingRun:
         mode: str = "replay",
         args_dict: dict | None = None,
         record_raw: bool = False,
+        memory: bool = True,
+        memory_store_path=None,
+        memory_llm_client=None,
+        bootstrap_frame: str | None = None,
     ):
         self.view_id = int(view_id)
         self.start = start
@@ -258,6 +372,98 @@ class TrackingRun:
         self._raw_fh = None
         if record_raw:
             self._raw_fh = open(store.run_dir / RunStore.STREAM_FILE, "a", encoding="utf-8", buffering=1)
+        self.memory = None
+        if memory:
+            try:
+                self.memory = self._init_memory(memory_store_path, memory_llm_client)
+            except Exception:
+                logger.exception("memory init failed; continuing without memory")
+                self.memory = None
+        if self.memory is not None and bootstrap_frame:
+            try:
+                self.memory.bootstrap(Path(bootstrap_frame).read_bytes())
+            except Exception:
+                logger.exception("memory bootstrap failed; continuing in text-only mode")
+
+    # -- memory (all hooks are best-effort; they never break the run) --
+
+    def _init_memory(self, store_path, llm_client):
+        from agent.memory import LongTermMemory, MemoryConfig
+
+        cfg = MemoryConfig.from_yaml()
+        cfg.view_id = self.view_id
+        if llm_client is None:
+            try:
+                from agent.memory import MetaModelClient
+
+                llm_client = MetaModelClient(role=cfg.llm_model_role)
+            except Exception:
+                logger.warning("memory LLM unavailable; using offline stub", exc_info=True)
+                from agent.memory import StubLLMClient
+
+                llm_client = StubLLMClient()
+        return LongTermMemory(config=cfg, store_path=store_path, llm_client=llm_client)
+
+    def _memory_tick(self, now) -> None:
+        if self.memory is None:
+            return
+        try:
+            self.memory.tick(now)
+        except Exception:
+            logger.exception("memory tick failed")
+
+    def _period_box(self, period_id) -> tuple | None:
+        """Median box of a closed period's detections (None when unavailable)."""
+        try:
+            boxes = [
+                [d[1], d[2], d[3], d[4]]
+                for d in self.period.detections
+                if len(d) >= 9 and d[8] == period_id and d[1] is not None
+            ]
+        except Exception:
+            return None
+        if not boxes:
+            return None
+        try:
+            cols = sorted(boxes, key=lambda b: (b[0], b[1], b[2], b[3]))
+            mid = cols[len(cols) // 2]
+            vals = [float(v) for v in mid]
+            if not all(math.isfinite(v) for v in vals):
+                return None
+            return (vals[0], vals[1], vals[2], vals[3])
+        except (TypeError, ValueError):
+            return None
+
+    def _memory_store_period_row(self, row) -> None:
+        if self.memory is None or row is None:
+            return
+        try:
+            pid = row[14] if isinstance(row, list) and len(row) > 14 else None
+            event = period_row_to_memory_event(
+                row, view_id=self.view_id, id_to_name=self.id_to_name,
+                box=self._period_box(pid),
+            )
+            self.memory.store(event)
+        except Exception:
+            logger.exception("memory period store failed; dropping event")
+
+    def _memory_store_escalation(self, esc) -> None:
+        if self.memory is None:
+            return
+        try:
+            self.memory.store(escalation_to_memory_event(esc, view_id=self.view_id))
+        except Exception:
+            logger.exception("memory escalation store failed; dropping event")
+
+    def _shutdown_memory(self) -> None:
+        if self.memory is None:
+            return
+        try:
+            self.memory.shutdown()
+        except Exception:
+            logger.exception("memory shutdown failed")
+        finally:
+            self.memory = None
 
     # -- ingest --
 
@@ -295,6 +501,7 @@ class TrackingRun:
         for key, value in stats.items():
             self.counts[f"detections_{key}"] += value
         self._ingest(create_time, img_detected, msg)
+        self._memory_tick(create_time)
         self._persist_new_escalations()
         if self.process_viz:
             self._render_frame()
@@ -312,16 +519,18 @@ class TrackingRun:
             sink=self.sink,
         ):
             if is_append:
-                for _ in self.period.process_detection(revised, view_id=self.view_id, sink=self.sink):
-                    pass
+                for row in self.period.process_detection(revised, view_id=self.view_id, sink=self.sink):
+                    self._memory_store_period_row(row)
             else:
                 self.period.unprocess_detection(revised)
 
     def _persist_new_escalations(self) -> None:
         for esc in self._escs.drain(self.track):
             self.store.append_escalation(esc)
+            self._memory_store_escalation(esc)
         for esc in self._escs.drain(self.period):
             self.store.append_escalation(esc)
+            self._memory_store_escalation(esc)
 
     def _render_frame(self) -> None:
         path = self.frame_dir / f"frame_{self._viz_n:06d}.jpg"
@@ -337,8 +546,8 @@ class TrackingRun:
         logger.info("finalizing run ...")
         self.track.finish_up(self.sink)
         self._persist_new_escalations()
-        for _ in self.period.finish_up(self.view_id, self.sink):
-            pass
+        for row in self.period.finish_up(self.view_id, self.sink):
+            self._memory_store_period_row(row)
         self._persist_new_escalations()
         if self._raw_fh is not None:
             self._raw_fh.close()
@@ -402,6 +611,7 @@ class TrackingRun:
         }
         self.store.write_run_json(meta)
         self.store.close()
+        self._shutdown_memory()
         logger.info(f"run written: {run_dir}")
         return run_dir
 
@@ -569,6 +779,8 @@ def main(argv=None) -> int:
         mode=mode,
         args_dict=vars(args),
         record_raw=args.live,
+        memory=args.memory,
+        bootstrap_frame=args.bootstrap_frame,
     )
     logger.info(f"run dir: {store.run_dir} (view {args.view_id}, cats {cat_ids})")
     if args.live:

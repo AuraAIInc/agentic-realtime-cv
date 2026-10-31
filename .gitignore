@@ -222,6 +222,8 @@ __marimo__/
 # Runtime output (tracking viz frames / MP4, agent run logs)
 existing_work_before_hackathon/output/
 agent/output/
+# Durable memory store (plain-language YAML, written at runtime)
+agent/memory/data/
 agent/agent_data/logs/
 agent/agent_data/label_suggestions/
 agent/agent_data/references/**/video/

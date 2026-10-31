@@ -9,6 +9,11 @@
       "use": "Agent reasoning, vision, tool calls; escalation teacher",
       "api": "responses"
     },
+    "memory": {
+      "model": "muse-spark-1.3",
+      "use": "Spatial-temporal memory: store merges, promote summaries, bootstrap vision",
+      "api": "responses"
+    },
     "segmentation": {
       "model": "sam-3.1",
       "use": "Masks/boxes for training data (open-vocabulary finding is out of scope, §2)",
