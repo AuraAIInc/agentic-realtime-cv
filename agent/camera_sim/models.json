@@ -1,0 +1,13 @@
+{
+  "default": {
+    "description": "This user's cat-identity model (best.pt). Classes are the user's cats, so detections carry cat_id. Set model_s3_save_path in sim_config.yaml (or place best.pt in models/) to use it.",
+    "weights": "./models/best.pt",
+    "cat_classes": true
+  },
+  "yolov8s": {
+    "description": "Generic COCO model (80 classes, e.g. cat, dog, person). No cat identities (cat_id -1). Auto-downloaded into ./models/ on first use.",
+    "weights": "./models/yolov8s.pt",
+    "hub": "yolov8s.pt",
+    "cat_classes": false
+  }
+}

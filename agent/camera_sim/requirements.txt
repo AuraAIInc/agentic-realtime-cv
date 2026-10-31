@@ -1,0 +1,13 @@
+# camera_sim dependencies. Install into the project .venv (from the repo root):
+#   source .venv/bin/activate && pip install -r agent/camera_sim/requirements.txt
+ultralytics>=8.3.107,<8.4  # YOLO detection + tracking (pulls torch, scipy, requests)
+lap>=0.5.12  # linear assignment for the ultralytics tracker (also in camera_server)
+opencv-python>=4.11.0.86,<5
+numpy>=1.26.4
+mcp>=2.3,<3
+uvicorn>=0.30
+websocket-client>=1.8.0  # WS sender reused from camera_v3
+python-dotenv>=1.0.1
+pyyaml>=6
+pillow>=10
+boto3>=1.35  # only needed to download best.pt from S3
