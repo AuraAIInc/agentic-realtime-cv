@@ -1,0 +1,114 @@
+# What each camera__capture_high_res size gives you, and when to use it.
+# These are properties of the camera's capture modes (resolution, crop, sharpness), not of
+# the scene: they stay valid when the camera is moved. Measured from one still per size
+# (2026-11-01, night, indoor lamp light); samples in camera_server/resolution_samples/.
+#
+# region: the part of the FULL view (1920x1080 = [0, 0, 1, 1]) the size covers, as
+#   [x1, y1, x2, y2] fractions, estimated by eye (+-0.03). Not every size shows the full view,
+#   despite the tool description: some are crops, and 800x600 is off-centre.
+# detail: pixels per unit of scene width, relative to 1920x1080 (1.0). Higher = an object
+#   occupies more pixels. A crop can carry more detail than a larger full-view size.
+# kb: typical JPEG size at full resolution (pass max_side to shrink what is returned).
+# Every capture_high_res call pauses detection ~3 s, whatever the size.
+# Bump `version` on every change.
+
+version: 1
+cameras:
+  "/dev/video0":                # USB wide-angle (fisheye) camera; currently view 3
+    stream_size: [800, 600]     # always-on detection stream; detection boxes use these coords
+    lens: >
+      Wide-angle with strong barrel distortion toward the edges and corners of the full view.
+      Full-view sizes show the most distortion; centre crops show little.
+    light: >
+      Exposure and colour are the same across sizes (auto exposure; at night a warm, slightly
+      green cast and a hot spot where light reflects). Smaller sizes look slightly darker and
+      more contrasty, and noise in dark areas is more visible relative to detail.
+    sizes:
+      - size: [1920, 1080]
+        aspect: "16:9"
+        region: [0.00, 0.00, 1.00, 1.00]
+        boundary: full view, all four edges
+        detail: 1.00
+        kb: 320
+        max_fps: 30
+        quality: >
+          Sharpest. Fine texture (fur, fabric, small parts of objects) is resolved; supports
+          2-3x digital zoom crops before blocking shows.
+        use_for: [identity checks, fine visual cues, zoom crop around a box, reference/training images]
+        avoid_for: [frequent or low-budget calls]
+
+      - size: [1280, 720]
+        aspect: "16:9"
+        region: [0.00, 0.00, 1.00, 1.00]
+        boundary: full view (same framing as 1920x1080)
+        detail: 0.67
+        kb: 205
+        max_fps: 60
+        quality: Good. Shapes, pose and mid-size objects clear; fine texture softer than 1920x1080.
+        use_for: [full-view overview with good detail, find or count objects anywhere in the view]
+        avoid_for: [fine texture or deep zoom; use 1920x1080]
+
+      - size: [1280, 1024]
+        aspect: "5:4"
+        region: [0.15, 0.00, 0.85, 1.00]
+        boundary: centre crop; loses ~15% of the width on each side, full height
+        detail: 0.95
+        kb: 210
+        max_fps: 30
+        quality: >
+          Very sharp, nearly 1920x1080 detail on the central 70% of the width, with the least
+          edge distortion. Most pixels on a central object of any size except 1920x1080.
+        use_for: [detail on something in the central area, at a smaller file than 1920x1080]
+        avoid_for: [anything in the left or right ~15% of the full view (out of frame)]
+
+      - size: [1024, 768]
+        aspect: "4:3"
+        region: [0.17, 0.05, 0.83, 0.92]
+        boundary: centre crop; loses ~17% each side and a little at top and bottom
+        detail: 0.80
+        kb: 160
+        max_fps: 30
+        quality: Sharp; a little less detail than 1280x1024 over a slightly smaller area.
+        use_for: [central-area detail with a smaller file]
+        avoid_for: [edges of the full view; prefer 1280x1024 for this framing when detail matters]
+
+      - size: [800, 600]
+        aspect: "4:3"
+        region: [0.03, 0.00, 0.62, 0.86]
+        boundary: OFF-CENTRE crop, shifted left and up; the right ~40% and bottom ~15% of the full view are out of frame
+        detail: 0.70
+        kb: 100
+        max_fps: 60
+        quality: Moderate; mid-size objects recognisable, small objects are a few pixels.
+        use_for: [see exactly what the detector saw (stream coords), the left part of the full view]
+        avoid_for: [right side or bottom edge of the full view; its boxes do not map 1:1 onto other sizes]
+
+      - size: [640, 480]
+        aspect: "4:3"
+        region: [0.125, 0.00, 0.875, 1.00]
+        boundary: central 4:3 part of the full view; loses ~12% each side, full height
+        detail: 0.44
+        kb: 70
+        max_fps: 120
+        quality: Fair; an animal or person and its pose are recognisable, small objects and texture are soft.
+        use_for: [cheap frequent checks of where something is or what changed]
+        avoid_for: [identity checks, small details]
+
+      - size: [320, 240]
+        aspect: "4:3"
+        region: [0.00, 0.00, 1.00, 1.00]
+        boundary: full view squeezed into 4:3 (shapes look horizontally narrow)
+        detail: 0.17
+        kb: 28
+        max_fps: 120
+        quality: Low; objects are small blobs, only presence and rough position are readable.
+        use_for: [thumbnail, presence or motion check, minimal tokens]
+        avoid_for: [classification, identity, reading anything]
+
+    choose:                     # first matching need wins
+      - {need: "identity, fine texture, or a zoom crop around a box", size: [1920, 1080]}
+      - {need: "full-view overview with good detail", size: [1280, 720]}
+      - {need: "most detail on the central area at a smaller file", size: [1280, 1024]}
+      - {need: "what the detector saw, in stream coordinates", size: [800, 600]}
+      - {need: "cheap frequent check, central area", size: [640, 480]}
+      - {need: "thumbnail or presence only, full view", size: [320, 240]}

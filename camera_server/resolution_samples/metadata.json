@@ -1,0 +1,319 @@
+{
+  "description": "One full-view still per resolution the Pi camera supports, via the camera_v3 MCP tool capture_high_res (no crop, max_side=null).",
+  "source": {
+    "mcp_url": "http://10.0.0.21:8765/mcp",
+    "tool": "capture_high_res",
+    "device": "/dev/video0",
+    "device_id": "c2d5f3ce14067817",
+    "view_id": 3,
+    "server_commit": "15d5e2e"
+  },
+  "timezone": "Pi local clock (UTC)",
+  "always_on_capture_size": [
+    800,
+    600
+  ],
+  "max_size": [
+    1920,
+    1080
+  ],
+  "also_listed_yuyv": "same 7 sizes in YUYV at lower max fps (6-30 fps)",
+  "images": [
+    {
+      "file": "1920x1080.jpg",
+      "width": 1920,
+      "height": 1080,
+      "aspect_ratio": "16:9",
+      "megapixels": 2.074,
+      "camera_format": "MJPG",
+      "camera_max_fps": 30.0,
+      "captured_at": "2026-11-01T03:18:29.442",
+      "requested_size": [
+        1920,
+        1080
+      ],
+      "used_size": [
+        1920,
+        1080
+      ],
+      "size_choice": "listed size",
+      "crop_box": null,
+      "always_on_stream_size": false,
+      "file_bytes": 328380,
+      "sha256": "a283e1cde6f0d42a4a9e3921159e0ad6302c1e544ef294ae5ccd93024c6b801f",
+      "view": {
+        "region": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "boundary": "full view, all four edges",
+        "detail": 1.0,
+        "quality": "Sharpest. Fine texture (fur, fabric, small parts of objects) is resolved; supports 2-3x digital zoom crops before blocking shows.\n",
+        "use_for": [
+          "identity checks",
+          "fine visual cues",
+          "zoom crop around a box",
+          "reference/training images"
+        ],
+        "avoid_for": [
+          "frequent or low-budget calls"
+        ]
+      }
+    },
+    {
+      "file": "1280x1024.jpg",
+      "width": 1280,
+      "height": 1024,
+      "aspect_ratio": "5:4",
+      "megapixels": 1.311,
+      "camera_format": "MJPG",
+      "camera_max_fps": 30.0,
+      "captured_at": "2026-11-01T03:18:32.751",
+      "requested_size": [
+        1280,
+        1024
+      ],
+      "used_size": [
+        1280,
+        1024
+      ],
+      "size_choice": "listed size",
+      "crop_box": null,
+      "always_on_stream_size": false,
+      "file_bytes": 215135,
+      "sha256": "75854846979aee7ce7db5470956283aea4e07165a0efa2d3c60dbc485a45f7d2",
+      "view": {
+        "region": [
+          0.15,
+          0.0,
+          0.85,
+          1.0
+        ],
+        "boundary": "centre crop; loses ~15% of the width on each side, full height",
+        "detail": 0.95,
+        "quality": "Very sharp, nearly 1920x1080 detail on the central 70% of the width, with the least edge distortion. Most pixels on a central object of any size except 1920x1080.\n",
+        "use_for": [
+          "detail on something in the central area",
+          "at a smaller file than 1920x1080"
+        ],
+        "avoid_for": [
+          "anything in the left or right ~15% of the full view (out of frame)"
+        ]
+      }
+    },
+    {
+      "file": "1280x720.jpg",
+      "width": 1280,
+      "height": 720,
+      "aspect_ratio": "16:9",
+      "megapixels": 0.922,
+      "camera_format": "MJPG",
+      "camera_max_fps": 60.0,
+      "captured_at": "2026-11-01T03:18:35.379",
+      "requested_size": [
+        1280,
+        720
+      ],
+      "used_size": [
+        1280,
+        720
+      ],
+      "size_choice": "listed size",
+      "crop_box": null,
+      "always_on_stream_size": false,
+      "file_bytes": 210365,
+      "sha256": "ba7b3751d2e0817ee19d1ed630dd853b73368b49bb442595b20b83e42273f59f",
+      "view": {
+        "region": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "boundary": "full view (same framing as 1920x1080)",
+        "detail": 0.67,
+        "quality": "Good. Shapes, pose and mid-size objects clear; fine texture softer than 1920x1080.",
+        "use_for": [
+          "full-view overview with good detail",
+          "find or count objects anywhere in the view"
+        ],
+        "avoid_for": [
+          "fine texture or deep zoom; use 1920x1080"
+        ]
+      }
+    },
+    {
+      "file": "1024x768.jpg",
+      "width": 1024,
+      "height": 768,
+      "aspect_ratio": "4:3",
+      "megapixels": 0.786,
+      "camera_format": "MJPG",
+      "camera_max_fps": 30.0,
+      "captured_at": "2026-11-01T03:18:38.559",
+      "requested_size": [
+        1024,
+        768
+      ],
+      "used_size": [
+        1024,
+        768
+      ],
+      "size_choice": "listed size",
+      "crop_box": null,
+      "always_on_stream_size": false,
+      "file_bytes": 161591,
+      "sha256": "853e0e2f0537b94db865a9b544677e068b7fca09ec9fa6e1c70dc0bfe060acb7",
+      "view": {
+        "region": [
+          0.17,
+          0.05,
+          0.83,
+          0.92
+        ],
+        "boundary": "centre crop; loses ~17% each side and a little at top and bottom",
+        "detail": 0.8,
+        "quality": "Sharp; a little less detail than 1280x1024 over a slightly smaller area.",
+        "use_for": [
+          "central-area detail with a smaller file"
+        ],
+        "avoid_for": [
+          "edges of the full view; prefer 1280x1024 for this framing when detail matters"
+        ]
+      }
+    },
+    {
+      "file": "800x600.jpg",
+      "width": 800,
+      "height": 600,
+      "aspect_ratio": "4:3",
+      "megapixels": 0.48,
+      "camera_format": "MJPG",
+      "camera_max_fps": 60.0,
+      "captured_at": "2026-11-01T03:18:40.857",
+      "requested_size": [
+        800,
+        600
+      ],
+      "used_size": [
+        800,
+        600
+      ],
+      "size_choice": "listed size",
+      "crop_box": null,
+      "always_on_stream_size": true,
+      "file_bytes": 99430,
+      "sha256": "8a72a00860966e4cde85399b7d28feb80f60de53e2f9e7b3c8058575a7161c67",
+      "view": {
+        "region": [
+          0.03,
+          0.0,
+          0.62,
+          0.86
+        ],
+        "boundary": "OFF-CENTRE crop, shifted left and up; the right ~40% and bottom ~15% of the full view are out of frame",
+        "detail": 0.7,
+        "quality": "Moderate; mid-size objects recognisable, small objects are a few pixels.",
+        "use_for": [
+          "see exactly what the detector saw (stream coords)",
+          "the left part of the full view"
+        ],
+        "avoid_for": [
+          "right side or bottom edge of the full view; its boxes do not map 1:1 onto other sizes"
+        ]
+      }
+    },
+    {
+      "file": "640x480.jpg",
+      "width": 640,
+      "height": 480,
+      "aspect_ratio": "4:3",
+      "megapixels": 0.307,
+      "camera_format": "MJPG",
+      "camera_max_fps": 120.101,
+      "captured_at": "2026-11-01T03:18:42.685",
+      "requested_size": [
+        640,
+        480
+      ],
+      "used_size": [
+        640,
+        480
+      ],
+      "size_choice": "listed size",
+      "crop_box": null,
+      "always_on_stream_size": false,
+      "file_bytes": 72190,
+      "sha256": "67af7649b985c705cd514abf298393f31717e928f6535038254f991d60120bd0",
+      "view": {
+        "region": [
+          0.125,
+          0.0,
+          0.875,
+          1.0
+        ],
+        "boundary": "central 4:3 part of the full view; loses ~12% each side, full height",
+        "detail": 0.44,
+        "quality": "Fair; an animal or person and its pose are recognisable, small objects and texture are soft.",
+        "use_for": [
+          "cheap frequent checks of where something is or what changed"
+        ],
+        "avoid_for": [
+          "identity checks",
+          "small details"
+        ]
+      }
+    },
+    {
+      "file": "320x240.jpg",
+      "width": 320,
+      "height": 240,
+      "aspect_ratio": "4:3",
+      "megapixels": 0.077,
+      "camera_format": "MJPG",
+      "camera_max_fps": 120.101,
+      "captured_at": "2026-11-01T03:18:44.496",
+      "requested_size": [
+        320,
+        240
+      ],
+      "used_size": [
+        320,
+        240
+      ],
+      "size_choice": "listed size",
+      "crop_box": null,
+      "always_on_stream_size": false,
+      "file_bytes": 28065,
+      "sha256": "22987f82e25aa7ee430f040ad4953a74a30bb25f32b4f10f88b9e7982682d143",
+      "view": {
+        "region": [
+          0.0,
+          0.0,
+          1.0,
+          1.0
+        ],
+        "boundary": "full view squeezed into 4:3 (shapes look horizontally narrow)",
+        "detail": 0.17,
+        "quality": "Low; objects are small blobs, only presence and rough position are readable.",
+        "use_for": [
+          "thumbnail",
+          "presence or motion check",
+          "minimal tokens"
+        ],
+        "avoid_for": [
+          "classification",
+          "identity",
+          "reading anything"
+        ]
+      }
+    }
+  ],
+  "findings": [
+    "Not every size shows the full view: 1920x1080, 1280x720 and 320x240 are full view; 640x480, 1280x1024 and 1024x768 are centre crops; 800x600 is an off-centre crop (left/up).",
+    "Exposure and colour are the same across sizes; smaller sizes look slightly darker.",
+    "Scene-independent summary and selection guide: agent/agent_data/config/camera_resolutions.yaml"
+  ]
+}
