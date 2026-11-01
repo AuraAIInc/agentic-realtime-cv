@@ -127,7 +127,8 @@ def get_period_speed(period, detections, cat_id):
     return np.array(speed_curves).T
 
 
-def plot_detection_details(start_time, end_time, source="sql", revised=False, plot_conf=False, rolling_window=50, width=640, height=480):
+def plot_detection_details(start_time, end_time, source="sql", revised=False, plot_conf=False, rolling_window=50, width=640, height=480,
+                           save_path=None, show=True):
     if source == "sql":
         images, detections, detected_period, cat_states = _get_data_from_sql_for_plot(start_time, end_time, revised)
     else:
@@ -203,5 +204,8 @@ def plot_detection_details(start_time, end_time, source="sql", revised=False, pl
     plt.xlim(start_time, end_time)
     plt.ylim(-0.5, 3.5)
     plt.yticks([], [])
-    plt.show()
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight")
+    if show:
+        plt.show()
     return True

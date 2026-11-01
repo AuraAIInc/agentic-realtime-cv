@@ -100,6 +100,8 @@ class ReplaySource:
         self._thread = threading.Thread(target=self._run, name="replay_source", daemon=True)
         self.actual_size: tuple[int, int] | None = None
         self.read_fps: float = 0.0
+        self.last_read_ms: float | None = None  # most recent imread, ms (mirrors FrameSource)
+        self.read_ms: float | None = None  # mean imread over the last 5 s window, ms
         self.finished = threading.Event()
 
     # ---- lifecycle ----
@@ -178,13 +180,18 @@ class ReplaySource:
     def _run(self) -> None:
         idx, prev_t = 0, None
         t_window, n_window = time.monotonic(), 0
+        rd_sum, rd_n = 0.0, 0
         while not self._stop.is_set():
             t, path = self.files[idx]
             if prev_t is not None and self.speed > 0:
                 dt = (t - prev_t).total_seconds() / self.speed
                 if dt > 0:
                     time.sleep(min(dt, self.max_gap_sleep))
+            t_rd = time.monotonic()
             frame = cv2.imread(path)
+            took_ms = (time.monotonic() - t_rd) * 1000
+            self.last_read_ms = round(took_ms, 2)
+            rd_sum, rd_n = rd_sum + took_ms, rd_n + 1
             if frame is None:
                 logger.warning(f"Unreadable replay image, skipping: {path}")
             else:
@@ -206,7 +213,9 @@ class ReplaySource:
                 n_window += 1
                 if time.monotonic() - t_window >= 5:
                     self.read_fps = n_window / (time.monotonic() - t_window)
+                    self.read_ms = round(rd_sum / rd_n, 2) if rd_n else None
                     t_window, n_window = time.monotonic(), 0
+                    rd_sum, rd_n = 0.0, 0
             prev_t = t
             idx += 1
             if idx >= len(self.files):

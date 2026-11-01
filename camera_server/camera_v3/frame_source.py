@@ -45,6 +45,8 @@ class FrameSource:
         self._thread = threading.Thread(target=self._run, name="frame_source", daemon=True)
         self.actual_size: tuple[int, int] | None = None
         self.read_fps: float = 0.0
+        self.last_read_ms: float | None = None  # most recent vid.read() call, ms
+        self.read_ms: float | None = None  # mean vid.read() over the last 5 s window, ms
         self._still_requests: queue.Queue = queue.Queue()
         self._still_lock = threading.Lock()  # one still at a time
         self._modes: list[dict] | None = None
@@ -216,11 +218,16 @@ class FrameSource:
         file_dt = 1.0 / (vid.get(cv2.CAP_PROP_FPS) or 15.0) if is_file else 0.0
         failures = 0
         t_window, n_window = time.monotonic(), 0
+        rd_sum, rd_n = 0.0, 0
         logger.info(f"Video source opened: {self.source} (file={is_file})")
         while not self._stop.is_set():
             if not self._still_requests.empty():
                 vid = self._serve_stills(vid)
+            t_rd = time.monotonic()
             ret, frame = vid.read()
+            took_ms = (time.monotonic() - t_rd) * 1000
+            self.last_read_ms = round(took_ms, 2)
+            rd_sum, rd_n = rd_sum + took_ms, rd_n + 1
             if not ret or frame is None or frame.size == 0:
                 failures += 1
                 if is_file:
@@ -252,7 +259,9 @@ class FrameSource:
             n_window += 1
             if time.monotonic() - t_window >= 5:
                 self.read_fps = n_window / (time.monotonic() - t_window)
+                self.read_ms = round(rd_sum / rd_n, 2) if rd_n else None
                 t_window, n_window = time.monotonic(), 0
+                rd_sum, rd_n = 0.0, 0
             if file_dt:
                 time.sleep(file_dt)
         vid.release()
