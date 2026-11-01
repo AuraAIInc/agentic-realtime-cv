@@ -26,7 +26,7 @@ Layout (default output image_server/retrieved_images/<hour>/, git-ignored):
     overwritten unless --overwrite-labels is passed, so labelImg edits survive reruns.
 
 Image download is stdlib-only. Labels need pymysql plus MYSQL_HOST/PORT/DB/USER/PASSWORD
-from the environment or the nearest .env (same lookup as IMAGE_MCP_URL/MCP_AUTH_TOKEN).
+from the repo-root .env (same file as IMAGE_MCP_URL/MCP_AUTH_TOKEN; it wins over the shell).
 The chart needs matplotlib/seaborn/pandas on top and never fails the export: if its
 dependencies are missing or the hour has no data, a warning is printed instead
 (pass --no-viz to skip it).
@@ -51,23 +51,31 @@ PREFIXED_RE = re.compile(r"^(\d+)_(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{6}\.jp
 RETRIEVED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "retrieved_images")
 
 
+REPO_ENV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+
+
 def load_env():
-    # minimal .env reader so the script needs no python-dotenv; real env vars win
-    folders = [os.getcwd()]
-    d = os.path.dirname(os.path.abspath(__file__))
-    while d not in folders:
-        folders.append(d)
-        d = os.path.dirname(d)
-    for folder in folders:
-        path = os.path.join(folder, ".env")
-        if not os.path.isfile(path):
-            continue
-        for line in open(path):
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, value = line.split("=", 1)
-                os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+    # minimal reader for the repo-root .env (no python-dotenv needed), whatever the working
+    # directory; its values win over shell exports, like the servers that share it
+    if not os.path.isfile(REPO_ENV):
+        print(f"warning: {REPO_ENV} not found, using the environment only", file=sys.stderr)
         return
+    for line in open(REPO_ENV):
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[len("export "):]
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            os.environ[key.strip()] = value.strip().strip("\"'")
+
+
+def token_from_env():
+    """MCP_AUTH_TOKEN (shared), else IMAGE_MCP_TOKEN; same rule as mcp_image_server."""
+    for name in ("MCP_AUTH_TOKEN", "IMAGE_MCP_TOKEN"):
+        value = (os.getenv(name) or "").strip().strip("\"'").strip()
+        if value:
+            return value
+    return None
 
 
 class McpClient:
@@ -469,7 +477,7 @@ def main():
     url = args.url or os.getenv("IMAGE_MCP_URL", "http://10.0.0.165:10001/mcp")
     if not url:
         sys.exit("set IMAGE_MCP_URL (or pass --url), e.g. http://10.0.0.165:10001/mcp")
-    token = os.getenv("MCP_AUTH_TOKEN")
+    token = token_from_env()
     out = os.path.expanduser(args.out) if args.out else os.path.join(RETRIEVED_DIR, args.hour)
 
     try:

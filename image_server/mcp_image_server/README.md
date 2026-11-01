@@ -37,8 +37,9 @@ python image_server/fetch_hour_images.py 2025-05-05-19 --out ~/Downloads/cats --
 ```
 
 - Images land in `image_server/retrieved_images/<hour>/` (git-ignored) unless `--out` is given.
-- Server and token come from `IMAGE_MCP_URL` and `MCP_AUTH_TOKEN` in the environment or the
-  nearest `.env` (the agent's settings); `--url` overrides the server.
+- Server and token come from `IMAGE_MCP_URL` and `MCP_AUTH_TOKEN` (fallback `IMAGE_MCP_TOKEN`)
+  in the repo-root `.env` (the agent's settings), whatever the working directory; `--url`
+  overrides the server.
 - Files already in the output folder are skipped, so rerun the same command to resume an
   interrupted download.
 - Exits non-zero if the server is unreachable, the hour has no images, or any download fails.
@@ -72,8 +73,14 @@ local-only.
 
 ## Configuration (.env)
 
+Read from the repo-root `agentic-realtime-cv/.env` (never `image_server/.env` or the working
+directory), and its values override variables already exported in the shell. The startup log
+shows the path and a `sha256` fingerprint of the token; compare it with
+`printf %s "$TOKEN" | sha256sum | cut -c1-12` on the client when you get `401 unauthorized`.
+
 ```
 MCP_AUTH_TOKEN=<long random string>   # the single shared value: same line in every server's .env and the agent's
+                                      # IMAGE_MCP_TOKEN is accepted as a fallback name
 IMAGE_MCP_PORT=10001
 IMAGE_MCP_HOST=0.0.0.0
 IMAGE_ROOT=/mnt/extreme/Cat_monitor_data

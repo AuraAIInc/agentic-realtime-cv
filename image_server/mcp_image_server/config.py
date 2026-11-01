@@ -1,12 +1,32 @@
-"""Settings, from environment variables (.env is loaded by server.main)."""
+"""Settings, from environment variables (the repo-root .env is loaded by server.main)."""
 
 from __future__ import annotations
 
 import datetime
+import hashlib
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from mcp_image_server.s3_store import S3_DEFAULT_BUCKET, S3_DEFAULT_CUTOFF, S3_DEFAULT_PREFIX
+
+REPO_ENV = Path(__file__).resolve().parents[2] / ".env"  # agentic-realtime-cv/.env
+
+
+def auth_token_from_env() -> str | None:
+    """MCP_AUTH_TOKEN (the shared token), else IMAGE_MCP_TOKEN (the name a client .env uses for
+    this server). Surrounding whitespace, quotes and a Windows `\\r` are stripped."""
+    for name in ("MCP_AUTH_TOKEN", "IMAGE_MCP_TOKEN"):
+        value = (os.getenv(name) or "").strip().strip("'\"").strip()
+        if value:
+            return value
+    return None
+
+
+def token_fingerprint(token: str) -> str:
+    """First 12 hex chars of sha256(token): safe to log, and comparable with
+    `printf %s "$TOKEN" | sha256sum | cut -c1-12` on the client."""
+    return hashlib.sha256(token.encode()).hexdigest()[:12]
 
 
 @dataclass(frozen=True)
@@ -32,7 +52,7 @@ class Settings:
             image_root=os.getenv("IMAGE_ROOT", cls.image_root),
             host=os.getenv("IMAGE_MCP_HOST", cls.host),
             port=int(os.getenv("IMAGE_MCP_PORT", str(cls.port))),
-            auth_token=os.getenv("MCP_AUTH_TOKEN") or None,
+            auth_token=auth_token_from_env(),
             s3_bucket=os.getenv("IMAGE_S3_BUCKET") or os.getenv("HISTORY_IMAGE_BUCKET_NAME", S3_DEFAULT_BUCKET),
             s3_prefix=os.getenv("IMAGE_S3_PREFIX") or os.getenv("S3_IMAGE_PREFIX", S3_DEFAULT_PREFIX),
             s3_cutoff=os.getenv("IMAGE_S3_CUTOFF_DATE", "2026-10-20"),

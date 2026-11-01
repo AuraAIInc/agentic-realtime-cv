@@ -8,7 +8,7 @@ Two things live here:
 ## Prerequisites
 
 - Python >= 3.10. Image download is stdlib-only; labels need `pymysql` and the chart needs `matplotlib`/`seaborn`/`pandas` (all in the repo `.venv`).
-- A `.env` (repo root works) with `IMAGE_MCP_URL` + `MCP_AUTH_TOKEN`, and for labels/chart the `MYSQL_*` settings — see `.env.example`.
+- The repo-root `.env` (always that file, whatever the working directory) with `IMAGE_MCP_URL` + `MCP_AUTH_TOKEN` (or `IMAGE_MCP_TOKEN`), and for labels/chart the `MYSQL_*` settings — see `.env.example`.
 
 ## Output layout
 

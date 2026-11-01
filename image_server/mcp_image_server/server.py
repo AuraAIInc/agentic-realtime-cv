@@ -19,7 +19,7 @@ from dataclasses import replace
 from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult, ImageContent, TextContent
 
-from mcp_image_server.config import Settings
+from mcp_image_server.config import REPO_ENV, Settings, token_fingerprint
 from mcp_image_server.image_store import ImageStore, InvalidName, transform
 from mcp_image_server.s3_store import S3Store
 from mcp_image_server.timing import Timer
@@ -162,8 +162,11 @@ def build_http_app(settings: Settings):
 def main() -> None:
     from dotenv import load_dotenv
 
-    load_dotenv()
+    # Always the repo-root .env (shared with the agent), whatever the working directory; its
+    # values win over shell exports so a stale `export MCP_AUTH_TOKEN=...` cannot take over.
+    loaded = load_dotenv(REPO_ENV, override=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s")
+    logger.info(f".env: {REPO_ENV} ({'loaded' if loaded else 'NOT FOUND'})")
     settings = Settings.from_env()
 
     p = argparse.ArgumentParser(description="MCP server for the cat-monitor image SSD")
@@ -181,7 +184,8 @@ def main() -> None:
 
     import uvicorn
 
-    logger.info(f"MCP image server on http://{settings.host}:{settings.port}/mcp (auth={'on' if settings.auth_token else 'OFF'})")
+    auth = f"on, sha256 {token_fingerprint(settings.auth_token)}" if settings.auth_token else "OFF"
+    logger.info(f"MCP image server on http://{settings.host}:{settings.port}/mcp (auth={auth})")
     uvicorn.run(build_http_app(settings), host=settings.host, port=settings.port, log_level="warning")
 
 
