@@ -54,8 +54,8 @@ class ImageStore:
         self.s3 = s3
         self.to_cloud = cfg.image_save_place in ("Cloud", "Both")
         self.to_local = cfg.image_save_place in ("Local", "Both")
-        # Holds JPEG bytes, not raw frames: a 4K BGR frame is ~25 MB, its JPEG ~1-3 MB.
-        self._queue: deque[tuple[bytes, datetime.datetime]] = deque()
+        # Holds (JPEG bytes, capture time, encode ms): a 4K BGR frame is ~25 MB, its JPEG ~1-3 MB.
+        self._queue: deque[tuple[bytes, datetime.datetime, float]] = deque()
         self._qlock = threading.Lock()
 
     def start(self) -> "ImageStore":
@@ -75,9 +75,11 @@ class ImageStore:
         """
         if self.to_cloud:
             img = full if self.cfg.s3_full_resolution else display
+            t_enc = time.monotonic()
             data = imaging.encode(img, self.cfg.s3_jpeg_quality)
+            enc_ms = (time.monotonic() - t_enc) * 1000
             with self._qlock:
-                self._queue.append((data, t))
+                self._queue.append((data, t, enc_ms))
                 while len(self._queue) > self.cfg.q_max:
                     self._queue.popleft()
         if self.to_local:
@@ -95,10 +97,12 @@ class ImageStore:
             if item is None:
                 time.sleep(0.1)
                 continue
-            data, t = item
+            data, t, enc_ms = item
             try:
                 key = f"{self.cfg.user_id}/{self.cfg.device_id}/" + t.strftime("%Y-%m-%d/%H/%M/%Y-%m-%d-%H-%M-%S-%f.jpg")
+                t_up = time.monotonic()
                 self.s3.put(self.cfg.history_image_bucket_name, key, data)
+                logger.info(f"S3 upload {key} {len(data) / 1024:.0f} KiB (encode {enc_ms:.0f}ms, put {(time.monotonic() - t_up) * 1000:.0f}ms)")
             except Exception as e:
                 logger.error(f"Failed to upload image to S3: {e}")
                 with self._qlock:

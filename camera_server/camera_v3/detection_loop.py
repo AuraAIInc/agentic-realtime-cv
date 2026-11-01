@@ -113,7 +113,10 @@ class DetectionLoop:
 
     def _process(self, full, captured_at: datetime.datetime, settings: Settings, mode: str) -> None:
         t1 = time.monotonic()
+        full_size = imaging.frame_size(full)
+        t_rs = time.monotonic()
         display = imaging.resize_to(full, self.cfg.camera_img_size)
+        resize_ms = (time.monotonic() - t_rs) * 1000
         self.image_store.save(full, display, captured_at)
         grey = imaging.is_grey(display)
         t2 = time.monotonic()
@@ -142,7 +145,12 @@ class DetectionLoop:
             self.frames_processed += 1
 
         names = [(d["label"], d["confidence"]) for d in detections]
+        cap_ms = getattr(self.source, "last_read_ms", None)  # newest capture-thread read, ~this frame's
+        cap_s = f"{cap_ms:.1f}ms" if cap_ms is not None else "?"
+        disp_size = imaging.frame_size(display)
         logger.info(
-            f"{captured_at:%Y-%m-%d %H:%M:%S} [{mode}] PRE:{t2 - t1:.3f} IF:{t3 - t2:.3f} POST:{t4 - t3:.3f} "
+            f"{captured_at:%Y-%m-%d %H:%M:%S} [{mode}] CAP:{cap_s} "
+            f"RSZ:{full_size[0]}x{full_size[1]}->{disp_size[0]}x{disp_size[1]}:{resize_ms:.1f}ms "
+            f"PRE:{t2 - t1:.3f} IF:{t3 - t2:.3f} POST:{t4 - t3:.3f} "
             f"Total:{t4 - t1:.3f} {names}"
         )

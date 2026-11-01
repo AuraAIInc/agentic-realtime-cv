@@ -110,6 +110,7 @@ class CameraService:
             "capture_size": list(self.source.actual_size or self.cfg.effective_capture_size),
             "camera_max_size": self._max_size(),
             "camera_read_fps": round(self.source.read_fps, 2),
+            "camera_read_ms": getattr(self.source, "read_ms", None),  # mean frame-grab time, 5 s window
             "control": self.controller.status(),
             "loop": self.loop.snapshot(),
             "models": self.inference.registry.names(),
