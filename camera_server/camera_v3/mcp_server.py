@@ -80,15 +80,13 @@ def build_mcp(service: CameraService):
         padding: float = 0.15,
         max_side: int | None = 1280,
         at: str | None = None,
-        draw_detections: bool = False,
     ):
         """Grab the newest frame of the always-on stream (or the buffered frame nearest `at`).
         box crops it (display coords, padded by `padding` x box size); for a sharper zoom use
         capture_high_res with the same box. The image is shrunk so its longest side is
-        <= max_side (null = no resize). Instant; does not interrupt the detection loop.
-        draw_detections=true draws the loop's boxes for that same frame and returns them
-        in detections, so one call shows the frame and what the model saw in it."""
-        return with_image(lambda: service.capture_frame(box, padding, max_side, at, draw_detections))
+        <= max_side (null = no resize). Always the raw pixels, never drawn on. Instant;
+        does not interrupt the detection loop."""
+        return with_image(lambda: service.capture_frame(box, padding, max_side, at))
 
     @mcp.tool(structured_output=False)
     def get_camera_modes() -> str:

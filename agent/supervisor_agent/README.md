@@ -149,8 +149,9 @@ Set `"reasoning_effort": "low" | "medium" | "high"` in `models.json` for reasoni
 The agent sees 39 tools. `camera__*`, `images__*` and `tracking__*` live on the MCP servers: names, descriptions and schemas below are what those servers reported on 2026-10-27 (they can change server-side; `python -m supervisor_agent --list-tools` shows the current list). `local__*` run in-process and are defined in [`local_tools/server.py`](local_tools/server.py); `skill__*` load a skill's instructions when invoked (see [`local_tools/skills.py`](local_tools/skills.py) and [`skills/`](skills/)).
 
 Changed since the 2026-10-27 snapshot: `camera__get_status` takes `verbose` (slim by default);
-`camera__capture_frame` takes `draw_detections`; `camera__list_buffered_frames` defaults to
-`limit=0` (span only); `tracking__get_current_periods` defaults to `final_limit=3` and drops
+`camera__capture_frame` always returns raw pixels, never drawn on;
+`camera__list_buffered_frames` defaults to `limit=0` (span only);
+`tracking__get_current_periods` defaults to `final_limit=3` and drops
 zero-detection evidence rows; `tracking__get_arrival_path` takes `min_empty_gap_s` and may
 return a `pre_entry` frame; `camera__get_track_history` reports `first/last_frame_buffered`;
 `camera__detect` replies include `cat_classes`.
@@ -1696,7 +1697,7 @@ Skill 'check-trajectory': Check that one visit (period) is a physically plausibl
 
 #### `skill__check-live-detections`
 
-Skill 'check-live-detections': Answer "what is on camera now, and is the model right" in about three turns: one annotated frame, one round of zoomed crops, then a verdict table. Use for live camera questions in chat. Invoke it (no arguments) to load the full skill instructions, then follow them step by step.
+Skill 'check-live-detections': Answer "what is on camera now, and is the model right" in about three turns: a wide frame, zoomed crops, and a verdict table grounded on the image and cat profiles. Use for live camera questions in chat. Invoke it (no arguments) to load the full skill instructions, then follow them step by step.
 
 <details>
 <summary>Input schema</summary>
