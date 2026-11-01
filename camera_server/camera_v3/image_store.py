@@ -14,6 +14,8 @@ from collections import deque
 import cv2
 import numpy as np
 
+from camera_v3 import imaging
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,7 +54,8 @@ class ImageStore:
         self.s3 = s3
         self.to_cloud = cfg.image_save_place in ("Cloud", "Both")
         self.to_local = cfg.image_save_place in ("Local", "Both")
-        self._queue: deque[tuple[np.ndarray, datetime.datetime]] = deque()
+        # Holds JPEG bytes, not raw frames: a 4K BGR frame is ~25 MB, its JPEG ~1-3 MB.
+        self._queue: deque[tuple[bytes, datetime.datetime]] = deque()
         self._qlock = threading.Lock()
 
     def start(self) -> "ImageStore":
@@ -63,17 +66,25 @@ class ImageStore:
     def qsize(self) -> int:
         return len(self._queue)
 
-    def save(self, frame: np.ndarray, t: datetime.datetime) -> None:
-        """Called by the detection loop for every processed frame (display resolution)."""
+    def save(self, full: np.ndarray, display: np.ndarray, t: datetime.datetime) -> None:
+        """Called by the detection loop for every processed frame.
+
+        `full` is the capture-resolution frame, `display` the same frame resized to
+        camera_img_size. Which one is persisted is configured per destination
+        (cfg.s3_full_resolution / cfg.local_full_resolution).
+        """
         if self.to_cloud:
+            img = full if self.cfg.s3_full_resolution else display
+            data = imaging.encode(img, self.cfg.s3_jpeg_quality)
             with self._qlock:
-                self._queue.append((frame, t))
+                self._queue.append((data, t))
                 while len(self._queue) > self.cfg.q_max:
                     self._queue.popleft()
         if self.to_local:
+            img = full if self.cfg.local_full_resolution else display
             folder = os.path.join(self.cfg.local_image_dir, t.strftime("%Y-%m-%d/%H/%M"))
             os.makedirs(folder, exist_ok=True)
-            cv2.imwrite(os.path.join(folder, t.strftime("%Y-%m-%d-%H-%M-%S-%f.jpg")), frame)
+            cv2.imwrite(os.path.join(folder, t.strftime("%Y-%m-%d-%H-%M-%S-%f.jpg")), img)
 
     def _upload_loop(self) -> None:
         while True:
@@ -84,11 +95,10 @@ class ImageStore:
             if item is None:
                 time.sleep(0.1)
                 continue
-            image, t = item
+            data, t = item
             try:
                 key = f"{self.cfg.user_id}/{self.cfg.device_id}/" + t.strftime("%Y-%m-%d/%H/%M/%Y-%m-%d-%H-%M-%S-%f.jpg")
-                _, buf = cv2.imencode(".jpg", image)
-                self.s3.put(self.cfg.history_image_bucket_name, key, buf.tobytes())
+                self.s3.put(self.cfg.history_image_bucket_name, key, data)
             except Exception as e:
                 logger.error(f"Failed to upload image to S3: {e}")
                 with self._qlock:

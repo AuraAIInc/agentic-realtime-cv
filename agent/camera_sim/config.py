@@ -49,6 +49,9 @@ class SimConfig:
     image_save_place: str = "None"
     local_image_dir: str = ""
     history_image_bucket_name: str = ""
+    s3_full_resolution: bool = False
+    local_full_resolution: bool = False
+    s3_jpeg_quality: int = 95
 
     # models (same keys ModelRegistry.from_config reads from camera_v3.Config)
     models_config: str | None = None

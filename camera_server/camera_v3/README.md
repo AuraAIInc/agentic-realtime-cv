@@ -105,6 +105,10 @@ Optional view-info keys (all have defaults, so the current API response works as
 ```json
 {
   "capture_width": 1920, "capture_height": 1080,
+  "capture_max": false,
+  "s3_full_resolution": false,
+  "local_full_resolution": false,
+  "s3_jpeg_quality": 95,
   "frame_buffer_size": 120,
   "frame_buffer_jpeg_quality": 85,
   "local_image_dir": "/home/muyang/Cat_monitor_data",
@@ -120,6 +124,14 @@ Optional view-info keys (all have defaults, so the current API response works as
 user models from the backend). `cat_classes: true` means the model's class indices
 are this user's cat IDs; otherwise detections carry the model's own label and
 `cat_id: -1`.
+
+High-resolution capture + uploads: set `capture_width` / `capture_height` to the
+sensor's max (or `"capture_max": true` to probe it via `v4l2-ctl` at startup) and
+`"s3_full_resolution": true` to store the full frame in S3. Detection still runs on
+the `width` x `height` display frame, so boxes, tracks and WebSocket messages are
+unchanged. The S3 upload queue holds JPEG bytes (`s3_jpeg_quality`, default 95 —
+drop to ~85 at 4K to save bandwidth); the in-memory frame buffer also keeps full-res
+JPEGs, so lower `frame_buffer_size` if the Pi runs short on memory.
 
 ## WebSocket message changes
 

@@ -243,7 +243,8 @@ def test_flagged_trajectory_asks_the_model_once_with_a_contact_sheet(store):
     assert req["text"]["format"]["strict"] is True
     assert {t["name"] for t in req["tools"]} <= {"images__get_image", "local__make_contact_sheet", "local__get_cat_profiles",
                                                  "local__find_references", "local__get_reference_image"}
-    assert "Check a visit's continuity" in req["instructions"]
+    assert "instructions" not in req  # gateway 400s when the root carries it; folded into input instead
+    assert "Check a visit's continuity" in req["input"][0]["content"][0]["text"]
 
 
 def test_image_budget_refuses_extra_looks(store):
@@ -263,7 +264,8 @@ def test_image_budget_refuses_extra_looks(store):
     assert len(refusals) == 2
     first_input = model.requests[0]["input"][0]["content"]
     assert any(c["type"] == "input_image" for c in first_input)
-    cats = json.loads(first_input[0]["text"])["cats"]
+    assert "instructions" not in model.requests[0]
+    cats = json.loads(first_input[1]["text"])["cats"]  # [0] is the folded instructions text
     assert {c["name"] for c in cats} == {"Qb", "Qbo"}
 
 

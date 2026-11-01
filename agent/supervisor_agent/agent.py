@@ -39,7 +39,7 @@ HIGH_RES_TOOLS = {"camera__capture_high_res"}
 @dataclass
 class RunOptions:
     """Per-run overrides used by the task runner (tasks.py). Defaults = plain chat behaviour."""
-    instructions: str | None = None  # replaces the default system instructions
+    instructions: str | None = None  # replaces the default system instructions (folded into the turn-1 input, never sent as a parameter)
     tool_names: list[str] | None = None  # only expose these tools (None = all)
     text_format: dict | None = None  # Responses API text.format, e.g. a strict json_schema
     image_budget: int | None = None  # image-returning calls allowed (None = unlimited)
@@ -129,7 +129,11 @@ class MCPAgent:
         if opts.text_format:
             extra["text"] = {"format": opts.text_format}
 
-        next_input: list | str = query
+        # Never send the `instructions` parameter: the gateway 400s on chained
+        # image tool-outputs when the chain root carried it (see
+        # documents/model-api-chaining-probe.md). The text rides in the turn-1
+        # input instead and persists via chaining like any other context.
+        next_input: list | str = _fold_instructions(query, instructions)
         prev_id = previous_response_id
         response = None
         turns_log = []  # (turn, started_at, calls, outputs) for the invoke dump
@@ -138,7 +142,6 @@ class MCPAgent:
             result.turns = turn
             request = dict(
                 model=self.cfg.model,
-                instructions=instructions,
                 input=next_input,
                 tools=tools,
                 previous_response_id=prev_id,
@@ -244,6 +247,27 @@ class MCPAgent:
         result.images_used += returns_image
         result.high_res_used += name in HIGH_RES_TOOLS
         return None
+
+
+def _fold_instructions(query: str | list, instructions: str) -> str | list:
+    """Prepend instructions to the turn-1 input (never sent as a parameter).
+
+    String queries become one text block; message lists (tasks.py) get the
+    text inserted at the front of the first message's content, using only the
+    role/content shapes the gateway already accepts. The caller's list is
+    never mutated.
+    """
+    if not instructions:
+        return query
+    if isinstance(query, str):
+        return f"{instructions}\n\n{query}" if query else instructions
+    items = list(query)
+    first = items[0] if items else None
+    if isinstance(first, dict) and isinstance(first.get("content"), list):
+        items[0] = {**first, "content": [{"type": "input_text", "text": instructions}, *first["content"]]}
+    else:
+        items.insert(0, {"role": "user", "content": [{"type": "input_text", "text": instructions}]})
+    return items
 
 
 def _add_usage(acc: dict, usage) -> None:

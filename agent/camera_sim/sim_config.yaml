@@ -1,16 +1,17 @@
-# camera_sim configuration. Fill in the <...> values; CLI flags override the
-# replay range / speed (see README.md). Run from agent/: python -m camera_sim
+# camera_sim configuration. Identity/model values mirrored from the 2026-11-01
+# camera_v3 log; CLI flags override the replay range / speed (see README.md).
+# Run from agent/: python -m camera_sim
 
 # --- identity: stamped on every streamed message, same keys as camera_server ---
-device_id: "sim-camera-01"
-view_id: <view id, e.g. 3>
-model_id: <model id>
-user_id: <user id>
-user_name: "<user name>"
+device_id: "c2d5f3ce14067817"
+view_id: 3
+model_id: 70
+user_id: 14
+user_name: "muyang-lu"
 cat_names:
   # <cat tracker id>: "<name>"  (used only by models with cat_classes: true)
-  0: "<cat 0 name>"
-  1: "<cat 1 name>"
+  25: "Qb-2"
+  26: "Qbo-2"
 
 # --- replay source: images are YYYY-MM-DD-HH-MM-SS-ffffff.jpg, any subfolders ---
 image_dir: "/Users/muyang/Documents/Personal/Github/agentic-realtime-cv/image_server/retrieved_images"
@@ -25,18 +26,19 @@ exit_when_done: true  # shut down once the range is fully streamed (ignored with
 # --- image geometry (retrieved images are 800x600) ---
 camera_img_size: [800, 600]  # display space; detection boxes use this, as on the Pi
 capture_size: null  # null = same as camera_img_size
+# model_img_size is derived as (w//32*32, h//32*32) = (800, 576), matching the log
 
 # --- detection output: byte-identical schema to the camera_server stream ---
 ws_enabled: true
 ws_url: "ws://127.0.0.1:8000"  # detection_ingest_server.py listens here
-q_max: 100
+q_max: 2000
 output_jsonl: ""  # e.g. "sim_output.jsonl" to also tee every message to a file
-loop_model: "yolov8s"  # model the always-on loop runs; "default" once best.pt is set up
+loop_model: "default"  # always-on loop model; the log shows the loop runs "default" (best.pt)
 
 # --- models: same schema as camera_v3/models.json ---
 models_config: "models.json"  # relative to this folder unless absolute
-model_s3_save_path: ""  # <s3 key of best.pt> fallback s3_key for the default model
-model_training_bucket_name: ""  # <training bucket> for the S3 model download
+model_s3_save_path: "muyang-lu/pretrained-26-640-200-202504122325/weights/best.pt"  # s3 key of best.pt, fallback s3_key for the default model
+model_training_bucket_name: "aura-model-training"  # training bucket for the S3 model download
 extra_models: {}
 
 # --- frame look-back / tracks, same as camera_server ---
@@ -45,8 +47,8 @@ frame_buffer_jpeg_quality: 85
 
 # --- MCP control server: same tools as camera_server ---
 mcp_enabled: true
-mcp_host: "127.0.0.1"
-mcp_port: 8766
+mcp_host: "127.0.0.1"  # camera uses 0.0.0.0; localhost for the local sim
+mcp_port: 8766  # camera uses 8765; 8766 avoids a clash when both run
 mcp_auth_token: null  # null = use $MCP_AUTH_TOKEN; set a string to override
 
 log_level: "INFO"

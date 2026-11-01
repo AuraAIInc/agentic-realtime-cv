@@ -36,7 +36,7 @@ def build(cfg, s3_store, publish, ws_status=None, yolo_factory=None):
     registry.get(DEFAULT_MODEL, "loop")  # download + load before starting, as v2 did
 
     video_source = 0 if cfg.rtsp_stream_url == "" else cfg.rtsp_stream_url
-    source = FrameSource(video_source, cfg.effective_capture_size)
+    source = FrameSource(video_source, _resolve_capture_size(cfg, video_source))
     controller = Controller(Settings(), registry.names())
     logger.info(f"Default loop settings: {controller.defaults.as_dict()}")
     logger.info(f"Registered models: {registry.names()}")
@@ -48,6 +48,31 @@ def build(cfg, s3_store, publish, ws_status=None, yolo_factory=None):
     loop = DetectionLoop(cfg, source, inference, controller, buffer, tracks, publish, image_store)
     service = CameraService(cfg, source, controller, inference, buffer, tracks, loop, image_store, ws_status)
     return source, loop, image_store, service
+
+
+def _resolve_capture_size(cfg, video_source):
+    """Decide the resolution the camera is opened at.
+
+    Explicit view-info capture_width/height wins; capture_max probes the camera's
+    advertised modes and takes the largest (preferring PIXEL_FORMAT, which keeps the
+    full-sensor field of view at every size); otherwise the display size is used.
+    """
+    if cfg.capture_size:
+        return cfg.capture_size
+    if not cfg.capture_max:
+        return cfg.effective_capture_size
+    from camera_v3.frame_source import PIXEL_FORMAT, FrameSource
+
+    probe = FrameSource(video_source, None)
+    modes = probe.list_modes()
+    if not modes:
+        logger.warning("capture_max is set but the camera lists no modes (RTSP / file, or v4l2-ctl missing); using display size")
+        return cfg.effective_capture_size
+    same_format = [m for m in modes if m["format"] == PIXEL_FORMAT]
+    best = max(same_format or modes, key=lambda m: m["width"] * m["height"])
+    size = (best["width"], best["height"])
+    logger.info(f"capture_max: opening the camera at {size[0]}x{size[1]} ({best['format']})")
+    return size
 
 
 def main() -> None:
