@@ -14,7 +14,7 @@ Guide on cerebralvalley.ai (as of Oct 26, 2026).
 
 | # | What | Owner | By |
 | --- | --- | --- | --- |
-| 1 | Track decided: **Indie Developer**, team of 2 (Terry, Muyang). Name the Representative who submits. Project plan: [PROJECT_PLAN.md](PROJECT_PLAN.md). | | Oct 27 |
+| 1 | Track decided: **Indie Developer**, team of 2 (Terry, Muyang). Name the Representative who submits. Project plan: [project-plan.md](project-plan.md). | | Oct 27 |
 | 2 | **Swap the agent's LLM from OpenAI to Meta models.** `mcp_agent` runs on `gpt-6.1-sol` today. A project that does not use Meta models fails Stage 1 (pass/fail). | | Oct 29 |
 | 3 | Create a **separate public repo** for the submission. `aura_api_server` is private and must stay private. Copy only the hackathon code, with no secrets, internal IPs (e.g. `10.0.0.63` in `mcp_agent/README.md`), or proprietary model weights. | | Oct 30 |
 | 4 | Tag the pre-hackathon state (e.g. `git tag hackathon-baseline`) and write down what existed before Oct 27. The tracker, correctors, `tracking_mcp` and `mcp_agent` all predate the event (commits Oct 23-25). | | Oct 27 |
@@ -56,7 +56,7 @@ Building period is **Oct 27 - Nov 4**.
 - **New work only.** "What you present at this Hackathon must have been built during the
   event." Startups may build on an existing product if they clearly identify what is new;
   that allowance is written for startups, and **we are in the Indie track**, so it applies
-  to us more strictly (question for the organizers, see PROJECT_PLAN.md §7). The demo must only highlight features built during the
+  to us more strictly (question for the organizers, see project-plan.md §7). The demo must only highlight features built during the
   hackathon. Failing to make this clear means **immediate disqualification** at the
   judges' discretion. Plan: a "Built during the hackathon" section in the README, a
   baseline tag, a commit history that starts at the baseline, and a demo video that says

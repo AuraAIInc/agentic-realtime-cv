@@ -114,7 +114,7 @@ class DetectionLoop:
     def _process(self, full, captured_at: datetime.datetime, settings: Settings, mode: str) -> None:
         t1 = time.monotonic()
         display = imaging.resize_to(full, self.cfg.camera_img_size)
-        self.image_store.save(display, captured_at)
+        self.image_store.save(full, display, captured_at)
         grey = imaging.is_grey(display)
         t2 = time.monotonic()
 

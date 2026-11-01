@@ -4,7 +4,7 @@ Plain-language memory for the tracking pipeline: what each part of the camera
 view looks like, which cat is usually where, and what the daily routine is.
 The store is a human-readable YAML file; the direct consumer of `invoke` is
 the `agent/escalation` module. Full design:
-`documents/SPATIAL_TEMPORAL_MEMORY_DESIGN.md`.
+`documents/spatial-temporal-memory-design.md`.
 
 ## Layout
 

@@ -1,7 +1,7 @@
 # Project Plan: Meta Global AI Developer Hackathon 2026
 
 Draft for the team (Terry, Muyang) to review. Event rules, dates and judging are in
-[HACKATHON_GUIDE.md](HACKATHON_GUIDE.md). Chinese version: [PROJECT_PLAN.zh.md](PROJECT_PLAN.zh.md);
+[hackathon-guide.md](hackathon-guide.md). Chinese version: [project-plan.zh.md](project-plan.zh.md);
 keep both in sync.
 
 Every item is tagged:

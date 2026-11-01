@@ -170,7 +170,7 @@ Results are written to the `period` row that the tracker allocated: start, end,
 
 ## Reading the visualization with this in mind
 
-In each frame from [run_tracking_viz.py](../existing_work_before_hackathon/run_tracking_viz.py) (see [TRACKING_VIZ.md](TRACKING_VIZ.md)):
+In each frame from [run_tracking_viz.py](../existing_work_before_hackathon/run_tracking_viz.py) (see [tracking-viz.md](tracking-viz.md)):
 
 - **Shaded area**: the 15 s buffer. Everything inside can still change.
 - **Green thick line**: `base`. **Purple thick line**: `target`. Boxes between them are

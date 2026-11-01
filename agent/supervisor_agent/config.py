@@ -86,8 +86,4 @@ class AgentConfig:
             return None
         cached = usage.get("cached_tokens", 0)
         uncached = usage.get("input_tokens", 0) - cached
-        return (
-            uncached * p["input"]
-            + cached * p.get("cached_input", p["input"])
-            + usage.get("output_tokens", 0) * p["output"]
-        ) / 1_000_000
+        return (uncached * p["input"] + cached * p.get("cached_input", p["input"]) + usage.get("output_tokens", 0) * p["output"]) / 1_000_000

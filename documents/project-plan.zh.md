@@ -1,7 +1,7 @@
 # 项目计划：Meta Global AI Developer Hackathon 2026
 
 供团队（Terry、Muyang）review 的草稿。比赛规则、日程和评审标准见
-[HACKATHON_GUIDE.md](HACKATHON_GUIDE.md)。英文版：[PROJECT_PLAN.md](PROJECT_PLAN.md)，两版同步修改。
+[hackathon-guide.md](hackathon-guide.md)。英文版：[project-plan.md](project-plan.md)，两版同步修改。
 
 每一条都有标记：
 

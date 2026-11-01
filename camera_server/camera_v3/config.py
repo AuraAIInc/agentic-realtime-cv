@@ -50,6 +50,16 @@ class Config:
     # Resolution the camera is opened at. Zoom crops come from this. Defaults to camera_img_size,
     # which reproduces v2 behaviour exactly; set it to the sensor's max to get real zoom detail.
     capture_size: tuple[int, int] | None = None
+    # Open the camera at its largest advertised size (from `v4l2-ctl --list-formats-ext`)
+    # instead of capture_size. Ignored when capture_size is set, and for RTSP / file sources.
+    capture_max: bool = False
+    # Persist the full capture-resolution frame instead of the display-size (camera_img_size)
+    # frame. Detection still runs on the display-size frame either way (see Inference.run),
+    # so boxes, tracks and WebSocket messages are unchanged; only the stored pixels differ.
+    s3_full_resolution: bool = False
+    local_full_resolution: bool = False
+    # JPEG quality used when encoding S3 history uploads (95 = cv2's default, as before).
+    s3_jpeg_quality: int = 95
     frame_buffer_size: int = 120  # processed frames kept (as JPEG) for look-back tools
     frame_buffer_jpeg_quality: int = 85
     # Path of the models file (env MODELS_CONFIG); None = camera_v3/models.json.
@@ -91,6 +101,10 @@ class Config:
             log_level=info.get("log_level", "INFO").upper(),
             q_max=info["q_max"],
             capture_size=(int(cap[0]), int(cap[1])) if all(cap) else None,
+            capture_max=_as_bool(info.get("capture_max", False)),
+            s3_full_resolution=_as_bool(info.get("s3_full_resolution", False)),
+            local_full_resolution=_as_bool(info.get("local_full_resolution", False)),
+            s3_jpeg_quality=int(info.get("s3_jpeg_quality", 95)),
             frame_buffer_size=int(info.get("frame_buffer_size", 120)),
             frame_buffer_jpeg_quality=int(info.get("frame_buffer_jpeg_quality", 85)),
             models_config=os.environ.get("MODELS_CONFIG") or None,
@@ -120,6 +134,12 @@ class Config:
             elif name in SECRET_ENV:
                 value = f"<set, {len(value)} chars>"
             logger.info(f"  {name}: {value}")
+
+
+def _as_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
 
 
 def wait_for_internet(url: str = "https://google.com") -> None:
