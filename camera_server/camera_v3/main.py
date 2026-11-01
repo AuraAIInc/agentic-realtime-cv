@@ -13,11 +13,28 @@ from __future__ import annotations
 import logging
 import os
 import time
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 LOG_FORMAT = "%(asctime)s - [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s"
 logger = logging.getLogger("camera_v3")
+
+# .env files read at startup, lowest priority first: the repo root (shared .env), then
+# camera_server/.env. Fixed paths, so the result does not depend on the working directory.
+CAMERA_SERVER_DIR = Path(__file__).resolve().parents[1]
+ENV_FILES = (CAMERA_SERVER_DIR.parent / ".env", CAMERA_SERVER_DIR / ".env")
+
+
+def load_env_files() -> list[Path]:
+    """Load ENV_FILES in order. Values from a .env win over variables already exported in the
+    shell, so a stale `export MCP_AUTH_TOKEN=...` cannot silently replace the configured token."""
+    loaded = []
+    for path in ENV_FILES:
+        if path.is_file():
+            load_dotenv(path, override=True)
+            loaded.append(path)
+    return loaded
 
 
 def build(cfg, s3_store, publish, ws_status=None, yolo_factory=None):
@@ -76,8 +93,9 @@ def _resolve_capture_size(cfg, video_source):
 
 
 def main() -> None:
-    load_dotenv()
+    env_files = load_env_files()
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+    logger.info(f".env files loaded: {[str(p) for p in env_files] or 'none'} (searched {[str(p) for p in ENV_FILES]})")
 
     from camera_v3 import mcp_server
     from camera_v3.config import load_config

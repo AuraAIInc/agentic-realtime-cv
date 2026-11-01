@@ -8,6 +8,7 @@ response keeps working unchanged.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -22,9 +23,25 @@ VIEW_INFO_API = "https://auraaiinc.com/api/v1/ai-cat/camera-server/view-info/{de
 # Environment variables read anywhere in camera_v3, logged at startup (secrets masked).
 ENV_SETTINGS = (
     "DEVICE_ID_OVERRIDE", "MODELS_CONFIG", "MCP_ENABLED", "MCP_HOST", "MCP_PORT", "MCP_AUTH_TOKEN",
-    "S3_AWS_DEFAULT_REGION", "S3_AWS_ACCESS_KEY", "S3_AWS_SECRET_ACCESS_KEY",
+    "CAMERA_MCP_TOKEN", "S3_AWS_DEFAULT_REGION", "S3_AWS_ACCESS_KEY", "S3_AWS_SECRET_ACCESS_KEY",
 )
-SECRET_ENV = {"MCP_AUTH_TOKEN", "S3_AWS_ACCESS_KEY", "S3_AWS_SECRET_ACCESS_KEY"}
+SECRET_ENV = {"MCP_AUTH_TOKEN", "CAMERA_MCP_TOKEN", "S3_AWS_ACCESS_KEY", "S3_AWS_SECRET_ACCESS_KEY"}
+
+
+def mcp_auth_token_from_env() -> str | None:
+    """MCP_AUTH_TOKEN (the shared token), else CAMERA_MCP_TOKEN (the name a client .env uses for
+    this server). Surrounding whitespace, quotes and a Windows `\\r` are stripped."""
+    for name in ("MCP_AUTH_TOKEN", "CAMERA_MCP_TOKEN"):
+        value = (os.environ.get(name) or "").strip().strip("'\"").strip()
+        if value:
+            return value
+    return None
+
+
+def token_fingerprint(token: str) -> str:
+    """First 12 hex chars of sha256(token): safe to log, and comparable with
+    `printf %s "$TOKEN" | sha256sum | cut -c1-12` on the client."""
+    return hashlib.sha256(token.encode()).hexdigest()[:12]
 
 
 @dataclass
@@ -114,7 +131,7 @@ class Config:
             mcp_enabled=os.environ.get("MCP_ENABLED", "1") not in ("0", "false", "False"),
             mcp_host=os.environ.get("MCP_HOST", "0.0.0.0"),
             mcp_port=int(os.environ.get("MCP_PORT", "8765")),
-            mcp_auth_token=os.environ.get("MCP_AUTH_TOKEN") or None,
+            mcp_auth_token=mcp_auth_token_from_env(),
         )
 
     def log_summary(self) -> None:
@@ -123,7 +140,7 @@ class Config:
         for f in fields(self):
             value = getattr(self, f.name)
             if f.name == "mcp_auth_token":
-                value = "set (token required)" if value else "NONE (open)"
+                value = f"set (token required, sha256 {token_fingerprint(value)})" if value else "NONE (open)"
             logger.info(f"  {f.name}: {value}")
         logger.info(f"  effective_capture_size: {self.effective_capture_size}")
         logger.info("----- environment -----")
