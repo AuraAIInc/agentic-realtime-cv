@@ -44,3 +44,7 @@ against the cat profiles.
   do not retry the same arguments: work around it or say what is missing.
 - A zoom that returns `zoom_factor: 1.0` added no detail: do not count it as
   verification.
+- If a zoom comes back without the target in it, you mis-aimed: re-aim from the
+  returned `roi_display` (e.g. target visible just above the crop's top edge →
+  shift the box up by that much) instead of guessing a fresh box. After two
+  misses in a row, stop zooming and say what is missing.

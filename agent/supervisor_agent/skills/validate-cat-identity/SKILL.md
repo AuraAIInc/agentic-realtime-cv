@@ -38,6 +38,8 @@ never have reached you); re-check rung 1 only for what code could not see.
 3. **Sharper view, only if the deciding cue is a high-res one or the box is under ~60 px.**
    Use `images__get_image` with the visit's `best_frame` (stored frames). Use
    `camera__capture_high_res(box)` only for a live frame; it pauses detection for ~3 s.
+   If a zoomed crop misses the cat, re-aim from its `roi_display` instead of guessing
+   a fresh box.
 4. **Owner photos.** `local__find_references(cat_id, source="profile", pose, lighting)` for
    each remaining candidate, then `local__make_contact_sheet` with the query crop and one
    top reference per cat (one image, not three). Ask: which reference matches, on which features?
