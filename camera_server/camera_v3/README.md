@@ -83,10 +83,15 @@ in display pixels, the same space as the WebSocket detections. Images are always
 
 ## Configuration
 
-Environment (`.env`):
+Environment (`.env`). Read from fixed paths at startup, whatever the working directory:
+the repo-root `.env`, then `camera_server/.env` (later wins). Values in these files override
+variables already exported in the shell. The startup log lists the files loaded and a
+`sha256` fingerprint of the token; compare it with `printf %s "$TOKEN" | sha256sum | cut -c1-12`
+on the client when you get `401 unauthorized`.
 
 ```
 MCP_AUTH_TOKEN=<long random string>   # strongly recommended; clients send Authorization: Bearer <token>
+                                      # CAMERA_MCP_TOKEN is accepted as a fallback name
 MCP_PORT=8765                         # optional
 MCP_HOST=0.0.0.0                      # optional; 127.0.0.1 = local only
 MCP_ENABLED=1                         # 0 turns the MCP server off
