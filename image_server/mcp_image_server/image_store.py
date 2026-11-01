@@ -28,9 +28,46 @@ PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(-\d{2}(-\d{2})?)?$")
 # Pillow's JPEG quality (1-95 useful range) for crops / downscales; 90 keeps fur and edge detail.
 JPEG_QUALITY = 90
 
+TRANSFORM_UNAVAILABLE = (
+    "crop/resize unavailable: Pillow is not installed on this image server. "
+    "Call get_image again without box/max_side to get the stored bytes, or use "
+    "local__make_contact_sheet (it crops locally and does not need this server to transform). "
+    "Do not retry box/max_side on this server."
+)
+
 
 class InvalidName(ValueError):
     pass
+
+
+class TransformUnavailable(RuntimeError):
+    """box=/max_side= was asked for but this server cannot transform images."""
+
+
+def pil_available() -> bool:
+    """Whether Pillow can be imported (cached after the first check)."""
+    global _PIL_OK
+    if _PIL_OK is None:
+        try:
+            import PIL.Image  # noqa: F401
+
+            _PIL_OK = True
+        except ImportError:
+            _PIL_OK = False
+    return _PIL_OK
+
+
+_PIL_OK: bool | None = None
+
+
+def check_transform(box: list[int] | None, max_side: int | None) -> None:
+    """Fail fast when a crop/resize was asked for but Pillow is missing.
+
+    Call this before downloading any bytes: a transform that cannot run must
+    not cost an S3 fetch.
+    """
+    if (box or max_side) and not pil_available():
+        raise TransformUnavailable(TRANSFORM_UNAVAILABLE)
 
 
 class ImageStore:
@@ -81,9 +118,6 @@ class ImageStore:
             "source": "local",
             "size_bytes": st.st_size,
             "captured_at": t.isoformat(timespec="microseconds"),
-            "modified_at": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(timespec="milliseconds"),
-            "relative_path": os.path.relpath(path, self.root),
-            "mime_type": "image/jpeg",
         }
         if include_dimensions:
             with open(path, "rb") as f:
@@ -116,9 +150,6 @@ class ImageStore:
             "source": "local",
             "size_bytes": st.st_size,
             "captured_at": t.isoformat(timespec="microseconds"),
-            "modified_at": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(timespec="milliseconds"),
-            "relative_path": os.path.relpath(path, self.root),
-            "mime_type": "image/jpeg",
         }
         return info, data
 
@@ -151,6 +182,7 @@ class ImageStore:
 
 def transform(data: bytes, max_side: int | None, box: list[int] | None, timer: Timer) -> tuple[bytes, dict]:
     """Optional crop / downscale, re-encoded as JPEG. Needs Pillow; only used when asked for."""
+    check_transform(box, max_side)
     from PIL import Image
 
     img = Image.open(io.BytesIO(data))

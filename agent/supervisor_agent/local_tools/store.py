@@ -82,23 +82,45 @@ class Store:
     def cat_ids_for(self, cat: dict) -> set[int]:
         return {cat["cat_id"], *[v for v in (cat.get("tracking_ids") or {}).values() if isinstance(v, int)]}
 
+    def tracker_id_for(self, cat: dict, view_id: int) -> int | None:
+        """This profile's tracker id on a view (tracking_ids keys look like view_<id>_*)."""
+        for k, v in (cat.get("tracking_ids") or {}).items():
+            if k.startswith(f"view_{view_id}_") and isinstance(v, int):
+                return v
+        return None
+
     def profiles(self, ids: list[int] | None = None, view_id: int | None = None, detail: str = "low_res") -> list[dict]:
-        """Trimmed profiles for the model. detail: low_res (default), camera, or full."""
+        """Trimmed profiles for the model. detail: low_res (default), camera, or full.
+
+        With view_id, cat_id is that view's tracker id (the id the pipeline uses),
+        profile_id keeps the profile id, and confused_with ids are mapped the same way.
+        """
         cats = self.cats() if not ids else [c for c in (self.cat(i, view_id) for i in ids) if c]
         seen, out = set(), []
         for c in cats:
             if c["cat_id"] in seen:
                 continue
             seen.add(c["cat_id"])
+            tid = self.tracker_id_for(c, view_id) if view_id is not None else None
+            confused = []
+            for e in c.get("confused_with", []):
+                e = dict(e)
+                if "cat_id" in e and tid is not None:
+                    other = self.cat(e["cat_id"])
+                    mapped = self.tracker_id_for(other, view_id) if other else None
+                    e["cat_id"] = mapped if mapped is not None else e["cat_id"]
+                confused.append(e)
             p = {
-                "cat_id": c["cat_id"],
+                "cat_id": tid if tid is not None else c["cat_id"],
                 "name": c.get("name"),
                 "tracking_ids": c.get("tracking_ids", {}),
                 "summary": c.get("summary"),
                 "low_res_cues": c.get("low_res_cues", []),
                 "camera_cues": c.get("camera_cues", []),
-                "confused_with": c.get("confused_with", []),
+                "confused_with": confused,
             }
+            if tid is not None:
+                p["profile_id"] = c["cat_id"]
             if detail in ("full", "high_res"):
                 p["description"] = (c.get("description") or "").strip()
                 p["high_res_cues"] = c.get("high_res_cues", [])

@@ -138,12 +138,13 @@ def _fmt_ms(ms) -> str:
 
 
 def _usage_str(usage: dict) -> str:
+    """Per-turn context size: input_tokens is the whole billed context that turn."""
     if not usage:
-        return "n/a"
-    parts = [f"+{usage.get('input_tokens', '?')}/-{usage.get('output_tokens', '?')}"]
+        return "ctx n/a"
+    s = f"ctx {usage.get('input_tokens', '?')} in / {usage.get('output_tokens', '?')} out"
     if usage.get("cached_tokens") is not None:
-        parts.append(f"cached {usage['cached_tokens']}")
-    return " ".join(parts)
+        s += f" (cached {usage['cached_tokens']})"
+    return s
 
 
 def render_trace(
@@ -155,6 +156,7 @@ def render_trace(
     query,
     query_images: list[str],
     tools_exposed: list[str],
+    tools_schema_tokens: int = 0,
     text_format: dict | None,
     reasoning_effort: str | None,
     turns: list[TurnTrace],
@@ -202,7 +204,7 @@ def render_trace(
     for t in turns:
         label = f"assistant (turn {t.turn})"
         n_calls = len(t.calls)
-        head = f"LLM {_fmt_ms(t.llm_ms)} · tokens {_usage_str(t.usage)} · {n_calls} tool call{'s' if n_calls != 1 else ''}"
+        head = f"LLM {_fmt_ms(t.llm_ms)} · {_usage_str(t.usage)} · {n_calls} tool call{'s' if n_calls != 1 else ''}"
         if t.previous_response_id:
             head += f" · previous_response_id={t.previous_response_id}"
         if t.response_id:
@@ -286,6 +288,7 @@ def render_trace(
     lines.append(f"- started_at: {started_at}")
     lines.append(f"- turns: {len(turns)}")
     lines.append(f"- tool_calls: {len(tool_steps)}")
+    lines.append(f"- tools_exposed: {len(tools_exposed)} (~{tools_schema_tokens} est tokens, re-sent every turn)")
     lines.append(f"- llm_ms: {llm_ms:.1f}")
     lines.append(f"- tools_ms: {tools_ms:.1f}")
     lines.append(f"- total_ms: {total_ms:.1f}")

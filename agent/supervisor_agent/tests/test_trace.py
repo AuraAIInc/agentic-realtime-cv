@@ -101,6 +101,8 @@ def test_trace_md_has_full_messages_timing_tokens_and_cost(tmp_path):
     assert "- input_tokens: 300" in md
     assert "- output_tokens: 40" in md
     assert "- cached_tokens: 60" in md
+    assert "ctx 100 in / 10 out (cached 20)" in md  # per-turn billed context
+    assert "- tools_exposed: 2 (" in md and "re-sent every turn" in md
     assert "pricing_usd_per_1m: input=1.0 cached_input=0.1 output=2.0" in md
     assert "est_cost_usd: 0.000326" in md  # (240*1.0 + 60*0.1 + 40*2.0)/1e6
 

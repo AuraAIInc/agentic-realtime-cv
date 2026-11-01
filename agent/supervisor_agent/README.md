@@ -4,8 +4,8 @@ An LLM agent that answers questions about the cats by calling tools on three MCP
 
 | Prefix | Server | Repo | Tools |
 |---|---|---|---|
-| `camera__` | live camera on the Pi | `camera_server` (`python -m camera_v3`) | get_status, capture_frame, capture_roi, get_camera_modes, capture_high_res, detect, get_track_history, get_track_frame, list_buffered_frames, set_schedule, reset_schedule |
-| `images__` | stored images on the SSD | `image-server` (`python -m mcp_image_server`) | image_exists, images_exist, get_image, list_images |
+| `camera__` | live camera on the Pi | `camera_server` (`python -m camera_v3`) | get_status, capture_frame, get_camera_modes, capture_high_res, list_models, detect, get_track_history, get_track_frame, list_buffered_frames, set_schedule, reset_schedule |
+| `images__` | stored images on SSD and S3 | `image-server` (`python -m mcp_image_server`) | image_exists, images_exist, get_image, list_images |
 | `tracking__` | tracker / period results, live and saved | this repo, inside `existing_work_before_hackathon/detection_ingest_server.py` ([tracking_mcp](../../existing_work_before_hackathon/tracking_mcp/README.md)) | list_views, get_live_status, get_last_seen, get_current_periods, get_periods, get_period_detail, get_arrival_path, get_last_movement, get_raw_detections |
 
 The model (Muse Spark `muse-spark-1.3` on the Meta Model API, via its Responses endpoint) picks the tools a query needs. The
@@ -72,7 +72,7 @@ Example queries:
 - "Check whether 2026-10-24-20-15-03-123456.jpg exists, and how big it is."
 - "List the images from 2026-10-24 20:15 and show me the first one."
 - "Track 3's identity looks inconsistent. Show me where it first appeared and re-check it with yolov8s."
-- "The cat is asleep; drop the camera to one frame every 30 s for an hour."
+- "The cat is asleep; drop the camera to one frame every 30 s for an hour." (needs `--full-tools`: schedules are hidden from default chat)
 - "When was each cat last seen? Show me the frame."
 - "How long has the current period lasted, and what is its score?"
 - "Where did Qbo come from? Show me."
@@ -146,7 +146,20 @@ Set `"reasoning_effort": "low" | "medium" | "high"` in `models.json` for reasoni
 
 ## Tools and skills
 
-The agent sees 38 tools. `camera__*`, `images__*` and `tracking__*` live on the MCP servers: names, descriptions and schemas below are exactly what those servers reported on 2026-10-27 (they can change server-side; `python -m supervisor_agent --list-tools` shows the current list). `local__*` run in-process and are defined in [`local_tools/server.py`](local_tools/server.py); `skill__*` load a skill's instructions when invoked (see [`local_tools/skills.py`](local_tools/skills.py) and [`skills/`](skills/)).
+The agent sees 39 tools. `camera__*`, `images__*` and `tracking__*` live on the MCP servers: names, descriptions and schemas below are what those servers reported on 2026-10-27 (they can change server-side; `python -m supervisor_agent --list-tools` shows the current list). `local__*` run in-process and are defined in [`local_tools/server.py`](local_tools/server.py); `skill__*` load a skill's instructions when invoked (see [`local_tools/skills.py`](local_tools/skills.py) and [`skills/`](skills/)).
+
+Changed since the 2026-10-27 snapshot: `camera__get_status` takes `verbose` (slim by default);
+`camera__capture_frame` takes `draw_detections`; `camera__list_buffered_frames` defaults to
+`limit=0` (span only); `tracking__get_current_periods` defaults to `final_limit=3` and drops
+zero-detection evidence rows; `tracking__get_arrival_path` takes `min_empty_gap_s` and may
+return a `pre_entry` frame; `camera__get_track_history` reports `first/last_frame_buffered`;
+`camera__detect` replies include `cat_classes`.
+
+Default chat hides write and rarely used tools (`camera__set_schedule`,
+`camera__reset_schedule`, `camera__list_models`, `camera__get_camera_modes`,
+`tracking__get_raw_detections`, `local__add_label`, `local__save_zone`) and pipeline-only
+skills; `--full-tools` restores every tool. Each skill's frontmatter `surface` (`task` |
+`chat` | `both`) controls where its `skill__*` tool is registered.
 
 ### Camera (`camera__*`, 11 tools)
 
@@ -1647,9 +1660,9 @@ Define or replace a named zone on a view. confirm=false returns the draft for th
 ```
 </details>
 
-### Skills (`skill__*`, 4 tools)
+### Skills (`skill__*`, 5 tools)
 
-One tool per folder in [`skills/`](skills/): invoking it loads that skill's full instructions. Generated automatically; see [`local_tools/skills.py`](local_tools/skills.py).
+One tool per folder in [`skills/`](skills/): invoking it loads that skill's instructions as plain text. Generated automatically; see [`local_tools/skills.py`](local_tools/skills.py). Each skill's frontmatter `surface` decides where it is registered: `check-live-detections` and `manage-labels` are chat skills, the other three are pipeline-task skills loaded directly by `tasks.py`.
 
 #### `skill__assign-activity-label`
 
@@ -1669,6 +1682,21 @@ Skill 'assign-activity-label': Give one cat crop exactly one activity label and 
 #### `skill__check-trajectory`
 
 Skill 'check-trajectory': Check that one visit (period) is a physically plausible path of one animal, looking only at the few frames around what the code flagged. Use for check_trajectory tasks. Invoke it (no arguments) to load the full skill instructions, then follow them step by step.
+
+<details>
+<summary>Input schema</summary>
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+</details>
+
+#### `skill__check-live-detections`
+
+Skill 'check-live-detections': Answer "what is on camera now, and is the model right" in about three turns: one annotated frame, one round of zoomed crops, then a verdict table. Use for live camera questions in chat. Invoke it (no arguments) to load the full skill instructions, then follow them step by step.
 
 <details>
 <summary>Input schema</summary>
@@ -1759,7 +1787,8 @@ python -m supervisor_agent --labels   # "label the cat when it sits in the tent"
 
 - **Cheapest evidence first.** Every task has an image budget in
   `agent_data/config/agent.yaml`; image-returning calls past it are refused, so the model
-  decides or answers `send_to_human`. Parallel calls reserve budget before they run.
+  decides or answers `send_to_human`. Parallel calls reserve budget before they run;
+  calls that error without returning an image refund their reservation.
 - **Only the task's tools** are sent to the model (the list in agent.yaml), which keeps
   prompts small; the skill text is the system prompt, so it caches well.
 - **`local__*` tools** run in-process on the hub next to the MCP servers: cat profiles,

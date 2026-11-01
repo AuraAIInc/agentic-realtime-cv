@@ -73,6 +73,41 @@ def test_parse_time_formats():
     assert parse_time("2026-10-25-10-00-01-000500.jpg") == datetime.datetime(2026, 10, 25, 10, 0, 1, 500)
 
 
+def test_compress_path_collapses_static_runs():
+    pts = track([(60, 0)])  # 180 identical centers
+    out = motion.compress_path(pts, 60)
+    assert len(out) == 2, len(out)  # first + last only
+    assert out[0]["time"] < out[-1]["time"]
+
+
+def test_compress_path_keeps_moves_and_endpoints():
+    pts = track([(10, 0), (5, 40), (10, 0)])
+    out = motion.compress_path(pts, 60)
+    xs = [p["x"] for p in out]
+    assert len(out) < len(pts) and max(xs) - min(xs) > 150
+    assert out[0]["x"] == pts[0][1][0] + 25 and out[-1]["x"] == pts[-1][1][0] + 25
+
+
+def test_travel_span_and_empty_evidence():
+    from tracking_mcp import server as srv
+
+    rows = [([T0 + datetime.timedelta(seconds=i), 100, 100, 150, 150, 26, 0.6, 26, 1], True, "period") for i in range(5)]
+    assert srv._travel_span(rows) == 0.0
+    rows[-1][0][1] += 100
+    rows[-1][0][3] += 100  # whole box moves 100 px right
+    assert srv._travel_span(rows) == 100.0
+    periods = [{"evidence_by_cat": {"25": {"detections": 0, "avg_conf": 0.0, "score": 0.0},
+                                    "26": {"detections": 5, "avg_conf": 0.6, "score": 3.0}}}]
+    srv._drop_empty_evidence(periods)
+    assert periods[0]["evidence_by_cat"] == {"26": {"detections": 5, "avg_conf": 0.6, "score": 3.0}}
+
+
+def test_utcnow_str_labels_utc():
+    from tracking_mcp import server as srv
+
+    assert srv._utcnow_str(datetime.datetime(2026, 11, 1, 7, 35, 3)).endswith("+00:00")
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

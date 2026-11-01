@@ -24,7 +24,8 @@ TOOLS: list[dict] = [
         "name": "get_cat_profiles",
         "description": "Written profiles of the household cats: name, tracker ids per view, summary, low-res and camera cues, "
         "how to tell them apart. detail='full' adds the long description and high-res cues (eyes, nose). "
-        "cat_ids may be profile ids or tracker ids (e.g. 25/26 on view 3).",
+        "cat_ids may be profile ids or tracker ids (e.g. 25/26 on view 3). With view_id, cat_id is that "
+        "view's tracker id (answer with it); without view_id it is the profile id.",
         "input_schema": {"type": "object", "properties": {
             "cat_ids": {"type": "array", "items": {"type": "integer"}},
             "view_id": {"type": "integer"},

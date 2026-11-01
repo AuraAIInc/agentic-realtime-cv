@@ -21,27 +21,30 @@ class FrameBuffer:
         self.jpeg_quality = jpeg_quality
         self._times: list[datetime.datetime] = []
         self._data: list[bytes] = []
+        self._dets: list[list[dict]] = []  # loop detections per frame, same order as _times
         self._lock = threading.Lock()
 
-    def add(self, t: datetime.datetime, frame: np.ndarray) -> None:
+    def add(self, t: datetime.datetime, frame: np.ndarray, detections: list[dict] | None = None) -> None:
         if self.maxlen <= 0:
             return
         data = imaging.encode(frame, self.jpeg_quality)
         with self._lock:
             self._times.append(t)
             self._data.append(data)
+            self._dets.append(list(detections or []))
             if len(self._times) > self.maxlen:
-                del self._times[0], self._data[0]
+                del self._times[0], self._data[0], self._dets[0]
 
-    def nearest(self, t: datetime.datetime) -> tuple[datetime.datetime, np.ndarray] | None:
+    def nearest(self, t: datetime.datetime) -> tuple[datetime.datetime, np.ndarray, list[dict]] | None:
+        """Closest buffered frame to t, with the loop detections recorded for it."""
         with self._lock:
             if not self._times:
                 return None
             i = bisect.bisect_left(self._times, t)
             candidates = [j for j in (i - 1, i) if 0 <= j < len(self._times)]
             j = min(candidates, key=lambda k: abs((self._times[k] - t).total_seconds()))
-            found_t, data = self._times[j], self._data[j]
-        return found_t, imaging.decode(data)
+            found_t, data, dets = self._times[j], self._data[j], self._dets[j]
+        return found_t, imaging.decode(data), [dict(d) for d in dets]
 
     def span(self) -> dict:
         with self._lock:
@@ -56,4 +59,6 @@ class FrameBuffer:
 
     def times(self, limit: int = 50) -> list[str]:
         with self._lock:
+            if limit <= 0:
+                return []
             return [t.isoformat(timespec="milliseconds") for t in self._times[-limit:]]

@@ -79,17 +79,20 @@ class CameraService:
         return frame, t
 
     def _frame_at(self, at: str | None):
+        """(frame, time, loop detections for it). Live frames (at=None) carry no detections;
+        use the loop's last message for those."""
         if not at:
-            return self._latest()
+            frame, t = self._latest()
+            return frame, t, []
         want = parse_time(at)
         found = self.buffer.nearest(want)
         if found is None:
             raise RuntimeError("frame buffer is empty")
-        t, frame = found
+        t, frame, dets = found
         if want < t and (t - want).total_seconds() > 1.0:
             span = self.buffer.span()
             raise RuntimeError(f"frame at {at} has already left the buffer (oldest kept: {span.get('oldest')})")
-        return frame, t
+        return frame, t, dets
 
     def _render(self, frame, t, max_side) -> tuple[dict, bytes]:
         """JPEG for the client, shrunk so its longest side is <= max_side (None = as is)."""
@@ -102,36 +105,67 @@ class CameraService:
         return [sizes[0]["width"], sizes[0]["height"]] if sizes else None
 
     # ------------------------------------------------------------ status
-    def status(self) -> dict:
-        return {
+    def status(self, verbose: bool = False) -> dict:
+        """Slim by default (what callers need to pick the next tool); verbose adds
+        grab timings, controller defaults, queue depths and websocket internals."""
+        control = self.controller.status()
+        ws = self.ws_status()
+        span = self.buffer.span()
+        out = {
             "device_id": self.cfg.device_id,
             "view_id": self.cfg.view_id,
+            "sim": False,
             "display_size": list(self.cfg.camera_img_size),
             "capture_size": list(self.source.actual_size or self.cfg.effective_capture_size),
             "camera_max_size": self._max_size(),
             "camera_read_fps": round(self.source.read_fps, 2),
-            "camera_read_ms": getattr(self.source, "read_ms", None),  # mean frame-grab time, 5 s window
-            "control": self.controller.status(),
+            "control": {k: control[k] for k in ("mode", "settings", "override_expires_in_s", "override_reason") if k in control},
             "loop": self.loop.snapshot(),
             "models": self.inference.registry.names(),
             "cat_names": {str(k): v for k, v in self.cfg.cat_names.items()},
-            "frame_buffer": self.buffer.span(),
+            "frame_buffer": {k: span[k] for k in ("count", "oldest", "newest") if k in span},
             "track_epoch": self.tracks.epoch,
-            "websocket": self.ws_status(),
-            "image_upload_queue": self.image_store.qsize(),
+            "websocket": {"connected": ws.get("connected")} if isinstance(ws, dict) else ws,
         }
+        if verbose:
+            out["camera_read_ms"] = getattr(self.source, "read_ms", None)  # mean frame-grab time, 5 s window
+            out["control"] = control
+            out["frame_buffer"] = span
+            out["websocket"] = ws
+            out["image_upload_queue"] = self.image_store.qsize()
+        return out
 
     # ------------------------------------------------------------ captures
-    def capture_frame(self, box=None, padding=0.15, max_side=1280, at=None):
-        """Newest (or buffered) stream frame, optionally cropped to a padded display-coords box."""
-        frame, t = self._frame_at(at)
+    def capture_frame(self, box=None, padding=0.15, max_side=1280, at=None, draw_detections=False):
+        """Newest (or buffered) stream frame, optionally cropped to a padded display-coords box.
+
+        With draw_detections, the loop's boxes for that same frame are drawn and
+        returned in meta["detections"], so one call shows the frame and what the
+        model saw in it. For live frames (at=None) the boxes come from the loop's
+        last processed message, which may be a frame behind.
+        """
+        frame, t, dets = self._frame_at(at)
+        if not at:
+            last = self.loop.last_message or {}
+            dets, dets_from = list(last.get("detections") or []), last.get("create_time")
+        else:
+            dets_from = _iso(t)
         if not box:
-            return self._render(frame, t, max_side)
-        roi = imaging.pad_box(box, padding, self.cfg.camera_img_size)
-        crop, _ = imaging.crop_display_roi(frame, roi, self.cfg.camera_img_size)
-        meta, data = self._render(crop, t, max_side)
-        meta["roi_display"] = roi
-        meta["zoom_factor"] = round(imaging.frame_size(frame)[0] / self.cfg.camera_img_size[0], 3)
+            if draw_detections and dets:
+                frame = imaging.draw_detections(frame.copy(), dets, tuple(self.cfg.camera_img_size))
+            meta, data = self._render(frame, t, max_side)
+        else:
+            roi = imaging.pad_box(box, padding, self.cfg.camera_img_size)
+            crop, _ = imaging.crop_display_roi(frame, roi, self.cfg.camera_img_size)
+            if draw_detections and dets:
+                crop = crop.copy()  # the ROI is a view into the source frame; never draw on it
+                imaging.draw_detections(crop, dets, tuple(self.cfg.camera_img_size), view=tuple(roi))
+            meta, data = self._render(crop, t, max_side)
+            meta["roi_display"] = roi
+            meta["zoom_factor"] = round(imaging.frame_size(frame)[0] / self.cfg.camera_img_size[0], 3)
+        if draw_detections:
+            meta["detections"] = dets
+            meta["detections_frame"] = dets_from
         return meta, data
 
     # ------------------------------------------------------------ high resolution
@@ -268,17 +302,28 @@ class CameraService:
         return {n: self.inference.registry.describe(n) for n in self.inference.registry.names()}
 
     def detect(self, model="default", at=None, roi=None, imgsz=None, conf=None, timeout=60.0) -> dict:
-        frame, t = self._frame_at(at)
+        frame, t, _ = self._frame_at(at)
         if roi:
             roi = imaging.clamp_box(roi, self.cfg.camera_img_size)
         frame = frame.copy()
         dets = self.controller.submit(lambda: self.inference.run(frame, model, roi, imgsz, conf, track=False), timeout=timeout)
-        return {"captured_at": _iso(t), "model": model, "roi": roi, "imgsz": imgsz, "detections": dets}
+        try:
+            cat_classes = bool(self.inference.registry.describe(model).get("cat_classes"))
+        except Exception:
+            cat_classes = None  # unknown model; inference already ran, don't fail the reply over metadata
+        return {"captured_at": _iso(t), "model": model, "cat_classes": cat_classes, "roi": roi, "imgsz": imgsz, "detections": dets}
 
     # ------------------------------------------------------------ look-back
     def track_history(self, limit=50, all_epochs=False, at=None, window_seconds=2.0) -> dict:
         when = parse_time(at) if at else None
-        out = {"epoch": self.tracks.epoch, "tracks": self.tracks.snapshot(limit, not all_epochs, when, window_seconds)}
+        tracks = self.tracks.snapshot(limit, not all_epochs, when, window_seconds)
+        span = self.buffer.span()
+        oldest, newest = span.get("oldest"), span.get("newest")
+        for r in tracks:
+            # ISO timestamps sort lexicographically, so string comparison is enough.
+            r["first_frame_buffered"] = bool(oldest and newest and oldest <= r["first_seen"] <= newest)
+            r["last_frame_buffered"] = bool(oldest and newest and oldest <= r["last_seen"] <= newest)
+        out = {"epoch": self.tracks.epoch, "tracks": tracks}
         if when:
             out.update(at=_iso(when), window_seconds=window_seconds)
         return out
@@ -294,7 +339,7 @@ class CameraService:
         return meta, data
 
     def buffered_times(self, limit=50) -> dict:
-        return {**self.buffer.span(), "recent": self.buffer.times(limit)}
+        return {**self.buffer.span(), "recent": self.buffer.times(limit) if limit > 0 else []}
 
     # ------------------------------------------------------------ scheduling
     def set_schedule(self, duration_seconds, fps=None, roi=None, imgsz=None, model=None, reason="", merge=True) -> dict:

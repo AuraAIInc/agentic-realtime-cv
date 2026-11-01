@@ -52,6 +52,43 @@ def frame_size(frame: np.ndarray) -> tuple[int, int]:
     return frame.shape[1], frame.shape[0]
 
 
+def draw_detections(
+    frame: np.ndarray,
+    detections: list[dict],
+    display_size: tuple[int, int],
+    view: tuple[int, int, int, int] | None = None,
+) -> np.ndarray:
+    """Draw loop detections (display-coords boxes) onto a frame, in place.
+
+    `view` is the display-coords region the frame shows ([x1, y1, x2, y2],
+    full display when None); boxes are mapped from that region to the frame,
+    so crops work as well as full frames. Boxes fully outside are skipped.
+    Returns the same array.
+    """
+    size = frame_size(frame)
+    vx1, vy1, vx2, vy2 = view if view is not None else (0, 0, *display_size)
+    region = (max(1, vx2 - vx1), max(1, vy2 - vy1))
+    for d in detections or []:
+        box = d.get("box")
+        if not box:
+            continue
+        shifted = [box[0] - vx1, box[1] - vy1, box[2] - vx1, box[3] - vy1]
+        x1, y1, x2, y2 = scale_box(shifted, region, size)
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(size[0], x2), min(size[1], y2)
+        if x2 - x1 < 2 or y2 - y1 < 2:
+            continue
+        cat = int(d.get("cat_id") or -1) >= 0
+        color = (60, 220, 60) if cat else (200, 200, 200)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+        label = f"{d.get('label', '?')} {float(d.get('confidence', 0)):.2f}"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        ty = y1 - 4 if y1 - 4 - th > 0 else y1 + th + 4
+        cv2.rectangle(frame, (x1, ty - th - 2), (x1 + tw + 4, ty + 2), color, -1)
+        cv2.putText(frame, label, (x1 + 2, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+    return frame
+
+
 def resize_to(frame: np.ndarray, size: tuple[int, int]) -> np.ndarray:
     if frame_size(frame) == tuple(size):
         return frame

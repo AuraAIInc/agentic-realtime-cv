@@ -61,6 +61,22 @@ def downsample(points: list[Point], n: int) -> list[dict]:
     return out
 
 
+def compress_path(points: list[Point], n: int, min_move_px: float = 5.0) -> list[dict]:
+    """downsample() after dropping consecutive points the center barely moved between.
+
+    A period that sat still for minutes would otherwise repeat the same center
+    n times; compression keeps the first and last point plus every real move.
+    """
+    if len(points) > 2:
+        kept = [points[0]]
+        for p in points[1:-1]:
+            if center_distance(kept[-1][1], p[1]) >= min_move_px:
+                kept.append(p)
+        kept.append(points[-1])
+        points = kept
+    return downsample(points, n)
+
+
 def picks_by_distance(points: list[Point], n: int) -> list[int]:
     """n indices at equal steps of cumulative center distance, so a cat that sat still
     for a long time isn't over-sampled. Always includes the first and last index."""

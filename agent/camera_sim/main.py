@@ -185,10 +185,14 @@ def build(cfg: SimConfig):
 class SimCameraService(CameraService):
     """The camera_v3 service, plus replay progress in get_status."""
 
-    def status(self) -> dict:
-        d = super().status()
+    def status(self, verbose: bool = False) -> dict:
+        d = super().status(verbose=verbose)
         d["sim"] = True
         d["replay"] = self.source.progress()
+        d["warning"] = (
+            "replay mode: frame timestamps are replay times, not wall-clock; "
+            "live tracking__ data is NOT from this stream, do not cross-reference them"
+        )
         return d
 
     def camera_modes(self) -> dict:

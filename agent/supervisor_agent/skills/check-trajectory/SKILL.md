@@ -1,6 +1,7 @@
 ---
 name: check-trajectory
 description: Check that one visit (period) is a physically plausible path of one animal, looking only at the few frames around what the code flagged. Use for check_trajectory tasks.
+surface: task
 ---
 
 # Check a visit's continuity

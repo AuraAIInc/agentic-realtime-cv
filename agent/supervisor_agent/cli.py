@@ -19,7 +19,7 @@ import logging
 import os
 import sys
 
-from supervisor_agent.agent import MCPAgent, RunResult, ToolStep
+from supervisor_agent.agent import MCPAgent, RunOptions, RunResult, ToolStep
 from supervisor_agent.config import AgentConfig
 from supervisor_agent.local_tools import LocalTools
 from supervisor_agent.local_tools.skills import SkillTools
@@ -34,6 +34,21 @@ def _color(code: str):
 
 
 green, blue, grey = _color("32"), _color("34"), _color("90")
+
+# Tools hidden from default chat: write operations, rare reads, and raw DB dumps.
+# Every hidden schema would otherwise be re-sent on each turn; --full-tools restores them.
+# (Pipeline-only skill__* tools are already gated by their frontmatter `surface`.)
+CHAT_HIDDEN_TOOLS = frozenset({
+    "camera__set_schedule", "camera__reset_schedule",
+    "camera__list_models", "camera__get_camera_modes",
+    "tracking__get_raw_detections",
+    "local__add_label", "local__save_zone",
+})
+
+
+def chat_tool_names(hub) -> list[str]:
+    """All registered tools minus the ones default chat hides."""
+    return [n for n in hub.tools if n not in CHAT_HIDDEN_TOOLS]
 
 
 def _secs(ms: float) -> str:
@@ -124,6 +139,8 @@ async def amain(args) -> int:
             print(grey(f"[model called: {out.get('model_called')} | images {out.get('images_used', 0)} | {out.get('elapsed_s')} s | log {out.get('log_id', '-')}]"))
             return 0
         chat_opts = chat_options(local.store) if args.labels else None
+        if chat_opts is None and not args.full_tools:
+            chat_opts = RunOptions(tool_names=chat_tool_names(hub))
         if args.query:
             r = await agent.run(" ".join(args.query), options=chat_opts)
             _print_result(r, cfg)
@@ -174,6 +191,7 @@ def main() -> None:
                    help="run one pipeline task (skill + strict JSON answer) instead of a chat query")
     p.add_argument("--payload", help="task payload: JSON string or @file.json")
     p.add_argument("--labels", action="store_true", help="chat with the manage-labels skill to add labels and zones")
+    p.add_argument("--full-tools", action="store_true", help="expose every tool in chat (default hides schedules, zones, labels, raw DB reads)")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s")

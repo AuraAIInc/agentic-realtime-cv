@@ -67,11 +67,12 @@ def build_mcp(service: CameraService):
         return [json.dumps(meta, default=str), Image(data=data, format="jpeg")]
 
     @mcp.tool(structured_output=False)
-    def get_status() -> str:
+    def get_status(verbose: bool = False) -> str:
         """Current mode (default/override), effective settings and time left on any override,
         loop and camera FPS, last detection message, available models, cat names, frame
-        buffer span, and WebSocket state."""
-        return text(lambda: service.status())
+        buffer span, and whether the WebSocket is connected. verbose=true adds grab
+        timings, controller defaults, queue depths and full WebSocket state."""
+        return text(lambda: service.status(verbose))
 
     @mcp.tool(structured_output=False)
     def capture_frame(
@@ -79,12 +80,15 @@ def build_mcp(service: CameraService):
         padding: float = 0.15,
         max_side: int | None = 1280,
         at: str | None = None,
+        draw_detections: bool = False,
     ):
         """Grab the newest frame of the always-on stream (or the buffered frame nearest `at`).
         box crops it (display coords, padded by `padding` x box size); for a sharper zoom use
         capture_high_res with the same box. The image is shrunk so its longest side is
-        <= max_side (null = no resize). Instant; does not interrupt the detection loop."""
-        return with_image(lambda: service.capture_frame(box, padding, max_side, at))
+        <= max_side (null = no resize). Instant; does not interrupt the detection loop.
+        draw_detections=true draws the loop's boxes for that same frame and returns them
+        in detections, so one call shows the frame and what the model saw in it."""
+        return with_image(lambda: service.capture_frame(box, padding, max_side, at, draw_detections))
 
     @mcp.tool(structured_output=False)
     def get_camera_modes() -> str:
@@ -133,7 +137,8 @@ def build_mcp(service: CameraService):
             f"Escalate: run one detection pass with `model` (one of: {models}; list_models describes "
             "them) on the newest frame or the buffered frame nearest `at`, optionally only inside "
             "`roi` (full-res crop) and at input size `imgsz` [w, h]. Does not touch the tracker. "
-            "Delays the default loop by one inference."
+            "Delays the default loop by one inference. Only models with cat_classes=true identify "
+            "cats; other models return generic labels (cat_id -1) that cannot validate cat identity."
         ),
     )
     def detect(
@@ -154,11 +159,13 @@ def build_mcp(service: CameraService):
     ) -> str:
         """Tracks seen by the default loop: first/last seen time and box, hits, max confidence,
         and cat_id counts. identity_consistent=false means the track changed cat_id at least
-        once (a likely ID switch worth validating). Track IDs restart (new epoch) whenever
-        the loop's model/roi/imgsz changes. `at` returns only tracks seen within
-        window_seconds of that time (from every epoch). Short-term only: kept in the camera's
-        memory (last 500 tracks, lost on restart). For older or complete history use the
-        backend, which records every track from the WebSocket stream."""
+        once (a likely ID switch worth validating). first/last_frame_buffered say whether
+        get_track_frame can still fetch that frame (false = already evicted, don't ask).
+        Track IDs restart (new epoch) whenever the loop's model/roi/imgsz changes. `at`
+        returns only tracks seen within window_seconds of that time (from every epoch).
+        Short-term only: kept in the camera's memory (last 500 tracks, lost on restart).
+        For older or complete history use the backend, which records every track from the
+        WebSocket stream."""
         return text(lambda: service.track_history(limit, all_epochs, at, window_seconds))
 
     @mcp.tool(structured_output=False)
@@ -177,9 +184,10 @@ def build_mcp(service: CameraService):
         return with_image(lambda: service.track_frame(track_id, which, epoch, crop, padding, max_side))
 
     @mcp.tool(structured_output=False)
-    def list_buffered_frames(limit: int = 50) -> str:
-        """Timestamps of the most recent processed frames kept in the camera's look-back buffer
-        (full capture resolution, a fixed number of frames, lost on restart). `at` in
+    def list_buffered_frames(limit: int = 0) -> str:
+        """Time span of the camera's look-back buffer (full capture resolution, a fixed
+        number of frames, lost on restart): count, oldest, newest. limit>0 also lists
+        that many of the most recent frame timestamps (rarely needed). `at` in
         capture_frame / detect and get_track_frame can only reach frames between oldest and
         newest; at full frame rate that is often under a minute."""
         return text(lambda: service.buffered_times(limit))

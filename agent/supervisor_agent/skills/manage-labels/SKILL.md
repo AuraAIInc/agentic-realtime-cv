@@ -1,6 +1,7 @@
 ---
 name: manage-labels
 description: Turn a user's plain-language request ("label the cat when it sits in the tent") into a new label, and a new zone if it is place-based, confirming with the user before saving. Use for label commands.
+surface: chat
 ---
 
 # Add a label by command

@@ -9,19 +9,33 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 
 from supervisor_agent.mcp_hub import CallOutcome, HubTool
+
+logger = logging.getLogger(__name__)
+
+MAX_DESCRIPTION_CHARS = 1024
+
+
+def estimate_tokens(tool: dict) -> int:
+    """Rough token cost of one function-tool schema (chars / 4, the trace's scale)."""
+    return len(json.dumps(tool, default=str)) // 4
 
 
 def to_function_tool(tool: HubTool) -> dict:
     schema = dict(tool.input_schema or {})
     schema.setdefault("type", "object")
     schema.setdefault("properties", {})
+    description = tool.description or ""
+    if len(description) > MAX_DESCRIPTION_CHARS:
+        logger.warning(f"tool {tool.qualified_name}: description truncated to {MAX_DESCRIPTION_CHARS} chars")
+        description = description[:MAX_DESCRIPTION_CHARS]
     return {
         "type": "function",
         "name": tool.qualified_name,
-        "description": (tool.description or "")[:1024],
+        "description": description,
         "parameters": schema,
         "strict": False,  # MCP schemas have optional params with defaults; strict mode requires all fields
     }

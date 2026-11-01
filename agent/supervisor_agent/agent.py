@@ -22,6 +22,7 @@ from supervisor_agent.config import AgentConfig
 from supervisor_agent.invoke_log import get_invoke_log
 from supervisor_agent.mcp_hub import MCPHub
 from supervisor_agent.prompts import build_instructions
+from supervisor_agent.tool_adapter import estimate_tokens as _estimate_tool_tokens
 from supervisor_agent.tool_adapter import server_timing, to_function_output, to_function_tool
 from supervisor_agent.trace import TurnTrace, render_trace, save_data_url_images
 
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 # budget; when the budget is spent, further calls are refused so the model must decide or
 # escalate to a human instead of looking again.
 IMAGE_TOOLS = {
-    "camera__capture_frame", "camera__capture_roi", "camera__capture_high_res", "camera__get_track_frame",
+    "camera__capture_frame", "camera__capture_high_res", "camera__get_track_frame",
     "images__get_image", "tracking__get_arrival_path",
 }
 HIGH_RES_TOOLS = {"camera__capture_high_res"}
@@ -121,8 +122,8 @@ class MCPAgent:
             run_dir = os.path.join(self.cfg.save_dir, f"{stamp}-{opts.tag}" if opts.tag else stamp)
         result = RunResult(query=query if isinstance(query, str) else json.dumps(query, default=str)[:2000], answer="", model=self.cfg.model, turns=0, run_dir=run_dir)
         tools = self._tools(opts.tool_names)
-        instructions = opts.instructions or build_instructions(self.hub.server_info, self.hub.failed)
-        self._opts = opts
+        # None = default instructions; "" = none (a chained retry already has them).
+        instructions = opts.instructions if opts.instructions is not None else build_instructions(self.hub.server_info, self.hub.failed)
 
         extra = {}
         effort = opts.reasoning_effort or self.cfg.reasoning_effort
@@ -179,7 +180,7 @@ class MCPAgent:
             self.on_event("tool_calls", [(c.name, c.arguments) for c in calls])
             t1 = time.perf_counter()
             started_at = datetime.datetime.now()
-            outputs = await asyncio.gather(*[self._execute(c, turn, run_dir, result) for c in calls])
+            outputs = await asyncio.gather(*[self._execute(c, turn, run_dir, result, opts) for c in calls])
             result.tools_ms += (time.perf_counter() - t1) * 1000
             turns_log.append((turn, started_at, calls, outputs))
             next_input = list(outputs)
@@ -206,7 +207,8 @@ class MCPAgent:
             md = render_trace(
                 model=self.cfg.model, tag=opts.tag, started_at=invoke_time.strftime("%Y-%m-%d %H:%M:%S"),
                 instructions=instructions, query=query, query_images=query_images,
-                tools_exposed=[t["name"] for t in tools], text_format=opts.text_format, reasoning_effort=effort,
+                tools_exposed=[t["name"] for t in tools], tools_schema_tokens=sum(_estimate_tool_tokens(t) for t in tools),
+                text_format=opts.text_format, reasoning_effort=effort,
                 turns=trace_turns, tool_steps=result.tool_steps, answer=result.answer, usage=result.usage,
                 pricing=self.cfg.pricing.get(self.cfg.model), est_cost_usd=self.cfg.estimate_cost_usd(result.usage),
                 llm_ms=result.llm_ms, tools_ms=result.tools_ms, total_ms=result.total_ms,
@@ -217,7 +219,7 @@ class MCPAgent:
                 f.write(md)
         return result
 
-    async def _execute(self, call, turn: int, run_dir: str | None, result: RunResult) -> dict:
+    async def _execute(self, call, turn: int, run_dir: str | None, result: RunResult, opts: RunOptions) -> dict:
         try:
             args = json.loads(call.arguments or "{}")
         except json.JSONDecodeError as e:
@@ -225,7 +227,8 @@ class MCPAgent:
         else:
             bad = None
 
-        refused = None if bad else self._budget_refusal(call.name, args, result)
+        claimed_image = self._claims_image(call.name, args) if not bad else False
+        refused = None if bad else self._budget_refusal(call.name, args, result, opts)
         if refused:
             items = [{"type": "input_text", "text": json.dumps({"tool": call.name, "error": refused})}]
             step = ToolStep(turn, call.name, args, 0.0, None, None, True, refused, [], "", call.call_id, [items[0]["text"]])
@@ -256,17 +259,25 @@ class MCPAgent:
                 call_id=call.call_id,
                 output_texts=texts,
             )
+            if claimed_image and step.is_error and not saved and not any(it["type"] == "input_image" for it in items):
+                # The reservation is refunded: an error that delivered no pixels must
+                # not eat the image budget (high_res stays charged: it still paused detection).
+                result.images_used -= 1
         result.tool_steps.append(step)
         self.on_event("tool_result", step)
         return {"type": "function_call_output", "call_id": call.call_id, "output": items}
 
 
-    def _budget_refusal(self, name: str, args: dict, result: RunResult) -> str | None:
-        opts = getattr(self, "_opts", None) or RunOptions()
+    def _claims_image(self, name: str, args: dict) -> bool:
+        """Whether a call counts against the image budget (before knowing its outcome)."""
         tool = self.hub.tools.get(name)
         returns_image = name in IMAGE_TOOLS or bool(tool and (tool.meta or {}).get("returns_image"))
         if name == "tracking__get_arrival_path" and not args.get("include_images"):
             returns_image = False
+        return returns_image
+
+    def _budget_refusal(self, name: str, args: dict, result: RunResult, opts: RunOptions) -> str | None:
+        returns_image = self._claims_image(name, args)
         if returns_image and opts.image_budget is not None and result.images_used >= opts.image_budget:
             return (f"image budget reached ({opts.image_budget} image calls for this task). Decide from what you have, "
                     "or answer with the human-review action.")
