@@ -23,6 +23,7 @@ from supervisor_agent.invoke_log import get_invoke_log
 from supervisor_agent.mcp_hub import MCPHub
 from supervisor_agent.prompts import build_instructions
 from supervisor_agent.tool_adapter import server_timing, to_function_output, to_function_tool
+from supervisor_agent.trace import TurnTrace, render_trace, save_data_url_images
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,7 @@ class ToolStep:
     images_saved: list[str]
     preview: str  # first part of the text result
     call_id: str = ""
+    output_texts: list[str] = field(default_factory=list)  # full text result (for trace.md)
 
 
 @dataclass
@@ -137,6 +139,7 @@ class MCPAgent:
         prev_id = previous_response_id
         response = None
         turns_log = []  # (turn, started_at, calls, outputs) for the invoke dump
+        trace_turns: list[TurnTrace] = []
         max_steps = opts.max_steps or self.cfg.max_steps
         for turn in range(1, max_steps + 1):
             result.turns = turn
@@ -150,13 +153,27 @@ class MCPAgent:
             self.on_event("llm_request", (turn, request))
             t0 = time.perf_counter()
             response = await self.client.responses.create(**request)
-            result.llm_ms += (time.perf_counter() - t0) * 1000
-            _add_usage(result.usage, getattr(response, "usage", None))
+            turn_llm_ms = (time.perf_counter() - t0) * 1000
+            result.llm_ms += turn_llm_ms
+            turn_usage = _usage_dict(getattr(response, "usage", None))
+            for k, v in turn_usage.items():
+                result.usage[k] = result.usage.get(k, 0) + v
             prev_id = response.id
 
             calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
+            output_text = getattr(response, "output_text", "") or ""
+            trace_turns.append(TurnTrace(
+                turn=turn,
+                previous_response_id=request.get("previous_response_id"),
+                response_id=getattr(response, "id", None),
+                llm_ms=round(turn_llm_ms, 1),
+                output_text=output_text,
+                output_item_types=[getattr(item, "type", type(item).__name__) for item in response.output],
+                usage=turn_usage,
+                calls=[{"name": c.name, "arguments": c.arguments, "call_id": c.call_id} for c in calls],
+            ))
             if not calls:
-                result.answer = response.output_text or ""
+                result.answer = output_text
                 break
 
             self.on_event("tool_calls", [(c.name, c.arguments) for c in calls])
@@ -185,8 +202,19 @@ class MCPAgent:
             ))
         if run_dir:
             os.makedirs(run_dir, exist_ok=True)
-            with open(os.path.join(run_dir, "run.json"), "w") as f:
-                f.write(result.to_json())
+            query_images = save_data_url_images(query, run_dir, "input")
+            md = render_trace(
+                model=self.cfg.model, tag=opts.tag, started_at=invoke_time.strftime("%Y-%m-%d %H:%M:%S"),
+                instructions=instructions, query=query, query_images=query_images,
+                tools_exposed=[t["name"] for t in tools], text_format=opts.text_format, reasoning_effort=effort,
+                turns=trace_turns, tool_steps=result.tool_steps, answer=result.answer, usage=result.usage,
+                pricing=self.cfg.pricing.get(self.cfg.model), est_cost_usd=self.cfg.estimate_cost_usd(result.usage),
+                llm_ms=result.llm_ms, tools_ms=result.tools_ms, total_ms=result.total_ms,
+                stopped_reason=result.stopped_reason, images_used=result.images_used, high_res_used=result.high_res_used,
+                previous_response_id=previous_response_id, last_response_id=prev_id,
+            )
+            with open(os.path.join(run_dir, "trace.md"), "w") as f:
+                f.write(md)
         return result
 
     async def _execute(self, call, turn: int, run_dir: str | None, result: RunResult) -> dict:
@@ -200,20 +228,20 @@ class MCPAgent:
         refused = None if bad else self._budget_refusal(call.name, args, result)
         if refused:
             items = [{"type": "input_text", "text": json.dumps({"tool": call.name, "error": refused})}]
-            step = ToolStep(turn, call.name, args, 0.0, None, None, True, refused, [], "", call.call_id)
+            step = ToolStep(turn, call.name, args, 0.0, None, None, True, refused, [], "", call.call_id, [items[0]["text"]])
             result.tool_steps.append(step)
             self.on_event("tool_result", step)
             return {"type": "function_call_output", "call_id": call.call_id, "output": items}
         if bad:
             outcome = None
             items = [{"type": "input_text", "text": json.dumps({"error": bad})}]
-            step = ToolStep(turn, call.name, {}, 0.0, None, None, True, bad, [], "", call.call_id)
+            step = ToolStep(turn, call.name, {}, 0.0, None, None, True, bad, [], "", call.call_id, [items[0]["text"]])
         else:
             outcome = await self.hub.call(call.name, args)
             items, saved = to_function_output(outcome, self.cfg.image_detail, run_dir, step=len(result.tool_steps) + 1)
 
             timing = server_timing(outcome)
-            texts = [it["text"] for it in items[1:] if it["type"] == "input_text"]
+            texts = [it["text"] for it in items if it["type"] == "input_text"]
             step = ToolStep(
                 turn=turn,
                 tool=call.name,
@@ -224,8 +252,9 @@ class MCPAgent:
                 is_error=bool(outcome.error or getattr(outcome.result, "is_error", False)),
                 error=outcome.error,
                 images_saved=saved,
-                preview=(texts[0] if texts else "")[:300],
+                preview=(texts[1] if len(texts) > 1 else (texts[0] if texts else ""))[:300],
                 call_id=call.call_id,
+                output_texts=texts,
             )
         result.tool_steps.append(step)
         self.on_event("tool_result", step)
@@ -270,13 +299,16 @@ def _fold_instructions(query: str | list, instructions: str) -> str | list:
     return items
 
 
-def _add_usage(acc: dict, usage) -> None:
+def _usage_dict(usage) -> dict:
+    """This response's token usage as a plain dict ({} when not reported)."""
+    out: dict = {}
     if usage is None:
-        return
+        return out
     for k in ("input_tokens", "output_tokens", "total_tokens"):
         v = getattr(usage, k, None)
         if isinstance(v, int):
-            acc[k] = acc.get(k, 0) + v
+            out[k] = v
     cached = getattr(getattr(usage, "input_tokens_details", None), "cached_tokens", None)
     if isinstance(cached, int):
-        acc["cached_tokens"] = acc.get("cached_tokens", 0) + cached
+        out["cached_tokens"] = cached
+    return out

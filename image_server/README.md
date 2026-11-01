@@ -64,6 +64,12 @@ Quick trial of 20 images (same names/indices as the full run, so it resumes clea
 python image_server/fetch_hour_images.py 2025-05-05-19 --limit 20 --out /tmp/yolo_trial
 ```
 
+Fetch only minutes 33–59 of an hour (same indices as the full run, so it merges cleanly into the hour folder):
+
+```bash
+python image_server/fetch_hour_images.py --start 2026-10-28-16-33 --end 2026-10-28-16-59
+```
+
 Regenerate labels after changing filters (by default existing label files are kept, so labelImg edits survive reruns):
 
 ```bash

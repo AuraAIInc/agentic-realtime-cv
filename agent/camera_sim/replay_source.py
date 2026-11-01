@@ -4,7 +4,8 @@ Implements the FrameSource consumer API (get_latest / capture_still /
 list_modes / device_path / actual_size / read_fps), so the real
 camera_v3 detection loop, service and MCP server run unchanged on top of it.
 
-Image file names are capture timestamps (YYYY-MM-DD-HH-MM-SS-ffffff.jpg);
+Image file names are capture timestamps (YYYY-MM-DD-HH-MM-SS-ffffff.jpg),
+optionally with the fetch_hour_images index prefix (NNNN_<stamp>.jpg);
 the stamped time is preserved, so streamed create_time values look exactly
 like the real camera's.
 """
@@ -24,8 +25,14 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-NAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{6})\.jpg$")
+NAME_RE = re.compile(r"^(?:\d+_)?(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{6})\.jpg$")
+PREFIX_RE = re.compile(r"^\d+_")  # fetch_hour_images index prefix (NNNN_)
 STAMP_FMT = "%Y-%m-%d-%H-%M-%S-%f"
+
+
+def _strip_prefix(stem: str) -> str:
+    """Strip the optional index prefix so bounds compare on the timestamp."""
+    return PREFIX_RE.sub("", stem, count=1)
 
 
 def parse_stamp(name: str) -> datetime.datetime | None:
@@ -40,16 +47,17 @@ def parse_stamp(name: str) -> datetime.datetime | None:
 
 def scan_images(image_dir: str, start: str = "", end: str = "", limit: int = 0) -> list[tuple[datetime.datetime, str]]:
     """Sorted (capture_time, path) within [start, end]. Bounds accept an hour
-    dir (2026-10-26-02), a name prefix, or a full name, with or without .jpg."""
-    start = os.path.basename(start).removesuffix(".jpg")
-    end = os.path.basename(end).removesuffix(".jpg")
+    dir (2026-10-26-02), a stamp prefix, or a full name, with or without .jpg
+    and with or without the index prefix."""
+    start = _strip_prefix(os.path.basename(start).removesuffix(".jpg"))
+    end = _strip_prefix(os.path.basename(end).removesuffix(".jpg"))
     found: list[tuple[datetime.datetime, str]] = []
     for root, _, files in os.walk(image_dir):
         for fn in files:
             t = parse_stamp(fn)
             if t is None:
                 continue
-            stem = fn.removesuffix(".jpg")
+            stem = _strip_prefix(fn.removesuffix(".jpg"))
             if start and stem < start:
                 continue
             if end and stem > end and not stem.startswith(end):

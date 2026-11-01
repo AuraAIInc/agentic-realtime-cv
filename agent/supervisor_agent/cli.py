@@ -169,7 +169,7 @@ def main() -> None:
     p.add_argument("--image-detail", choices=["low", "high", "auto"], default="auto")
     p.add_argument("--list-tools", action="store_true")
     p.add_argument("--json", action="store_true", help="also print the full run trace as JSON")
-    p.add_argument("--no-save", action="store_true", help="don't write run.json / images to output/agent_runs")
+    p.add_argument("--no-save", action="store_true", help="don't write trace.md / images to output/agent_runs")
     p.add_argument("--task", choices=["validate_detection", "check_trajectory", "assign_label", "label_visit"],
                    help="run one pipeline task (skill + strict JSON answer) instead of a chat query")
     p.add_argument("--payload", help="task payload: JSON string or @file.json")

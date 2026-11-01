@@ -27,7 +27,8 @@ def _get_data_from_sql_for_plot(start_time, end_time, revised):
     logging.info(f"Retrieved image data: {len(images)}")
     images = images.sort_values("create_time")
 
-    columns = ["image_name", "create_time", "cat_id", "box_x1", "box_y1", "box_x2", "box_y2", "conf"]
+    # detection tables key frames by create_time; image_name was dropped from them
+    columns = ["create_time", "cat_id", "box_x1", "box_y1", "box_x2", "box_y2", "conf"]
     sql = f"""
     SELECT {", ".join(columns)} 
     FROM aura_cat.{detection_table} 
@@ -110,6 +111,27 @@ def _get_data_from_csv_for_plot(start_time, end_time, file_path):
     return images, detections, detected_period, cat_states
 
 
+def _lanes(*frames):
+    """Sorted unique cat ids across the frames; old ids 0..2 keep lanes 0..2."""
+    ids = set()
+    for f in frames:
+        if f is not None and "cat_id" in f.columns:
+            ids.update(int(c) for c in f["cat_id"].dropna().unique())
+    return sorted(ids) or [0, 1, 2]
+
+
+def _lane_of(cat_id, lane_of):
+    """Chart lane for a cat id, or None when the row has no usable id."""
+    try:
+        return lane_of[int(cat_id)]
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def _color(lane):
+    return CAT_COLORS[lane % len(CAT_COLORS)]
+
+
 def get_period_speed(period, detections, cat_id):
     detections = detections.sort_values("create_time")
     start_time = period["time_from"]
@@ -137,37 +159,50 @@ def plot_detection_details(start_time, end_time, source="sql", revised=False, pl
     if len(images) == 0:
         return False
 
-    plt.figure(figsize=(14,4))
-    for i in range(3):
+    images["create_time"] = pd.to_datetime(images["create_time"])
+    detections["create_time"] = pd.to_datetime(detections["create_time"])
+    lanes = _lanes(detections, detected_period, cat_states)
+    lane_of = {c: i for i, c in enumerate(lanes)}
+    n = len(lanes)
+
+    plt.figure(figsize=(14, max(4, n + 1)))
+    for i, cid in enumerate(lanes):
+        name = CAT_NAMES[i] if i < len(CAT_NAMES) else f"cat {cid}"
+        if cid != i:
+            name += f" ({cid})"
         plt.plot([start_time, end_time], [i, i], c="white", lw=0.8, alpha=0.8)
-        plt.text(start_time, i+0.12, CAT_NAMES[i], c=CAT_COLORS[i], ha="left", va="center")
-    plt.plot([start_time, end_time], [3, 3], c="white", lw=0.8, alpha=0.8)
+        plt.text(start_time, i+0.12, name, c=_color(i), ha="left", va="center")
+    plt.plot([start_time, end_time], [n, n], c="white", lw=0.8, alpha=0.8)
     plt.fill_between([start_time, end_time], [-0.5, -0.5], [0,0], color=["white"], alpha=0.4)
-    plt.fill_between([start_time, end_time], [3, 3], [3.5, 3.5], color=["white"], alpha=0.4)
+    plt.fill_between([start_time, end_time], [n, n], [n+0.5, n+0.5], color=["white"], alpha=0.4)
 
     for i in range(len(detected_period)):
         row = detected_period.iloc[i]
-        cat_id = row["cat_id"]
+        lane = _lane_of(row["cat_id"], lane_of)
+        if lane is None:
+            continue
         plt.fill_between([row["time_from"]+ROUND_SECONDS, row["time_to"]-ROUND_SECONDS],
-                         [cat_id, cat_id], [cat_id+1, cat_id+1], color=CAT_COLORS[cat_id], alpha=0.1)
-        speed_curve = get_period_speed(row, detections, cat_id)
+                         [lane, lane], [lane+1, lane+1], color=_color(lane), alpha=0.1)
+        speed_curve = get_period_speed(row, detections, row["cat_id"])
         if len(speed_curve) != 0:
-            plt.plot(speed_curve[0], np.clip(speed_curve[1]/100, 0, 1) + cat_id, c=CAT_COLORS[cat_id], lw=0.5)
+            plt.plot(speed_curve[0], np.clip(speed_curve[1]/100, 0, 1) + lane, c=_color(lane), lw=0.5)
 
     for i in range(len(detections)):
         det = detections.iloc[i]
-        cat_id = det["cat_id"]
+        lane = _lane_of(det["cat_id"], lane_of)
+        if lane is None:
+            continue
         if plot_conf:
-            plt.scatter(det["create_time"], det["conf"]+ cat_id, c=CAT_COLORS[cat_id], s=1)
+            plt.scatter(det["create_time"], det["conf"]+ lane, c=_color(lane), s=1)
         else:
-            plt.plot([det["create_time"], det["create_time"]], [det["box_x1"]/width + cat_id, det["box_x2"]/width + cat_id],
-                    color=CAT_COLORS[cat_id], lw=1)
-    
-    for cat_id in range(3):
-        detections_cat = detections[detections["cat_id"] == cat_id]
-        img_cat = images.merge(detections_cat, on="image_name", how="inner", suffixes=("_img", "_det"))
+            plt.plot([det["create_time"], det["create_time"]], [det["box_x1"]/width + lane, det["box_x2"]/width + lane],
+                    color=_color(lane), lw=1)
+
+    for lane, cid in enumerate(lanes):
+        detections_cat = detections[detections["cat_id"] == cid]
+        img_cat = images.merge(detections_cat, on="create_time", how="inner")
         img_cat["cumulative_conf"] = img_cat["conf"].rolling(window=rolling_window, min_periods=1).mean()
-        plt.plot(img_cat["create_time_img"], img_cat["cumulative_conf"] / 1 + cat_id, c=CAT_COLORS[cat_id], lw=0.5)
+        plt.plot(img_cat["create_time"], img_cat["cumulative_conf"] / 1 + lane, c=_color(lane), lw=0.5)
 
     images['create_time_minutes'] = images["create_time"].dt.floor('Min')
     min_aggregation = images['create_time_minutes'].value_counts()
@@ -180,29 +215,34 @@ def plot_detection_details(start_time, end_time, source="sql", revised=False, pl
                  [-0.5, min_aggregation.loc[dt]/300-0.5], lw=frequency_width,
                  color='#cccccc' if dt_is_grey else '#ffe699', solid_capstyle="round")
 
+    # new images rows have NULL light (inserts no longer write it); plot only rows that have one
+    light_rows = images.dropna(subset=["light"]) if "light" in images.columns else images.iloc[0:0]
     light_periods = []
     lp = []
-    for i in range(len(images)):
-        row = images.iloc[i]
+    for i in range(len(light_rows)):
+        row = light_rows.iloc[i]
         if not lp or (row["create_time"] - lp[-1][0]).total_seconds() < 30:
             lp.append([row["create_time"], row["light"]])
         else:
             light_periods.append(lp.copy())
             lp = [[row["create_time"], row["light"]]]
-    light_periods.append(lp.copy())
+    if lp:
+        light_periods.append(lp.copy())
     for lp in light_periods:
         lp = np.array(lp).T
-        plt.plot(lp[0], lp[1] / 200 / 2 + 3, color="red", lw=0.5)
-        plt.fill_between(list(lp[0]), [3]*len(lp[0]), list(lp[1] / 200 / 2 + 3),color="red", alpha=0.04)
+        plt.plot(lp[0], lp[1] / 200 / 2 + n, color="red", lw=0.5)
+        plt.fill_between(list(lp[0]), [n]*len(lp[0]), list(lp[1] / 200 / 2 + n),color="red", alpha=0.04)
 
     for i in range(len(cat_states)):
         row = cat_states.iloc[i]
-        cat_id = row["cat_id"]
-        plt.plot([row["time_from"] + ROUND_SECONDS, row["time_to"] + ROUND_SECONDS], [cat_id, cat_id],
-                 lw=5, solid_capstyle="round", color=CAT_COLORS[cat_id], alpha=1 if row["is_active"] else 0.4)
+        lane = _lane_of(row["cat_id"], lane_of)
+        if lane is None:
+            continue
+        plt.plot([row["time_from"] + ROUND_SECONDS, row["time_to"] + ROUND_SECONDS], [lane, lane],
+                 lw=5, solid_capstyle="round", color=_color(lane), alpha=1 if row["is_active"] else 0.4)
 
     plt.xlim(start_time, end_time)
-    plt.ylim(-0.5, 3.5)
+    plt.ylim(-0.5, n + 0.5)
     plt.yticks([], [])
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")

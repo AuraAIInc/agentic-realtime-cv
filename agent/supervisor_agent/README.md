@@ -94,9 +94,11 @@ Yes: Mochi is on camera, and the stored image exists.
 - **round trip**: measured by the agent (network + server).
 - **server**: the `timing.elapsed_ms` the image server reports in each response.
 
-Each run writes `output/agent_runs/<timestamp>/run.json` (query, answer, every tool call
-with arguments and timings, token usage) plus every image the tools returned. `output/` is
-gitignored. Use `--no-save` to skip this, or `--json` to also print the trace.
+Each run writes `output/agent_runs/<timestamp>/trace.md`: the full LLM trace (table of
+contents, system prompt, user query, every LLM input/output, every tool call with arguments
+and full result text, per-turn timing and tokens, embedded images, and a stats block with
+tokens, pricing and cost) plus every image the tools returned. `output/` is gitignored. Use
+`--no-save` to skip this, or `--json` to also print the run summary as JSON.
 
 ### Invoke dump to MySQL
 

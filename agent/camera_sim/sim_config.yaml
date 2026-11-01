@@ -13,7 +13,7 @@ cat_names:
   25: "Qb-2"
   26: "Qbo-2"
 
-# --- replay source: images are YYYY-MM-DD-HH-MM-SS-ffffff.jpg, any subfolders ---
+# --- replay source: <stamp>.jpg or NNNN_<stamp>.jpg under images/, any subfolders ---
 image_dir: "/Users/muyang/Documents/Personal/Github/agentic-realtime-cv/image_server/retrieved_images"
 replay_start: "2026-10-26-02-00-00"  # inclusive; hour dir, name prefix, or full name
 replay_end: ""  # inclusive; "" = to the last image

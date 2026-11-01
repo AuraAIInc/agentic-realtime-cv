@@ -4,6 +4,7 @@ Usage (Python >= 3.10):
     python image_server/fetch_hour_images.py 2025-05-05-19
     python image_server/fetch_hour_images.py 2025-05-05-19 --out ~/Downloads/cats --workers 8
     python image_server/fetch_hour_images.py 2025-05-05-19 --labels detection --view-id 3
+    python image_server/fetch_hour_images.py --start 2026-10-28-16-33 --end 2026-10-28-16-59
 
 Layout (default output image_server/retrieved_images/<hour>/, git-ignored):
     <hour>/
@@ -30,8 +31,13 @@ from the repo-root .env (same file as IMAGE_MCP_URL/MCP_AUTH_TOKEN; it wins over
 The chart needs matplotlib/seaborn/pandas on top and never fails the export: if its
 dependencies are missing or the hour has no data, a warning is printed instead
 (pass --no-viz to skip it).
-Files already in the output folder are skipped (legacy flat files are moved into
-images/ with their new indexed name), so an interrupted run can simply be restarted.
+Files already in the output folder are skipped (legacy flat files, and files saved
+under a stale index before the hour listing grew, are moved into images/ with
+their new indexed name), so an interrupted run can simply be restarted.
+Pass --start/--end (YYYY-MM-DD-HH-MM) to fetch, label and chart only those
+minutes; the hour is derived from them and may be omitted. Indices still
+count from the hour's first frame, so a ranged fetch merges into the hour
+folder and a later full-hour run reuses it. A range cannot span hours.
 """
 
 import argparse
@@ -47,6 +53,7 @@ import urllib.error
 import urllib.request
 
 HOUR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{2}$")
+MINUTE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}$")
 PREFIXED_RE = re.compile(r"^(\d+)_(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{6}\.jpg)$")
 RETRIEVED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "retrieved_images")
 
@@ -145,8 +152,93 @@ def prefixed_name(idx, width, old):
     return f"{idx:0{width}d}_{old}"
 
 
+def resolve_range(hour, start, end):
+    """Validate the hour/--start/--end; returns (hour, start_bound, end_bound, start_dt, end_dt).
+
+    The hour may be omitted when bounds are given (it is derived from them);
+    bounds are YYYY-MM-DD-HH-MM within that single hour and the end minute is
+    fully included (end_dt is the minute after it). Missing bounds default to
+    the hour edges. Raises ValueError on bad input."""
+    for label, b in (("--start", start), ("--end", end)):
+        if b is not None and not MINUTE_RE.match(b):
+            raise ValueError(f"{label} must look like 2026-10-28-16-33, got {b!r}")
+    if hour is None:
+        anchor = start or end
+        if anchor is None:
+            raise ValueError("pass an hour (2025-05-05-19) or --start/--end")
+        hour = anchor[:13]
+    if not HOUR_RE.match(hour):
+        raise ValueError(f"hour must look like 2025-05-05-19, got {hour!r}")
+    for label, b in (("--start", start), ("--end", end)):
+        if b is not None and not b.startswith(hour + "-"):
+            raise ValueError(f"{label} {b} is outside hour {hour} (a range cannot span hours)")
+    if start is not None and end is not None and end < start:
+        raise ValueError(f"--end {end} is before --start {start}")
+    hour_start = datetime.datetime.strptime(hour, "%Y-%m-%d-%H")
+    start_dt = datetime.datetime.strptime(start, "%Y-%m-%d-%H-%M") if start else hour_start
+    if end:
+        end_dt = datetime.datetime.strptime(end, "%Y-%m-%d-%H-%M") + datetime.timedelta(minutes=1)
+    else:
+        end_dt = hour_start + datetime.timedelta(hours=1)
+    return hour, start or hour, end or hour, start_dt, end_dt
+
+
+def filter_range(targets, start_b, end_b):
+    """Keep targets whose stamp falls in [start_b, end_b-minute].
+
+    Bounds are YYYY-MM-DD-HH-MM prefixes (or the hour itself for open edges);
+    the end minute is fully included. Names/indices are untouched, so a ranged
+    fetch merges into the hour folder and a later full-hour run reuses it."""
+    return [(old, new) for old, new in targets
+            if old >= start_b and (old <= end_b or old.startswith(end_b))]
+
+
 def parse_image_time(name):
     return datetime.datetime.strptime(name, "%Y-%m-%d-%H-%M-%S-%f.jpg")
+
+
+def existing_by_original(images_dir):
+    """{original image name: indexed filename} for every indexed file in images_dir."""
+    found = {}
+    for name in sorted(os.listdir(images_dir)):
+        m = PREFIXED_RE.match(name)
+        if m:
+            found.setdefault(m.group(2), name)
+    return found
+
+
+def plan_downloads(images_dir, labels_dir, out, targets):
+    """Split targets into (todo, already, migrated), reusing what's on disk.
+
+    Files already present under their current indexed name are skipped. Files
+    present under a stale index (the hour listing grew since the last run, so
+    every frame shifted) are renamed into place with their label file instead
+    of downloading again, as are legacy flat-layout files. Only the rest are
+    returned as todo. Half-written "<name>.part" files never count as done."""
+    by_original = existing_by_original(images_dir)
+    todo, already, migrated = [], 0, 0
+    for old, new in targets:
+        if os.path.exists(os.path.join(images_dir, new)):
+            already += 1
+            continue
+        stale = by_original.get(old)
+        if stale is not None and stale != new and os.path.exists(os.path.join(images_dir, stale)):
+            os.replace(os.path.join(images_dir, stale), os.path.join(images_dir, new))
+            old_txt = os.path.join(labels_dir, stale[:-4] + ".txt")
+            if os.path.exists(old_txt):
+                os.replace(old_txt, os.path.join(labels_dir, new[:-4] + ".txt"))
+            by_original[old] = new
+            migrated += 1
+            continue
+        # pick up files from the old flat layout (or unprefixed strays in images/)
+        legacy = next((p for p in (os.path.join(out, old), os.path.join(images_dir, old)) if os.path.exists(p)), None)
+        if legacy:
+            os.replace(legacy, os.path.join(images_dir, new))
+            by_original[old] = new
+            migrated += 1
+        else:
+            todo.append((old, new))
+    return todo, already, migrated
 
 
 def normalize_width(images_dir, labels_dir, width):
@@ -403,12 +495,12 @@ def write_labels(out, targets, by_time, view_sizes, cat_names, box_size, skip_in
     return written, kept, empty, skipped
 
 
-def write_viz(out, hour_start, revised, width, height):
-    """Render the hour's detection chart into <out>/detections.png.
+def write_viz(out, start_dt, end_dt, revised, width, height):
+    """Render the window's detection chart into <out>/detections.png.
 
     Reuses plot_detection_details from existing_work_before_hackathon's visualization
     module (headless Agg backend, no interactive window). Returns True on success;
-    missing dependencies, DB errors and empty hours only print a warning."""
+    missing dependencies, DB errors and empty windows only print a warning."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -424,7 +516,7 @@ def write_viz(out, hour_start, revised, width, height):
         return False
     dest = os.path.join(out, "detections.png")
     try:
-        ok = plot_detection_details(hour_start, hour_start + datetime.timedelta(hours=1),
+        ok = plot_detection_details(start_dt, end_dt,
                                     revised=revised, width=width, height=height,
                                     save_path=dest, show=False)
     except Exception as e:
@@ -445,7 +537,8 @@ def write_viz(out, hour_start, revised, width, height):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("hour", help="YYYY-MM-DD-HH, 24-hour clock, e.g. 2025-05-05-19")
+    parser.add_argument("hour", nargs="?", default=None,
+                        help="YYYY-MM-DD-HH, 24-hour clock, e.g. 2025-05-05-19 (omit when --start/--end pin the hour)")
     parser.add_argument("--out", help="output folder (default image_server/retrieved_images/<hour>)")
     parser.add_argument("--workers", type=int, default=8, help="parallel downloads")
     parser.add_argument("--url", help="MCP endpoint (default $IMAGE_MCP_URL)")
@@ -461,10 +554,15 @@ def main():
     parser.add_argument("--box-size", help="detection-box coordinate space as WxH (default: view width/height from MySQL)")
     parser.add_argument("--no-viz", action="store_true", help="skip the detections.png chart")
     parser.add_argument("--limit", type=int, default=None, help="fetch/label only the first N images (debug)")
+    parser.add_argument("--start", default=None, help="fetch from this minute (YYYY-MM-DD-HH-MM)")
+    parser.add_argument("--end", default=None, help="fetch through this minute, inclusive (YYYY-MM-DD-HH-MM)")
     args = parser.parse_args()
 
-    if not HOUR_RE.match(args.hour):
-        sys.exit(f"hour must look like 2025-05-05-19, got {args.hour!r}")
+    try:
+        args.hour, start_b, end_b, start_dt, end_dt = resolve_range(args.hour, args.start, args.end)
+    except ValueError as e:
+        sys.exit(str(e))
+    ranged = args.start is not None or args.end is not None
     if args.no_labels:
         args.labels = "none"
     box_size = None
@@ -498,23 +596,17 @@ def main():
     normalize_width(images_dir, labels_dir, width)
 
     targets = [(n, prefixed_name(i, width, n)) for i, n in enumerate(names)]
+    if ranged:
+        targets = filter_range(targets, start_b, end_b)
+        if not targets:
+            sys.exit(f"no images in range {start_b} .. {end_b}")
+        print(f"{len(targets)} images in range {start_b} .. {end_b}")
     if args.limit is not None:
         targets = targets[: max(0, args.limit)]
 
-    todo, migrated, already = [], 0, 0
-    for old, new in targets:
-        if os.path.exists(os.path.join(images_dir, new)):
-            already += 1
-            continue
-        # pick up files from the old flat layout (or unprefixed strays in images/)
-        legacy = next((p for p in (os.path.join(out, old), os.path.join(images_dir, old)) if os.path.exists(p)), None)
-        if legacy:
-            os.replace(legacy, os.path.join(images_dir, new))
-            migrated += 1
-        else:
-            todo.append((old, new))
+    todo, already, migrated = plan_downloads(images_dir, labels_dir, out, targets)
     if already or migrated:
-        print(f"skipping {already} already downloaded, migrated {migrated} legacy files")
+        print(f"skipping {already} already downloaded, reusing {migrated} existing files")
 
     lock = threading.Lock()
     pending = iter(todo)
@@ -559,11 +651,10 @@ def main():
         print(f"  {name}: {error}")
 
     label_error = False
-    hour_start = datetime.datetime.strptime(args.hour, "%Y-%m-%d-%H")
     view_sizes: dict = {}
     if args.labels != "none" and not failed:
         try:
-            by_time, view_sizes, cat_names = fetch_detections(args.labels, hour_start, hour_start + datetime.timedelta(hours=1), args.view_id)
+            by_time, view_sizes, cat_names = fetch_detections(args.labels, start_dt, end_dt, args.view_id)
             print(f"{sum(len(v) for v in by_time.values())} rows from {args.labels}_detection"
                   + (f" (view {args.view_id})" if args.view_id is not None else ""))
             written, kept, empty, skipped = write_labels(
@@ -580,7 +671,7 @@ def main():
 
     if not args.no_viz:
         viz_w, viz_h = view_sizes.get(args.view_id, (640, 480)) if args.view_id is not None else (640, 480)
-        write_viz(out, hour_start, args.labels == "revised", viz_w, viz_h)
+        write_viz(out, start_dt, end_dt, args.labels == "revised", viz_w, viz_h)
     sys.exit(1 if failed or label_error else 0)
 
 
