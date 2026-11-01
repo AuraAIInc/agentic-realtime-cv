@@ -123,14 +123,28 @@ request carries `instructions`):
 - run 3: full pass (4 turns, 6 calls, images described, answered).
 
 So root-turn `instructions` is **not** necessary either — the probe
-correlation does not transfer to the live flow. The live requests differ
-from the probes in payload size (~45k input tokens: 34 large tool schemas
-plus long instructions-as-text), chain content, and per-turn latency (tens
-of seconds of model reasoning per round). Suspects now: gateway-side
-flakiness around large chained image turns (e.g. store replication lag or a
-short response TTL surfacing as "not found or expired"), possibly
-size-dependent. Investigation continues; the `instructions` fold stays in
-place (harmless, still the best-supported mitigation) but is not the fix.
+correlation does not transfer to the live flow.
+
+Follow-up elimination (all without the `instructions` parameter):
+
+- 3 instrumented live runs, all passing (4-7 turns each); a 166KB-image
+  turn passes; per-turn request log confirms no request carries
+  `instructions`. Post-fix live tally: 2 failures / 6 runs, both
+  `referenced response not found or expired` (one on the first image
+  round, one deeper in).
+- Direct probes at live scale all pass: 144KB image chains (2/2), and
+  58KB-of-tools + 6.6KB-text + 67KB-image chains (3/3).
+
+So neither the parameter, nor image size, nor total payload size reproduces
+the live failure deterministically. Standing conclusion: intermittent
+gateway-side failure around chained image turns (best guesses: response
+store replication lag — the reference is used within a second of the
+previous response arriving — or load-dependent flakiness), with the two
+400 strings as alternate surfacings. The `instructions` fold stays in place
+(harmless, and zero probe failures occurred without it) but is not the fix.
+The remaining client-side answer is resilience: retry the turn once after
+a delay, fall back to an unchained flattened-history request, and stop the
+CLI from exiting on a failed query.
 
 ## Side findings (same endpoint)
 
