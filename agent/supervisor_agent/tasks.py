@@ -33,6 +33,7 @@ from pathlib import Path
 
 from supervisor_agent.agent import MCPAgent, RunOptions, RunResult
 from supervisor_agent.local_tools import LocalTools, Store, trajectory
+from supervisor_agent.local_tools.skills import parse_frontmatter
 
 logger = logging.getLogger(__name__)
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
@@ -50,7 +51,7 @@ answer's human-review action instead of guessing. Answer with the JSON object on
 
 def load_skill(name: str) -> str:
     text = (SKILLS_DIR / name / "SKILL.md").read_text()
-    return re.sub(r"^---\n.*?\n---\n", "", text, count=1, flags=re.S).strip()
+    return parse_frontmatter(text)[1].strip()
 
 
 def _strict(obj: dict) -> dict:
@@ -182,9 +183,9 @@ class TaskRunner:
         )
         run = await self.agent.run(user_input, options=opts)
         parsed = _parse(run.answer)
-        if parsed is None:  # one retry, continuing the same conversation
+        if parsed is None:  # one retry, continuing the same conversation (instructions="" : the chain already has them)
             retry = await self.agent.run("Your last message was not the required JSON object. Reply with the JSON object only.",
-                                         previous_response_id=run.last_response_id, options=RunOptions(**{**opts.__dict__, "image_budget": 0, "max_steps": 2}))
+                                         previous_response_id=run.last_response_id, options=RunOptions(**{**opts.__dict__, "instructions": "", "image_budget": 0, "max_steps": 2}))
             parsed = _parse(retry.answer)
             _merge_runs(run, retry)
         run.images_used += preloaded_images
@@ -224,10 +225,12 @@ class TaskRunner:
 
     async def _period_summary(self, period_id) -> dict | None:
         d = await self.local.remote("tracking__get_period_detail", {"period_id": int(period_id), "max_points": 2})
+        motion = d.get("motion") or {}
         return {
             "period_id": period_id, "status": d.get("status"), "visit_cat_id": (d.get("period") or {}).get("cat_id"),
             "duration_s": (d.get("period") or {}).get("duration_s"), "evidence_by_cat": (d.get("period") or {}).get("evidence_by_cat"),
             "frames": d.get("frames"), "best_frame": d.get("best_frame"), "came_from": d.get("came_from"),
+            "motion": {"totals": motion.get("totals"), "segments": len(motion.get("segments") or [])},
         }
 
     # ------------------------------------------------------------------ Task 1
@@ -238,10 +241,17 @@ class TaskRunner:
         others = await self._safe(self._concurrent_cats(p["image_name"], p.get("view_id"), p.get("box")), [])
         context = {"visit": period, "other_cats_same_moment": others}
 
-        # Rung 1 in code: visit consensus.
+        # Rung 1 in code: visit consensus — but never for a long static visit. A box that
+        # never moves for minutes with near-unanimous agreement is the classic decoy pattern
+        # (ball, toy, cushion); consensus alone must not accept those.
         vc = (self.cfg.get("validate") or {}).get("visit_consensus", {"min_frames": 20, "min_agree": 0.8})
+        tc = self.cfg.get("trajectory") or {}
         fr = (period or {}).get("frames") or {}
-        if period and period.get("status") == "final" and (fr.get("detected") or 0) >= vc["min_frames"] and (fr.get("detector_agrees_fraction") or 0) >= vc["min_agree"]:
+        totals = ((period or {}).get("motion") or {}).get("totals") or {}
+        static_long = ((period or {}).get("duration_s") or 0) >= tc.get("static_min_s", 600) and (totals.get("moving_s") or 0) <= tc.get("static_max_moving_s", 5.0)
+        if static_long:
+            context["static_suspect"] = True
+        if period and period.get("status") == "final" and (fr.get("detected") or 0) >= vc["min_frames"] and (fr.get("detector_agrees_fraction") or 0) >= vc["min_agree"] and not static_long:
             cat = self.store.cat(period["visit_cat_id"], p.get("view_id"))
             vcat = period["visit_cat_id"]
             result = {
@@ -411,10 +421,15 @@ def _merge_runs(a: RunResult, b: RunResult) -> None:
     a.turns += b.turns
     a.tool_steps += b.tool_steps
     a.llm_ms += b.llm_ms
+    a.tools_ms += b.tools_ms
+    a.total_ms += b.total_ms
+    a.images_used += b.images_used
+    a.high_res_used += b.high_res_used
     for k, v in b.usage.items():
         a.usage[k] = a.usage.get(k, 0) + v
     a.answer = b.answer or a.answer
     a.last_response_id = b.last_response_id
+    a.stopped_reason = b.stopped_reason or a.stopped_reason
 
 
 def chat_options(store: Store) -> RunOptions:

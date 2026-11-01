@@ -1,14 +1,17 @@
-"""Expose every skills/<name>/SKILL.md as a callable local__<name> tool.
+"""Expose skills/<name>/SKILL.md files as callable skill__<name> tools.
 
 A skill tool keeps the skill's own name and description (marked as a skill).
-It takes no arguments: invoking it returns the skill file's full instructions,
-so the model can follow them from there. New skills are picked up automatically
-by scanning the skills folder; no registration needed.
+It takes no arguments: invoking it returns the skill file's instructions as
+plain text, so the model can follow them from there. New skills are picked up
+automatically by scanning the skills folder; no registration needed.
+
+Frontmatter `surface` (task | chat | both, default both) says where a skill
+may be used: pipeline-only skills stay out of chat, chat workflows stay out of
+task tool lists. tasks.py loads task skills directly as instructions.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +30,7 @@ class Skill:
     name: str
     description: str
     path: Path
+    surface: str = "both"
 
     def spec(self) -> dict:
         return {
@@ -37,7 +41,30 @@ class Skill:
         }
 
     def read(self) -> str:
-        return self.path.read_text()
+        """The skill instructions as plain markdown (frontmatter stripped)."""
+        return parse_frontmatter(self.path.read_text())[1].strip()
+
+
+def parse_frontmatter(text: str) -> tuple[dict, str]:
+    """Split "---\\nkey: value\\n---\\nbody" into ({key: value}, body).
+
+    Shared by the chat skill tools and tasks.load_skill so both paths see the
+    same instructions. No frontmatter -> ({}, the whole text).
+    """
+    if not text.startswith("---\n"):
+        return {}, text
+    front, sep, body = text[4:].partition("\n---\n")
+    if not sep:
+        return {}, text
+    meta = {}
+    for line in front.splitlines():
+        key, colon, value = line.partition(":")
+        if colon:
+            meta[key.strip()] = value.strip()
+    return meta, body
+
+
+SURFACES = ("task", "chat", "both")
 
 
 def parse(path: Path) -> Skill | None:
@@ -47,19 +74,18 @@ def parse(path: Path) -> Skill | None:
     except OSError as e:
         logger.warning(f"skill {path}: unreadable ({e})")
         return None
-    if not text.startswith("---\n"):
+    meta, _ = parse_frontmatter(text)
+    if not meta:
         logger.warning(f"skill {path}: no frontmatter, skipped")
         return None
-    front, _, _ = text[4:].partition("\n---\n")
-    meta = {}
-    for line in front.splitlines():
-        key, sep, value = line.partition(":")
-        if sep:
-            meta[key.strip()] = value.strip()
     if not meta.get("name") or not meta.get("description"):
         logger.warning(f"skill {path}: frontmatter needs name and description, skipped")
         return None
-    return Skill(name=meta["name"], description=meta["description"], path=path)
+    surface = meta.get("surface", "both")
+    if surface not in SURFACES:
+        logger.warning(f"skill {path}: surface must be one of {SURFACES}, skipped")
+        return None
+    return Skill(name=meta["name"], description=meta["description"], path=path, surface=surface)
 
 
 def scan(directory: Path | None = None) -> list[Skill]:
@@ -84,12 +110,14 @@ class SkillTools:
 
     Register on the hub next to LocalTools. Invoking a tool (no arguments)
     returns its skill instructions for the model to follow from there.
+    Only skills whose frontmatter `surface` is in `surfaces` are registered,
+    so pipeline-only skills stay out of chat tool lists.
     """
 
     server_name = "skill"
 
-    def __init__(self, directory: Path | None = None):
-        self.skills: dict[str, Skill] = {s.name: s for s in scan(directory)}
+    def __init__(self, directory: Path | None = None, surfaces: tuple[str, ...] = ("chat", "both")):
+        self.skills: dict[str, Skill] = {s.name: s for s in scan(directory) if s.surface in surfaces}
 
     def specs(self) -> list[dict]:
         return [s.spec() for s in self.skills.values()]
@@ -97,16 +125,13 @@ class SkillTools:
     async def call(self, name: str, args: dict) -> CallToolResult:
         skill = self.skills.get(name)
         if skill is None:
-            return _json({"error": f"unknown skill {name}"}, error=True)
+            return _text(f"unknown skill {name}", error=True)
         try:
-            return _json({"skill": skill.name, "instructions": skill.read()})
+            return _text(skill.read())
         except Exception as e:  # report to the model, don't crash the run
             logger.exception(f"skill__{name}")
-            return _json({"error": f"{type(e).__name__}: {e}"}, error=True)
+            return _text(f"{type(e).__name__}: {e}", error=True)
 
 
-def _json(payload: dict, error: bool = False) -> CallToolResult:
-    return CallToolResult(
-        content=[TextContent(type="text", text=json.dumps(payload, default=str))],
-        is_error=error,
-    )
+def _text(text: str, error: bool = False) -> CallToolResult:
+    return CallToolResult(content=[TextContent(type="text", text=text)], is_error=error)

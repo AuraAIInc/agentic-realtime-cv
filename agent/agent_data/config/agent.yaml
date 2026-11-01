@@ -49,6 +49,7 @@ trajectory:                  # starting points; tune on hand-reviewed visits
   edge_margin: 0.12          # entry / exit within this fraction of the frame counts as an edge
   overlap_body_lengths: 1.0
   static_min_s: 600          # a box that never moves for this long is checked for decoys
+  static_max_moving_s: 5.0   # consensus auto-accept still applies when the visit moved more than this
   identity_min_frames: 3     # identity flips shorter than this are treated as noise
   max_keyframes: 6
   accept_without_model_if_no_flags: true

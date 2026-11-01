@@ -148,11 +148,6 @@ class S3Store:
             "source": "s3",
             "size_bytes": head.get("ContentLength"),
             "captured_at": t.isoformat(timespec="microseconds"),
-            "modified_at": _isoformat(head.get("LastModified")),
-            "relative_path": key,
-            "mime_type": head.get("ContentType") or "image/jpeg",
-            "s3_bucket": self.bucket,
-            "s3_key": key,
         }
         if include_dimensions:
             try:
@@ -187,11 +182,6 @@ class S3Store:
             "source": "s3",
             "size_bytes": len(data),
             "captured_at": t.isoformat(timespec="microseconds"),
-            "modified_at": _isoformat(resp.get("LastModified")),
-            "relative_path": key,
-            "mime_type": resp.get("ContentType") or "image/jpeg",
-            "s3_bucket": self.bucket,
-            "s3_key": key,
         }
         return info, data
 
@@ -226,11 +216,3 @@ class S3Store:
         timer.mark("s3_list")
         names.sort()
         return {"prefix": list_prefix.strip(), "count": len(names), "truncated": truncated, "images": names, "source": "s3"}
-
-
-def _isoformat(v) -> str | None:
-    if v is None:
-        return None
-    if isinstance(v, datetime.datetime):
-        return v.isoformat(timespec="milliseconds")
-    return str(v)

@@ -1,6 +1,7 @@
 ---
 name: validate-cat-identity
 description: Decide whether a detection is a cat and which household cat it is, climbing a cheapest-evidence-first ladder. Use for validate_detection tasks from the CV pipeline.
+surface: task
 ---
 
 # Validate a detection
@@ -13,16 +14,22 @@ cat candidates with confidences, and why it was flagged. The input already holds
 - `cats`: profiles of the candidate cats (summary, low-res cues, camera cues, how to tell apart).
 - `crop`: one padded crop of the box (rung 2 below is already paid for).
 
-Ids: the pipeline uses tracker ids (on view 3: Qb = 25, Qbo = 26). Answer with the
-tracker id the pipeline used, and give the name.
+Ids: answer with the tracker id the pipeline used (the input profiles already carry it
+when a view was given), and give the name.
 
 ## The ladder: stop at the first rung that gives a confident answer
+
+Code already tried the cheap metadata decision and did not take it (or this task would
+never have reached you); re-check rung 1 only for what code could not see.
 
 1. **Metadata (in `context`, no images).**
    - Exclusion: a cat detected elsewhere at the same moment with high confidence cannot be
      this one. With two cats, ruling one out decides it, if the crop shows a cat at all.
    - Visit consensus: many frames, high detector agreement, no identity flip: this frame
-     is noise; accept the visit's cat.
+     is noise; accept the visit's cat — unless the visit is long and static (see
+     `context.static_suspect` / motion totals). A box that never moves for minutes with
+     near-unanimous agreement is the classic decoy pattern (ball, toy, cushion): look at
+     the crop instead of trusting the votes.
 2. **The crop vs the written profiles.** Check `camera_cues` and `low_res_cues` of the
    candidates only. Name each cue you actually see. A verdict that cites no visible cue
    is not allowed.
@@ -43,6 +50,9 @@ tracker id the pipeline used, and give the name.
 
 - Spend images only when the previous rung failed. You have a small image budget; if a tool
   says the budget is reached, decide from what you have or send to a human.
+- If the deciding cue would be only a few pixels wide even in a crop, skip the reference
+  rungs: go straight to a sharper view, else send to a human. Do not spend images
+  discovering that a cue is unverifiable.
 - Priors (where a cat usually sleeps) can raise or lower confidence, never override what
   the image shows.
 - Night frames (purple or grey IR): colour cues are unreliable; rely on shape, outline

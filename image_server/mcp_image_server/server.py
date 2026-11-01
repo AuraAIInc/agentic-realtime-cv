@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hmac
+import io
 import json
 import logging
 from dataclasses import replace
@@ -20,7 +21,8 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolResult, ImageContent, TextContent
 
 from mcp_image_server.config import REPO_ENV, Settings, token_fingerprint
-from mcp_image_server.image_store import ImageStore, InvalidName, transform
+from mcp_image_server.image_store import ImageStore, InvalidName, TransformUnavailable, check_transform, pil_available, transform
+from mcp_image_server.jpeg_info import jpeg_dimensions
 from mcp_image_server.s3_store import S3Store
 from mcp_image_server.timing import Timer
 
@@ -60,11 +62,13 @@ def build_server(settings: Settings) -> MCPServer:
     else:
         logger.info("S3 backend off (no S3_AWS_ACCESS_KEY / S3_AWS_SECRET_ACCESS_KEY): local SSD only")
     store = ImageStore(settings.image_root, s3=s3, s3_cutoff=settings.s3_cutoff_date)
+    if not pil_available():
+        logger.warning("Pillow is not installed: get_image with box/max_side will fail; plain reads still work")
     mcp = MCPServer(name="rcat-image-server", instructions=INSTRUCTIONS)
 
     @mcp.tool(structured_output=False)
     def image_exists(image_name: str, include_dimensions: bool = True) -> CallToolResult:
-        """Fast check whether an image is on the SSD. image_name is the capture timestamp
+        """Fast check whether an image is in the archive (local SSD or S3). image_name is the capture timestamp
         YYYY-MM-DD-HH-MM-SS-ffffff.jpg (24-hour clock, 6-digit microseconds), e.g.
         2026-10-24-20-15-03-123456.jpg. Returns exists and, if it does, size_bytes,
         captured_at, modified_at, relative_path, and (include_dimensions=true) width, height and
@@ -108,6 +112,7 @@ def build_server(settings: Settings) -> MCPServer:
         If the image does not exist, returns exists=false and no image."""
         timer = Timer()
         try:
+            check_transform(box, max_side)  # fail before any download when the crop cannot run
             info, data = store.read(image_name, timer)
             if data is None:
                 return _result(info, timer)
@@ -115,9 +120,12 @@ def build_server(settings: Settings) -> MCPServer:
             if box or max_side:
                 data, meta = transform(data, max_side, box, timer)
                 info.update(meta)
-            info.update({"returned_bytes": len(data), "returned_mime_type": mime})
+            else:
+                dims = jpeg_dimensions(io.BytesIO(data))
+                if dims:
+                    info.update({k: dims[k] for k in ("width", "height") if k in dims})
             return _result(info, timer, image=(data, mime))
-        except (InvalidName, OSError, ImportError) as e:
+        except (InvalidName, OSError, TransformUnavailable) as e:
             return _error(e, timer, image_name=image_name)
 
     @mcp.tool(structured_output=False)

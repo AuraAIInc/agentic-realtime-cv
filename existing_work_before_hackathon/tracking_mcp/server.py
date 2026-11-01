@@ -22,6 +22,7 @@ import io
 import json
 import logging
 import os
+import time
 from collections import Counter
 
 from mcp.server.mcpserver import MCPServer
@@ -48,6 +49,9 @@ logger = logging.getLogger("tracking_mcp")
 
 RELINK_PX = 160  # max center jump when chaining raw pre-roll boxes (TrackCorrector's relabel distance)
 MAX_SEGMENTS = 30
+PERIOD_CACHE_TTL_S = 5.0  # load_period rows are reused across tools/calls this long (ongoing rows may lag by this)
+MAX_PICK_POINTS = 1000  # arrival-path candidates are strided down to this many before picking
+STATIC_SPAN_PX = 30.0  # travelled span below this: the visit never moved, entry + latest suffice
 
 INSTRUCTIONS = """\
 Cat tracking results for the home cameras, used to check detections and find reference frames.
@@ -69,6 +73,8 @@ Boxes are [x1, y1, x2, y2] in the camera view's pixels (640x480 unless list_view
 otherwise). Every frame has image_name: pass it to images__get_image (box=crop_box to zoom on
 the cat). edge is the image border nearest the box (left, right, top, bottom or none).
 Call list_views first to map cat names to cat_id.
+Timestamps named `now` / `server_started_at` are UTC (ISO with +00:00); frame and period
+times are naive tracker times in the same frame as the camera's image names.
 """
 
 
@@ -84,8 +90,32 @@ def _error(e: Exception, timer: Timer, **context) -> CallToolResult:
     return _result({**context, "error": f"{type(e).__name__}: {e}"}, timer, error=True)
 
 
+def _utcnow_str(now: datetime.datetime) -> str:
+    """A naive local `now` as an honest UTC ISO string (arithmetic keeps using the naive value)."""
+    return now.astimezone(datetime.timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _drop_empty_evidence(periods: list[dict]) -> None:
+    """Remove per-cat evidence rows with zero detections, in place (callers only read the rest)."""
+    for p in periods or []:
+        ebc = (p or {}).get("evidence_by_cat")
+        if isinstance(ebc, dict):
+            p["evidence_by_cat"] = {k: v for k, v in ebc.items() if (v or {}).get("detections")}
+
+
+def _travel_span(path: list) -> float:
+    """Bbox diagonal over box centers (upper bound on pairwise travel; 0 for <2 frames)."""
+    centers = [motion.center(box_of(p[0])) for p in path]
+    if len(centers) < 2:
+        return 0.0
+    xs = [c[0] for c in centers]
+    ys = [c[1] for c in centers]
+    return ((max(xs) - min(xs)) ** 2 + (max(ys) - min(ys)) ** 2) ** 0.5
+
+
 def build_server(live: LiveState, history: History, settings: Settings) -> MCPServer:
     mcp = MCPServer(name="rcat-tracking", instructions=INSTRUCTIONS)
+    _period_cache: dict[int, tuple[float, dict]] = {}  # period_id -> (expires_at_monotonic, bundle)
 
     async def db(fn, *args, **kwargs):
         return await asyncio.to_thread(fn, *args, **kwargs)
@@ -104,7 +134,15 @@ def build_server(live: LiveState, history: History, settings: Settings) -> MCPSe
 
     # ------------------------------------------------------------------ period bundle
     async def load_period(period_id: int, timer: Timer) -> dict:
-        """Merge everything known about one period: memory first (sync), then DB."""
+        """Merge everything known about one period: memory first (sync), then DB.
+
+        Bundles are cached for a few seconds: parallel tools often ask for the
+        same period at once, and reloading thousands of rows each time is pure waste.
+        """
+        hit = _period_cache.get(period_id)
+        if hit is not None and hit[0] > time.monotonic():
+            timer.mark("cache")
+            return hit[1]
         now = datetime.datetime.now()
         view = live.find_period_view(period_id)
         mem_rows = live.committed_rows(view, period_id) if view is not None else []
@@ -136,7 +174,7 @@ def build_server(live: LiveState, history: History, settings: Settings) -> MCPSe
             status, summary = "ended_pending", db_period
         else:
             raise LookupError(f"period {period_id} not found in memory or the database")
-        return {
+        bundle = {
             "period_id": period_id,
             "view_id": to_int(view) if to_int(view) is not None else view,
             "status": status,
@@ -146,6 +184,8 @@ def build_server(live: LiveState, history: History, settings: Settings) -> MCPSe
             "width": vinfo.get("width") or 640,
             "height": vinfo.get("height") or 480,
         }
+        _period_cache[period_id] = (time.monotonic() + PERIOD_CACHE_TTL_S, bundle)
+        return bundle
 
     def frames_summary(b: dict) -> dict:
         rows = [r for r, _ in b["rows"]]
@@ -226,7 +266,7 @@ def build_server(live: LiveState, history: History, settings: Settings) -> MCPSe
             for v in out:
                 for c in v["cats"]:
                     c["name"] = cat_names.get(str(c["cat_id"]))
-            return _result({"now": now, "views": out, "server_started_at": live.started_at}, timer)
+            return _result({"now": _utcnow_str(now), "views": out, "server_started_at": _utcnow_str(live.started_at)}, timer)
         except Exception as e:
             logger.exception("get_live_status")
             return _error(e, timer, view_id=view_id)
@@ -286,13 +326,13 @@ def build_server(live: LiveState, history: History, settings: Settings) -> MCPSe
                 if hit:
                     hit["seconds_ago"] = seconds_between(datetime.datetime.fromisoformat(hit["time"]), now)
                 result.append({"cat_id": c, "name": cat_names.get(str(c)), "last_seen": hit})
-            return _result({"now": now, "lookback_days": lookback_days, "cats": result}, timer)
+            return _result({"now": _utcnow_str(now), "lookback_days": lookback_days, "cats": result}, timer)
         except Exception as e:
             logger.exception("get_last_seen")
             return _error(e, timer, cat_id=cat_id, view_id=view_id)
 
     @mcp.tool(structured_output=False)
-    async def get_current_periods(view_id: int | None = None, final_limit: int = 10) -> CallToolResult:
+    async def get_current_periods(view_id: int | None = None, final_limit: int = 3) -> CallToolResult:
         """Visits happening now or that just ended, before they are saved. Use it for
         "what is on camera now / in the last few minutes"; use get_periods for anything
         older. not_final: visits with status ongoing or ended_pending, each with start, end,
@@ -302,12 +342,15 @@ def build_server(live: LiveState, history: History, settings: Settings) -> MCPSe
         timer = Timer()
         try:
             now = datetime.datetime.now()
-            out = [
-                {"view_id": v, "not_final": live.period_states(v, now), "recently_final": live.finalized(v)[: max(0, final_limit)]}
-                for v in views_for(view_id)
-            ]
+            out = []
+            for v in views_for(view_id):
+                not_final = live.period_states(v, now)
+                recently_final = live.finalized(v)[: max(0, final_limit)]
+                _drop_empty_evidence(not_final)
+                _drop_empty_evidence(recently_final)
+                out.append({"view_id": v, "not_final": not_final, "recently_final": recently_final})
             timer.mark("memory")
-            return _result({"now": now, "views": out}, timer)
+            return _result({"now": _utcnow_str(now), "views": out}, timer)
         except Exception as e:
             logger.exception("get_current_periods")
             return _error(e, timer, view_id=view_id)
@@ -380,7 +423,7 @@ def build_server(live: LiveState, history: History, settings: Settings) -> MCPSe
                 "best_frame": frame_out(*best, b, "best_conf") if best else None,
                 "came_from": motion.edge_of(box_of(first[0]), b["width"], b["height"]) if first else None,
                 "last_edge": motion.edge_of(box_of(last[0]), b["width"], b["height"]) if last else None,
-                "path": motion.downsample([(r[0], box_of(r)) for r, _ in rows], max(2, int(max_points))),
+                "path": motion.compress_path([(r[0], box_of(r)) for r, _ in rows], max(2, int(max_points))),
                 "motion": {**mo, "segments_total": len(mo["segments"]), "segments": mo["segments"][-MAX_SEGMENTS:]},
             }
             return _result(payload, timer)
@@ -396,13 +439,16 @@ def build_server(live: LiveState, history: History, settings: Settings) -> MCPSe
         n_frames: int = 5,
         pre_roll_s: float = 10,
         settle_s: float = 10,
+        min_empty_gap_s: float = 2.0,
         include_images: bool = False,
         max_side: int = 384,
     ) -> CallToolResult:
         """Key frames showing where a cat came from and how it got to where it is, so you
         can check the track by eye. Give period_id, or cat_id to use its newest visit.
         key_frames are in time order, each with a role:
-        - empty_before: the last frame with no cat, to show the empty scene.
+        - empty_before: a frame with no detection at least min_empty_gap_s before entry,
+          to show the empty scene. Closer than that it is labelled pre_entry instead: the
+          cat may already be present but undetected, so check it, don't trust it as empty.
         - entry: the earliest box, also searching detections up to pre_roll_s before the
           visit started.
         - first_tracked: the first frame of the visit itself.
@@ -439,24 +485,37 @@ def build_server(live: LiveState, history: History, settings: Settings) -> MCPSe
             empty = await db(history.last_empty_frame, b["view_id"], entry_time, max(60.0, pre_roll_s * 6))
             timer.mark("pre_roll")
 
-            mo = motion_of(b)
+            mo = await db(motion_of, b)  # pure CPU over loaded rows; keep it off the event loop
             settle = next((s for s in mo["segments"] if s["state"] == "resting" and s["duration_s"] >= settle_s), None)
             settle_time = datetime.datetime.fromisoformat(settle["start"]) if settle else None
 
             # Candidate path: raw pre-roll chain, then the period's real detections up to settling.
             path = [([parse_time(d["time"]), *d["box"], d["cat_id"], d["conf"], d["cat_id"], None], True, "detection_only") for d in chain]
             path += [(r, f, "period") for r, f in real if settle_time is None or r[0] <= settle_time]
-            picks = set(motion.picks_by_distance([(p[0][0], box_of(p[0])) for p in path], n_frames))
             keep = {0, len(path) - 1}
             if chain and len(chain) < len(path):
                 keep.add(len(chain))  # first committed frame of the period
-            picks = sorted(picks | keep)
+            if _travel_span(path) < STATIC_SPAN_PX:
+                picks = sorted(keep)  # never moved: entry + latest (+ first tracked) suffice
+            else:
+                pts = [(p[0][0], box_of(p[0])) for p in path]
+                if len(pts) > MAX_PICK_POINTS:  # stride first so picking stays cheap on long visits
+                    stride = sorted({round(i * (len(pts) - 1) / (MAX_PICK_POINTS - 1)) for i in range(MAX_PICK_POINTS)})
+                    picked = motion.picks_by_distance([pts[i] for i in stride], n_frames)
+                    picks = sorted({stride[k] for k in picked} | keep)
+                else:
+                    picks = sorted(set(motion.picks_by_distance(pts, n_frames)) | keep)
             while len(picks) > n_frames + 1 and any(k not in keep for k in picks):
                 middle = [k for k in picks if k not in keep]
                 picks.remove(middle[len(middle) // 2])
             frames = []
             if empty is not None:
-                frames.append({"role": "empty_before", "time": empty, "image_name": image_name(empty), "box": None})
+                gap_s = (entry_time - empty).total_seconds() if entry_time and empty else None
+                if gap_s is not None and gap_s < min_empty_gap_s:
+                    frames.append({"role": "pre_entry", "time": empty, "image_name": image_name(empty), "box": None,
+                                   "note": f"only {gap_s:.1f}s before entry; the cat may already be present but undetected"})
+                else:
+                    frames.append({"role": "empty_before", "time": empty, "image_name": image_name(empty), "box": None})
             for k in picks:
                 r, f, source = path[k]
                 if k == 0:

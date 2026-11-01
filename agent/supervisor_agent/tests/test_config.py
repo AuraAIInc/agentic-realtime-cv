@@ -62,6 +62,23 @@ def test_no_token_means_no_auth():
     assert {s.token for s in cfg.servers} == {None}
 
 
+def test_default_chat_hides_write_and_rare_tools():
+    from types import SimpleNamespace
+
+    from supervisor_agent.cli import CHAT_HIDDEN_TOOLS, chat_tool_names
+
+    hub = SimpleNamespace(tools={n: None for n in [
+        "camera__get_status", "camera__set_schedule", "camera__reset_schedule",
+        "camera__list_models", "camera__get_camera_modes", "tracking__get_raw_detections",
+        "tracking__get_live_status", "local__add_label", "local__save_zone",
+        "local__get_cat_profiles", "skill__check-live-detections",
+    ]})
+    names = chat_tool_names(hub)
+    assert set(names).isdisjoint(CHAT_HIDDEN_TOOLS)
+    assert set(names) == {"camera__get_status", "tracking__get_live_status",
+                          "local__get_cat_profiles", "skill__check-live-detections"}
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

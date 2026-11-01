@@ -280,6 +280,45 @@ def test_solid_visit_is_accepted_without_the_model(store):
     assert out["result"]["cat_id"] == 26 and out["result"]["action"] == "relabel"
 
 
+def test_long_static_visit_is_not_auto_accepted(store):
+    raw = walk(n=30, x0=60)
+    detail = detail_from(raw, frames={"frames": 30, "detected": 30, "detector_agrees_fraction": 0.95})
+    detail["period"]["duration_s"] = 700  # long ...
+    detail["motion"]["totals"]["moving_s"] = 0.0  # ... and never moved: decoy suspect
+    answer = {"is_cat": True, "cat_id": 26, "cat_name": "Qbo", "confidence": 0.7, "decided_at_step": 2,
+              "evidence": ["plume tail"], "ruled_out": [], "action": "accept", "reason": "looked"}
+    runner, model, _ = make_runner(store, raw, detail, [answer])
+    payload = {"image_name": "2026-10-26-02-00-05-000000.jpg", "view_id": 3, "box": raw[10]["box"], "period_id": 1,
+               "detector": {"cat_id": 26, "candidates": [{"cat_id": 26, "conf": 0.9}]}}
+    out = asyncio.run(runner.run("validate_detection", payload))
+    assert out["model_called"] is True  # consensus alone must not accept a static visit
+    assert out["context"]["static_suspect"] is True
+
+
+def test_profiles_use_tracker_ids_for_a_view(store):
+    by_view = {c["name"]: c for c in store.profiles(None, view_id=3)}
+    assert (by_view["Qb"]["cat_id"], by_view["Qbo"]["cat_id"]) == (25, 26)
+    assert (by_view["Qb"]["profile_id"], by_view["Qbo"]["profile_id"]) == (0, 2)
+    assert by_view["Qb"]["confused_with"][0]["cat_id"] == 26  # mapped the same way
+    noprof = {c["name"]: c for c in store.profiles(None)}
+    assert (noprof["Qb"]["cat_id"], noprof["Qbo"]["cat_id"]) == (0, 2)
+    assert "profile_id" not in noprof["Qb"]
+
+
+def test_merge_runs_adds_up_everything():
+    from supervisor_agent.agent import RunResult
+    from supervisor_agent.tasks import _merge_runs
+
+    a = RunResult(query="q", answer="bad", model="m", turns=2, llm_ms=10.0, tools_ms=5.0, total_ms=15.0,
+                  usage={"input_tokens": 3}, images_used=1, stopped_reason="answered")
+    b = RunResult(query="q", answer="good", model="m", turns=1, llm_ms=4.0, tools_ms=2.0, total_ms=6.0,
+                  usage={"input_tokens": 7}, images_used=0, high_res_used=0, stopped_reason="answered",
+                  last_response_id="r9")
+    _merge_runs(a, b)
+    assert (a.turns, a.llm_ms, a.tools_ms, a.total_ms, a.images_used) == (3, 14.0, 7.0, 21.0, 1)
+    assert a.usage == {"input_tokens": 10} and a.answer == "good" and a.last_response_id == "r9"
+
+
 def test_unknown_activity_files_a_suggestion(store):
     raw = walk(n=10, x0=60)
     detail = detail_from(raw)
