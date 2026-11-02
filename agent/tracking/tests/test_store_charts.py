@@ -9,7 +9,7 @@ import pytest
 
 from agent.escalation import Escalation
 from agent.tracking.cat_config import resolve_cat_ids
-from agent.tracking.charts import plot_detection_charts
+from agent.tracking.charts import plot_detection_charts, plot_validated_chart
 from agent.tracking.store import DEFAULT_RUNS_DIR, FileSink, RunStore
 
 T0 = datetime.datetime(2026, 10, 30, 12, 0, 0)
@@ -152,6 +152,19 @@ def test_process_frame_labels_escalations_below_the_line(tmp_path, monkeypatch):
     labels = [a[2] for a, _ in calls]
     assert labels == ["E1-T5", "E2-P1"]
     assert all(k.get("color") == "red" for _, k in calls)
+
+
+def test_validated_chart_writes_nonempty_png(tmp_path):
+    cat_ids = [25, 26]
+    rows = _synth_rows(10, cat_ids)
+    for r in rows:
+        r["validated_by"] = "E1-T2"
+        r["verdict"] = "confirm"
+    out = tmp_path / "charts"
+    out.mkdir()
+    path = plot_validated_chart(rows, out, cat_ids, cat_names={25: "Qb", 26: "Qbo"})
+    assert path.name == "validated.png"
+    assert path.is_file() and path.stat().st_size > 0
 
 
 def test_charts_handle_empty_input(tmp_path):

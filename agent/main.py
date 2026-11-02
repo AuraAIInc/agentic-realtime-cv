@@ -21,6 +21,7 @@ Run directory (<out>/<run_name>/):
   validations.jsonl (only with --validate) one validation op per escalation
   validated.jsonl + validated.db (only with --validate) verdict-corrected rows
   original.png / revised.png  timeline strip charts (unless --no-plot)
+  validated.png (only with --validate, unless --no-plot) validated strip chart
   process_frames/*.jpg + process.mp4  (only with --process-viz)
   run.json          args, view, cat mapping, counts incl. escalations by code
 
@@ -39,7 +40,7 @@ import math
 from collections import Counter
 from pathlib import Path
 
-from agent.tracking import FileSink, PeriodCorrector, RunStore, TrackCorrector, plot_detection_charts, resolve_cat_ids
+from agent.tracking import FileSink, PeriodCorrector, RunStore, TrackCorrector, plot_detection_charts, plot_validated_chart, resolve_cat_ids
 from agent.tracking.process_viz import init_frame_dir, render_process_frame, stitch_mp4
 from agent.tracking.store import DEFAULT_RUNS_DIR
 
@@ -643,6 +644,7 @@ class TrackingRun:
         run_dir = self.store.run_dir
         artifacts = ["stream.jsonl", "revised.jsonl", "periods.jsonl", "images.jsonl", "escalations.jsonl"]
         ops = []
+        validated_jsonl = None
         if self.validator is not None:
             ops = self.validator.stop()
             try:
@@ -650,6 +652,7 @@ class TrackingRun:
 
                 revised_rows = read_revised_rows(run_dir / RunStore.REVISED_FILE)
                 jsonl_path, db_path, _ = materialize(run_dir, revised_rows, ops)
+                validated_jsonl = jsonl_path
                 artifacts += [jsonl_path.name, db_path.name, RunStore.VALIDATIONS_FILE]
             except Exception:
                 logger.exception("validated outputs failed; run keeps revised rows only")
@@ -669,6 +672,20 @@ class TrackingRun:
                 artifacts += [original_png.name, revised_png.name]
             except Exception:
                 logger.exception("charts failed; continuing without them")
+            if validated_jsonl is not None:
+                try:
+                    validated_rows = read_revised_rows(validated_jsonl)
+                    validated_png = plot_validated_chart(
+                        validated_rows,
+                        run_dir,
+                        self.cat_ids,
+                        self.id_to_name,
+                        self._escs.all,
+                        width=self.track.img_width,
+                    )
+                    artifacts.append(validated_png.name)
+                except Exception:
+                    logger.exception("validated chart failed; continuing without it")
         if self.process_viz and not self.no_video:
             try:
                 video = stitch_mp4(str(self.frame_dir), str(run_dir / "process.mp4"), self.fps)

@@ -131,4 +131,30 @@ def plot_detection_charts(
     return original_path, revised_path
 
 
-__all__ = ["plot_detection_charts"]
+def plot_validated_chart(
+    validated_rows,
+    out_dir,
+    cat_ids,
+    cat_names=None,
+    escalations=None,
+    width=640,
+):
+    """Write ``validated.png``: same strip format as revised, from validated rows.
+
+    Same row shape as :func:`plot_detection_charts` (validated rows carry
+    extra ``validated_by``/``verdict`` fields, which are ignored here).
+    Returns the chart path.
+    """
+    cat_ids = list(cat_ids)
+    if cat_names is None:
+        names = {}
+    elif isinstance(cat_names, dict):
+        names = dict(cat_names)
+    else:
+        names = dict(zip(cat_ids, cat_names))
+    return _plot_strip(
+        list(validated_rows), Path(out_dir) / "validated.png", "Validated detections", cat_ids, names, escalations, width
+    )
+
+
+__all__ = ["plot_detection_charts", "plot_validated_chart"]

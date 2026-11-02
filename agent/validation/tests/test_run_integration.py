@@ -69,3 +69,32 @@ def test_no_validator_no_validated_outputs(tmp_path):
     run_dir = run.finish()
     assert not (run_dir / "validated.jsonl").exists()
     assert not (run_dir / "validated.db").exists()
+
+
+def test_validated_chart_written_with_plot(tmp_path):
+    import json
+
+    from agent.tracking.store import RunStore
+
+    store = RunStore("run1", base_dir=tmp_path)
+    run = TrackingRun(
+        view_id=3,
+        start=datetime.datetime(2026, 10, 28, 16, 33),
+        end_exclusive=datetime.datetime(2026, 10, 28, 16, 36),
+        cat_ids=[25, 26],
+        id_to_name={25: "Qb", 26: "Qbo"},
+        store=store,
+        plot=True,
+        validator=FakeValidator([]),
+    )
+    run_dir = run.finish()
+    assert (run_dir / "validated.png").is_file()
+    meta = json.loads((run_dir / "run.json").read_text())
+    assert "validated.png" in meta["artifacts"]
+
+
+def test_no_validated_chart_without_plot(tmp_path):
+    run = _run(tmp_path, FakeValidator([]))
+    run_dir = run.finish()
+    assert (run_dir / "validated.jsonl").is_file()
+    assert not (run_dir / "validated.png").exists()

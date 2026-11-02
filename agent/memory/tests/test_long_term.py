@@ -110,6 +110,31 @@ def test_promote_and_tick(mem):
     mem.drain()
 
 
+def test_memory_llm_io_and_promote_summary_logged(mem, caplog):
+    import logging
+
+    from agent.memory.long_term import _log_snip
+
+    assert _log_snip("a" * 500).endswith("…") and len(_log_snip("a" * 500)) == 200
+    assert _log_snip("short") == "short"
+    with caplog.at_level(logging.INFO, logger="agent.memory.long_term"):
+        mem.store(_event("Qb naps on the sofa.", period_id=12))
+        mem.drain()
+        mem.promote()
+        mem.drain()
+        out = mem._summarize_parent(
+            "L1", "r1c2", [{"text": "Qb naps on the sofa."}],
+            {"visits": 5, "by_cat": {"1": 5}}, 8, {"calls": 0}, [],
+        )
+    assert out is not None
+    texts = [r.getMessage() for r in caplog.records]
+    assert any("memory store LLM input" in t and "sofa" in t for t in texts)
+    assert any("memory store LLM output" in t for t in texts)
+    assert any("memory promote LLM input (L1:r1c2)" in t for t in texts)
+    assert any("memory promote LLM output (L1:r1c2)" in t for t in texts)
+    assert any(t.startswith("memory promote done") and "promoted=" in t for t in texts)
+
+
 def test_tick_without_stores(tmp_path):
     cfg = MemoryConfig.from_yaml()
     m = LongTermMemory(

@@ -43,6 +43,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_LOG_SNIP = 200
+
+
+def _log_snip(text: str) -> str:
+    """Single-line truncation for log records (full text stays in the store)."""
+    flat = " ".join(str(text or "").split())
+    return flat if len(flat) <= _LOG_SNIP else flat[: _LOG_SNIP - 1] + "…"
+
 _LEVEL_RANK = {"L0": 0, "L1": 1, "L2": 2, "slot_5min": 3, "hour": 4, "day": 5, "week": 6}
 
 # Escalation code -> retrieval family (design doc mapping table).
@@ -431,6 +439,14 @@ class LongTermMemory:
             promoted_sp, deferred_sp = self._promote_spatial(force, budget, state, errors)
             promoted_tp, deferred_tp = self._promote_temporal(force, budget, state, errors)
             self.mem_store.save()
+            logger.info(
+                "memory promote done (force=%s): calls=%d promoted=%d deferred=%d errors=%d",
+                force,
+                state["calls"],
+                promoted_sp + promoted_tp,
+                deferred_sp + deferred_tp,
+                len(errors),
+            )
             return PromoteResult(
                 promoted=promoted_sp + promoted_tp,
                 deferred=deferred_sp + deferred_tp,
@@ -588,6 +604,13 @@ class LongTermMemory:
     ) -> tuple[str, list[str], bool | None]:
         """Return ``(note, keywords, contradicts)``; ``None`` means the LLM
         failed and the caller must use pending-observation mode."""
+        logger.info(
+            "memory store LLM input (%s): stable=%r weight=%d text=%r",
+            self._source_label(event),
+            _log_snip(stable),
+            weight,
+            _log_snip(event.text),
+        )
         try:
             res = self.llm.store_update(
                 {"stable": stable, "weight": weight}, event.text
@@ -596,6 +619,13 @@ class LongTermMemory:
                 raise ValueError("store LLM returned a non-dict")
             note = str(res.get("note", "") or "") or event.text
             keywords = [str(k) for k in res.get("keywords", []) or []]
+            logger.info(
+                "memory store LLM output (%s): contradicts=%s keywords=%s note=%r",
+                self._source_label(event),
+                bool(res.get("contradicts_stable", False)),
+                keywords,
+                _log_snip(note),
+            )
             return note, keywords, bool(res.get("contradicts_stable", False))
         except Exception as exc:  # noqa: BLE001 - degrade, never raise
             logger.warning("memory store LLM failed (%s); keeping raw text", exc)
@@ -697,6 +727,20 @@ class LongTermMemory:
         """One budgeted LLM summary; ``None`` on error or deferral (reported)."""
         if state["calls"] >= budget:
             return None
+        logger.info(
+            "memory promote LLM input (%s:%s): %d children stats=%s",
+            label,
+            pid,
+            len(child_dicts),
+            {k: stats.get(k) for k in ("visits", "by_cat")},
+        )
+        for child in child_dicts:
+            logger.info(
+                "memory promote LLM input (%s:%s): child=%r",
+                label,
+                pid,
+                _log_snip(str(child.get("text", ""))),
+            )
         try:
             out = self.llm.summarize(label, child_dicts, stats)
             if not isinstance(out, dict):
@@ -710,6 +754,13 @@ class LongTermMemory:
             )
             return None
         state["calls"] += 1
+        logger.info(
+            "memory promote LLM output (%s:%s): text=%r keywords=%s",
+            label,
+            pid,
+            _log_snip(str(out.get("text", "") or "")),
+            [str(k) for k in out.get("keywords", []) or []],
+        )
         return out
 
     def _promote_spatial(
