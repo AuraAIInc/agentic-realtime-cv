@@ -1,6 +1,6 @@
 """Full LLM trace of an agent run, written as one markdown file per run.
 
-Each run directory (``output/agent_runs/<timestamp>[-tag]/``) gets a ``trace.md``
+Each run directory (``<repo-root>/output/agent_runs/<timestamp>[-tag]/``) gets a ``trace.md``
 that mimics the message-dump format: a table of contents over every message,
 then the full text of each message -- system prompt, user input, every LLM
 output, every tool invocation (arguments + full result text) -- with per-turn

@@ -44,7 +44,8 @@ import json
 import math
 from pathlib import Path
 
-DEFAULT_RUNS_DIR = Path(__file__).resolve().parent.parent / "output" / "tracking_runs"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_RUNS_DIR = REPO_ROOT / "output" / "tracking_runs"
 
 
 def _jsonable(v):

@@ -79,6 +79,11 @@ def test_default_chat_hides_write_and_rare_tools():
                           "local__get_cat_profiles", "skill__check-live-detections"}
 
 
+def test_default_save_dir_is_repo_root_output():
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    assert AgentConfig().save_dir == os.path.join(root, "output", "agent_runs")
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

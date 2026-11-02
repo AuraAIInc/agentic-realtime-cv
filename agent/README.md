@@ -31,18 +31,18 @@ python -m agent.main --view-id 3 \
 # Replay: re-run a recorded stream through the same pipeline
 python -m agent.main --view-id 3 \
   --start 2026-10-27-14-00 --end 2026-10-27-14-05 \
-  --replay agent/output/tracking_runs/<run>/stream.jsonl --plot
+  --replay output/tracking_runs/<run>/stream.jsonl --plot
 
 # Replay with per-frame tracking-process visualization + MP4
 python -m agent.main --view-id 3 \
   --start 2026-10-27-14-00 --end 2026-10-27-14-05 \
-  --replay agent/output/tracking_runs/<run>/stream.jsonl \
+  --replay output/tracking_runs/<run>/stream.jsonl \
   --process-viz --cat-idx 0
 ```
 
 `--start`/`--end` are minute-precision (`YYYY-MM-DD-HH-MM`); the window is
 `start <= t < end + 60s`, so the `--end` minute is fully included. Every run
-writes `agent/output/tracking_runs/<run>/` with `stream.jsonl`,
+writes `output/tracking_runs/<run>/` with `stream.jsonl`,
 `revised.jsonl`, `periods.jsonl`, `escalations.jsonl`, `original.png` /
 `revised.png` (unless `--no-plot`), and `run.json`. Details and edge cases:
 [`tracking/README.md`](tracking/README.md).

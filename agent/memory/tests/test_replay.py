@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import datetime
 import json
-from pathlib import Path
 
 import pytest
 import yaml
@@ -28,11 +27,10 @@ from agent.memory import (
     MemoryQuery,
     StubLLMClient,
 )
+from agent.tracking.store import DEFAULT_RUNS_DIR as RUNS_DIR
 
 SOFA_BOX = (500.0, 300.0, 600.0, 400.0)  # L0 r3c5 -> L1 r1c2
 BOWL_BOX = (450.0, 350.0, 550.0, 450.0)  # L0 r3c4-ish, same L1 zone as sofa
-REPO_ROOT = Path(__file__).resolve().parents[3]
-RUNS_DIR = REPO_ROOT / "agent" / "output" / "tracking_runs"
 
 
 def _mem(tmp_path, name="mem.yaml"):

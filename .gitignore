@@ -219,7 +219,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Runtime output (tracking viz frames / MP4, agent run logs)
+# Runtime output (tracking runs, agent run traces; repo-root output dir)
+output/
 existing_work_before_hackathon/output/
 agent/output/
 # Durable memory store (plain-language YAML, written at runtime)

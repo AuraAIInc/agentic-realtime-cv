@@ -51,7 +51,7 @@ search is a deferred future phase.
   v1 semantic search is keyword-based; embeddings wait for a confirmed endpoint.
 - View 3 is 800x600 (`agent_data/config/zones.yaml`); `PeriodCorrector` already
   uses a 50x50 px grid precedent (`period_area_count`).
-- `agent/output/` is git-ignored temp data (`.gitignore`); tracking runs persist
+- `output/` (repo root) is git-ignored temp data (`.gitignore`); tracking runs persist
   there via `RunStore`. The memory store is durable data, so it lives in the
   module at `agent/memory/data/` (new dir, added to `.gitignore` as runtime data).
 - The tracking pipeline is detections-only (no pixels in `agent/main.py`), so the
@@ -109,7 +109,7 @@ LLM calls per promotion.
 ### Store format (plain-language YAML, sparse)
 
 Only non-empty units are stored. Durable runtime file: `agent/memory/data/
-view_<id>_long_term.yaml` (`agent/output/` is temp-only). Each unit splits slow-moving stable text from a
+view_<id>_long_term.yaml` (repo-root `output/` is temp-only). Each unit splits slow-moving stable text from a
 bounded `recent` buffer plus programmatic counters; the counters (not prose) are
 the source of truth for dominance and weighting.
 

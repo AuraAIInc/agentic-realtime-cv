@@ -80,7 +80,7 @@ Python ≥ 3.10 everywhere (the MCP SDK needs it).
 | Image server | `pip install -r image_server/requirements-mcp.txt` | `cd image_server && python -m mcp_image_server` (or `run_mcp_server.sh`, which uses `~/camera_server/.venv`) | MCP 10001 |
 | Agent | `pip install -r agent/requirements.txt` | `cd agent && python -m supervisor_agent "Is any cat on camera right now?"` | — |
 | Tracking (live) | `pip install -r agent/requirements.txt` | `python -m agent.main --view-id 3 --start 2026-10-27-14-00 --end 2026-10-27-14-05 --live` (from repo root; camera pushes to :8000) | WebSocket 8000 |
-| Tracking (replay) | same | `python -m agent.main --view-id 3 --start 2026-10-27-14-00 --end 2026-10-27-14-05 --replay agent/output/tracking_runs/<run>/stream.jsonl` (add `--process-viz` for per-frame frames + MP4) | — |
+| Tracking (replay) | same | `python -m agent.main --view-id 3 --start 2026-10-27-14-00 --end 2026-10-27-14-05 --replay output/tracking_runs/<run>/stream.jsonl` (add `--process-viz` for per-frame frames + MP4) | — |
 
 Agent modes:
 

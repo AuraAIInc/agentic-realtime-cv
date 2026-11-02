@@ -21,6 +21,8 @@ import os
 from dataclasses import dataclass, field
 
 DEFAULT_MODEL_CONFIG = os.path.join(os.path.dirname(__file__), "models.json")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DEFAULT_SAVE_DIR = os.path.join(REPO_ROOT, "output", "agent_runs")
 
 
 @dataclass
@@ -40,7 +42,7 @@ class AgentConfig:
     max_steps: int = 12  # model turns before giving up
     image_detail: str = "auto"  # "low" | "high" | "auto" for images sent to the model
     reasoning_effort: str | None = None  # e.g. "low", "medium", "high" for reasoning models
-    save_dir: str | None = "output/agent_runs"
+    save_dir: str | None = DEFAULT_SAVE_DIR
     # model id -> {"input", "cached_input", "output"} in USD per 1M tokens (for the cost estimate)
     pricing: dict = field(default_factory=dict)
 

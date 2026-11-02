@@ -10,9 +10,14 @@ import pytest
 from agent.escalation import Escalation
 from agent.tracking.cat_config import resolve_cat_ids
 from agent.tracking.charts import plot_detection_charts
-from agent.tracking.store import FileSink, RunStore
+from agent.tracking.store import DEFAULT_RUNS_DIR, FileSink, RunStore
 
 T0 = datetime.datetime(2026, 10, 30, 12, 0, 0)
+
+
+def test_default_runs_dir_is_repo_root_output():
+    root = Path(__file__).resolve().parent.parent.parent.parent
+    assert DEFAULT_RUNS_DIR == root / "output" / "tracking_runs"
 
 
 def _rev_row(i, cat_id=25, period_id=1, view_id=3):
