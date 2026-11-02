@@ -18,12 +18,26 @@ import datetime
 import json
 import logging
 import queue
+import sys
 import threading
+from pathlib import Path
 
 from agent.escalation import build_prompt
 from agent.escalation.review_schema import review_model_for, review_schema_json
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_supervisor_importable() -> None:
+    """Put ``agent/`` on ``sys.path`` so top-level ``supervisor_agent`` imports resolve.
+
+    ``python -m agent.main`` from the repo root leaves ``agent/`` off the path
+    (unlike ``cd agent`` runs); without this the real backend crashes on import.
+    Same bootstrap pattern as ``db_stream.connect()``.
+    """
+    agent_dir = str(Path(__file__).resolve().parent.parent)
+    if agent_dir not in sys.path:
+        sys.path.insert(0, agent_dir)
 
 #: Tools the validator may use: look at frames, read visit verdicts. Nothing else.
 VALIDATION_TOOLS = ["images__get_image", "images__list_images", "tracking__get_period_detail"]
@@ -119,6 +133,7 @@ class ValidationWorker:
         if callable(self._backend):
             await self._consume(self._backend)
             return
+        ensure_supervisor_importable()
         from supervisor_agent.agent import MCPAgent, RunOptions
         from supervisor_agent.config import AgentConfig
         from supervisor_agent.mcp_hub import MCPHub

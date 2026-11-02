@@ -4,7 +4,7 @@ import datetime
 import json
 
 from agent.escalation import Escalation
-from agent.validation.worker import ValidationWorker, build_validation_query, parse_review
+from agent.validation.worker import ValidationWorker, build_validation_query, ensure_supervisor_importable, parse_review
 
 T0 = datetime.datetime(2026, 10, 28, 16, 35, 21, 976102)
 
@@ -60,6 +60,18 @@ def test_worker_validates_in_order_and_journals():
     assert [op["review"]["verdict"] for op in ops] == ["confirm", "confirm_survivor"]
     assert journaled == ops
     assert ops[0]["escalation"]["name"] == "E6-T2"
+
+
+def test_ensure_supervisor_importable_puts_agent_on_path(monkeypatch):
+    import sys
+    from pathlib import Path
+
+    agent_dir = str(Path("agent/validation/worker.py").resolve().parent.parent)
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if p != agent_dir])
+    ensure_supervisor_importable()
+    assert sys.path[0] == agent_dir
+    ensure_supervisor_importable()
+    assert sys.path.count(agent_dir) == 1
 
 
 def test_worker_failure_journals_error_op_and_continues():
