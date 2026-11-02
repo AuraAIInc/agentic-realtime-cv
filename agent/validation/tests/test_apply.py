@@ -23,8 +23,7 @@ def _op(code, verdict, esc_extra=None, review_extra=None):
     esc = {"name": f"E1-{code}", "code": code, "time": T0.isoformat(timespec="microseconds"),
            "cat_id": 25, "period_id": 4, "metrics": {}}
     esc.update(esc_extra or {})
-    review = {"escalation": f"E1-{code}", "verdict": verdict, "confidence": 0.9,
-              "explanation": "saw it", "frames_checked": [], "needs_human": False}
+    review = {"verdict": verdict}
     review.update(review_extra or {})
     return {"escalation": esc, "review": review}
 

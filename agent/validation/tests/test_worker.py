@@ -17,8 +17,7 @@ def _esc(code="T2", **kw):
 
 
 def _review_json(**kw):
-    payload = {"escalation": "E6-T2", "confidence": 0.9, "explanation": "clearly cat 25",
-               "frames_checked": [], "needs_human": False, "verdict": "confirm"}
+    payload = {"verdict": "confirm"}
     payload.update(kw)
     return json.dumps(payload)
 
@@ -26,7 +25,7 @@ def _review_json(**kw):
 def test_parse_review_accepts_and_rejects():
     assert parse_review("T2", _review_json())["verdict"] == "confirm"
     assert parse_review("T2", "```json\n" + _review_json() + "\n```")["verdict"] == "confirm"
-    for bad in ["not json", "[1, 2]", _review_json(verdict="maybe"), json.dumps({"verdict": "confirm"})]:
+    for bad in ["not json", "[1, 2]", _review_json(verdict="maybe"), json.dumps({}), _review_json(confidence=0.9)]:
         try:
             parse_review("T2", bad)
         except ValueError:
@@ -49,7 +48,7 @@ def test_worker_validates_in_order_and_journals():
     async def backend(query, schema, code):
         seen.append(code)
         verdict = "confirm" if code == "T2" else "confirm_survivor"
-        return _review_json(escalation=f"E6-{code}", verdict=verdict)
+        return _review_json(verdict=verdict)
 
     journaled = []
     worker = ValidationWorker(backend=backend, journal=journaled.append)
@@ -67,7 +66,7 @@ def test_worker_failure_journals_error_op_and_continues():
     async def backend(query, schema, code):
         if code == "T2":
             raise RuntimeError("agent down")
-        return _review_json(escalation="E7-T3", verdict="confirm_survivor")
+        return _review_json(verdict="confirm_survivor")
 
     worker = ValidationWorker(backend=backend)
     worker.start()
@@ -75,8 +74,7 @@ def test_worker_failure_journals_error_op_and_continues():
     worker.enqueue(_esc("T3", cat_id=25, metrics={"killed_cat_id": 26, "iou": 0.8, "conf_margin": 0.04}, seq=7))
     ops = worker.stop(timeout=30)
     assert ops[0]["review"]["verdict"] == "error"
-    assert ops[0]["review"]["needs_human"] is True
-    assert "agent down" in ops[0]["review"]["explanation"]
+    assert "agent down" in ops[0]["review"]["error"]
     assert ops[1]["review"]["verdict"] == "confirm_survivor"
 
 

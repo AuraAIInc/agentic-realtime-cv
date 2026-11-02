@@ -42,8 +42,7 @@ def _run(tmp_path, validator):
 def test_escalations_enqueued_live_and_validated_at_finish(tmp_path):
     op = {"escalation": {"name": "E1-T2", "code": "T2", "time": T0.isoformat(timespec="microseconds"),
                          "cat_id": 25, "metrics": {"original_cat_id": 26}},
-          "review": {"escalation": "E1-T2", "verdict": "confirm", "confidence": 0.9,
-                     "explanation": "ok", "frames_checked": [], "needs_human": False}}
+          "review": {"verdict": "confirm"}}
     validator = FakeValidator([op])
     run = _run(tmp_path, validator)
     assert validator.started

@@ -167,18 +167,10 @@ class ValidationWorker:
         try:
             answer = await run_agent(query, schema, esc.code)
             review = parse_review(esc.code, answer)
-            logger.info("escalation %s verdict: %s (conf %.2f)", name, review.get("verdict"), review.get("confidence") or 0)
+            logger.info("escalation %s verdict: %s", name, review.get("verdict"))
         except Exception as exc:
             logger.warning("escalation %s validation failed: %s", name, exc)
-            review = {
-                "escalation": str(name),
-                "verdict": "error",
-                "confidence": 0.0,
-                "explanation": f"validation failed: {exc}",
-                "frames_checked": [],
-                "needs_human": True,
-                "error": str(exc),
-            }
+            review = {"verdict": "error", "error": str(exc)}
         self._memory_verdict(esc, review)
         return {"escalation": json.loads(esc.to_json()), "review": review}
 
@@ -210,8 +202,8 @@ class ValidationWorker:
                     cat_id=getattr(esc, "cat_id", None),
                     period_id=getattr(esc, "period_id", None),
                     kind="label",
-                    text=f"[{getattr(esc, 'name', None) or esc.code}] {review.get('verdict')} "
-                    f"(conf {review.get('confidence')}): {review.get('explanation')}",
+                    text=f"[{getattr(esc, 'name', None) or esc.code}] {review.get('verdict')}"
+                    + (f": {review.get('error')}" if review.get("verdict") == "error" else ""),
                     code=esc.code,
                 )
             )
