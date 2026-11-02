@@ -230,3 +230,78 @@ python -m agent.main --view-id 3 \
 
 Every entry point loads the repo-root `.env` first. Log format everywhere:
 `timestamp - [LEVEL] file:lineno: message`.
+
+## 10. `main.py` code map (where each stage lives)
+
+`main.py` is a thin orchestrator: `main()` parses args and builds one
+`TrackingRun`, a mode driver feeds it messages, and `TrackingRun` runs the
+whole pipeline per message.
+
+**Ingest — `run_replay_db()` → `process_message()`**
+
+- [main.py:842](../agent/main.py) `run_replay_db()` connects to MySQL
+  (read-only via `agent/tracking/db_stream.py`) and streams camera-format
+  messages for the view in the window `start <= t < end+60s`, calling
+  `run.process_message(msg)` per message. (The other two drivers: `run_live()`
+  serves a websocket at :8000 for camera pushes; `run_replay()` reads a
+  `stream.jsonl` file.)
+- [main.py:534](../agent/main.py) `process_message()` filters (valid message?
+  right view? parseable time? in window?), drops detections at/below
+  `--min-conf` (default 0.5) via `build_img_detected()`, then calls `_ingest()`.
+
+**Corrector — `_ingest()`**
+
+- [main.py:572](../agent/main.py) `_ingest()` runs the two-stage loop:
+  `TrackCorrector.process_images()` (frame scope: relabeling, interpolation,
+  jump splits) yields committed revised rows, each of which goes into
+  `PeriodCorrector.process_detection()` (period scope: open/close visits,
+  winner votes). A `FileSink` writes `stream.jsonl` / `revised.jsonl` /
+  `periods.jsonl` / `images.jsonl` as rows flow through. Both correctors are
+  constructed in [main.py:396](../agent/main.py), sharing one escalation
+  counter so names (`E1-T7`, `E2-T6`, …) number continuously across frame and
+  period scope.
+
+**Escalation — inside the correctors + `_persist_new_escalations()`**
+
+- The correctors themselves raise escalations (T1–T7/P1–P7) by calling
+  `emit()`, which appends to the corrector's list and logs the record JSON +
+  reviewer prompt + output schema.
+- [main.py:608](../agent/main.py) `_persist_new_escalations()`, called after
+  every frame and after `finish_up`, drains new items via `_EscCollector`
+  (which survives the correctors' list rebinds), appends each to
+  `escalations.jsonl`, feeds it to memory, and — only with `--validate` —
+  enqueues it to the validation worker.
+
+**Supervisor agent — `ValidationWorker` (background thread)**
+
+- Built and started in [main.py:429](../agent/main.py) when `--validate` is
+  passed. It consumes the escalation queue one at a time, sends each full
+  escalation prompt to the supervisor `MCPAgent` (images + tracking tools),
+  parses the verdict into ops, and journals them via `store.append_validation`
+  → `validations.jsonl`.
+- In [main.py:646](../agent/main.py), `validator.stop()` drains the queue,
+  then `materialize()` applies the ops to the revised rows and writes
+  `validated.jsonl` + `validated.db` (per-run SQLite — the shared MySQL is
+  never written).
+
+**Memory — `LongTermMemory` hooks**
+
+- Initialized in [main.py:417](../agent/main.py) when `--memory` is passed
+  (falls back to an offline stub if the Meta model key is missing; init
+  failure just disables memory).
+- Per frame: [main.py:463](../agent/main.py) advances time; each closed period
+  row is stored via [main.py:489](../agent/main.py) and each escalation via
+  [main.py:504](../agent/main.py). All hooks are best-effort — they log and
+  continue on error. The validator also receives the memory handle. Memory
+  shuts down at the end of `finish()`.
+
+**Finalize — `finish()`**
+
+[main.py:629](../agent/main.py) flushes both correctors (`finish_up`), stops
+the validator and materializes validated outputs, draws
+`original.png`/`revised.png` (with `--plot`), then writes `run.json` with
+counts including `escalations_by_code` and `validations_by_verdict`.
+
+Data flow for a full-loop run: MySQL → `process_message` → TrackCorrector →
+PeriodCorrector → escalations → (async) supervisor agent → validated outputs,
+with memory observing periods + escalations on the side.
