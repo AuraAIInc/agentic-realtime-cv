@@ -34,6 +34,18 @@ PROMOTE_SUMMARY_SCHEMA = {
     "additionalProperties": False,
 }
 
+SPATIAL_SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "activity": {"type": "string"},
+        "appearance": {"type": "string"},
+        "behavior": {"type": "string"},
+        "keywords": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["activity", "appearance", "behavior", "keywords"],
+    "additionalProperties": False,
+}
+
 BOOTSTRAP_VISION_SCHEMA = {
     "type": "object",
     "properties": {
@@ -90,7 +102,29 @@ def store_update_input(unit: dict, observation: str) -> str:
 
 
 def promote_summary_instructions(level: str, word_cap: int) -> str:
-    """Compress child units into one parent summary (dominant patterns only)."""
+    """Compress child units into one parent summary (dominant patterns only).
+
+    Spatial parents (L1/L2) describe the zone itself: general activity,
+    cat appearance, and typical behavior, in plain language a human can read.
+    """
+    if level in ("L1", "L2"):
+        return (
+            f"You describe one {level} camera zone from its child cells.\n"
+            f"{STYLE_GUIDE}\n"
+            "Respond with JSON: {\"activity\": what happens in this zone, "
+            "\"appearance\": what the cats seen here look like, "
+            "\"behavior\": what those cats typically do here, "
+            "\"keywords\": [terms]}.\n"
+            "Dominant patterns only: every child below the support gate was "
+            "already removed, so describe what repeats across the remaining "
+            "children and their rolled-up visit counts. Appearance comes only "
+            "from the children's appearance lines, behavior only from what the "
+            "children's activity lines say the cats do — never invent fur "
+            "colors, breeds, markings, or habits. Keep each field one or two "
+            "plain sentences; when over the word cap, drop the lowest-support "
+            "detail first.\n"
+            f"Hard cap: at most {word_cap} words per field."
+        )
     return (
         f"You compress {level} child summaries into one parent memory unit.\n"
         f"{STYLE_GUIDE}\n"
@@ -109,10 +143,16 @@ def promote_summary_input(
 ) -> str:
     lines = [f"LEVEL: {level} (cap {word_cap} words)", f"ROLLED-UP STATS: {stats}"]
     for child in children:
-        lines.append(
+        line = (
             f"- {child.get('id')}: visits={child.get('visits', 0)} "
             f"text={child.get('text', '')}"
         )
+        if level in ("L1", "L2"):
+            line += (
+                f" appearance={child.get('appearance', '') or '(unknown)'}"
+                f" behavior={child.get('behavior', '') or '(unknown)'}"
+            )
+        lines.append(line)
     return "\n".join(lines)
 
 

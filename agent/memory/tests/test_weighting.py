@@ -47,10 +47,10 @@ def mem(tmp_path):
     m.shutdown()
 
 
-def _event(text, when=T0, box=SOFA_BOX, cat_id=1):
+def _event(text, when=T0, box=SOFA_BOX, cat_id=1, confidence=0.95):
     return MemoryEvent(
         time=when, view_id=3, box=box, cat_id=cat_id,
-        kind="period", text=text,
+        kind="period", text=text, confidence=confidence,
     )
 
 

@@ -84,8 +84,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--memory",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="feed period verdicts + escalations to spatial-temporal memory (default --no-memory: "
-        "tracking only escalates and prints full detail; pass --memory to re-enable the agent link)",
+        help="feed high-confidence periods + validation verdicts to long-term memory and "
+        "every period + episode to short-term day memory (default --no-memory)",
     )
     parser.add_argument(
         "--bootstrap-frame",
@@ -267,6 +267,31 @@ def _period_text(period_id, start, end, coord_cat, name, det_len, det_conf, scor
     return bits[0]
 
 
+def _image_name_for(when: datetime.datetime) -> str:
+    """Original image file name for a frame time (capture-time naming)."""
+    return when.strftime(CAMERA_TIME_FORMAT) + ".jpg"
+
+
+def _keyframe_names(start: datetime.datetime, end: datetime.datetime, n: int = 3) -> list[str]:
+    """Evenly spread image names across a span (endpoints included)."""
+    if n <= 1 or end <= start:
+        return [_image_name_for(start)]
+    span = (end - start).total_seconds()
+    return [_image_name_for(start + datetime.timedelta(seconds=span * i / (n - 1))) for i in range(n)]
+
+
+def _appearance_for(view_id: int, cat_id) -> str:
+    """Cat-profile appearance line for a tracker label ("" when unavailable)."""
+    if cat_id is None:
+        return ""
+    try:
+        from agent.tracking.cat_config import appearance_for_tracking_id
+
+        return appearance_for_tracking_id(view_id, cat_id) or ""
+    except Exception:
+        return ""
+
+
 def period_row_to_memory_event(row: list, *, view_id: int, id_to_name=None, box=None):
     """Build a MemoryEvent from a PeriodCorrector list row (live hook)."""
     from agent.memory import MemoryEvent
@@ -276,16 +301,22 @@ def period_row_to_memory_event(row: list, *, view_id: int, id_to_name=None, box=
     coord = row[2]
     pid = row[14] if len(row) > 14 else None
     name = (id_to_name or {}).get(coord) if coord is not None else None
-    text = _period_text(pid, start, end, coord, name, row[3], row[4], row[7])
+    det_len, det_conf = row[3], row[4]
+    text = _period_text(pid, start, end, coord, name, det_len, det_conf, row[7])
+    cid = int(coord) if coord is not None else None
     return MemoryEvent(
         time=start,
         end_time=end,
         view_id=int(view_id),
         box=box,
-        cat_id=int(coord) if coord is not None else None,
+        cat_id=cid,
         period_id=pid,
         kind="period",
         text=text,
+        confidence=float(det_conf) if det_conf is not None else None,
+        image_names=_keyframe_names(start, end),
+        detection={"box": list(box) if box else None, "cat_id": cid, "conf": det_conf, "period_id": pid},
+        appearance=_appearance_for(view_id, cid),
     )
 
 
@@ -299,32 +330,35 @@ def period_dict_to_memory_event(row: dict, *, view_id: int, id_to_name=None, box
     pid = row.get("period_id")
     winner = row.get("winner") or {}
     name = (id_to_name or {}).get(coord) if coord is not None else None
-    text = _period_text(
-        pid,
-        start,
-        end,
-        coord,
-        name,
-        winner.get("detect_length"),
-        winner.get("detect_conf"),
-        winner.get("score"),
-    )
+    det_len, det_conf = winner.get("detect_length"), winner.get("detect_conf")
+    text = _period_text(pid, start, end, coord, name, det_len, det_conf, winner.get("score"))
+    cid = int(coord) if coord is not None else None
     return MemoryEvent(
         time=start,
         end_time=end,
         view_id=int(view_id),
         box=box,
-        cat_id=int(coord) if coord is not None else None,
+        cat_id=cid,
         period_id=pid,
         kind="period",
         text=text,
+        confidence=float(det_conf) if det_conf is not None else None,
+        image_names=_keyframe_names(start, end),
+        detection={"box": list(box) if box else None, "cat_id": cid, "conf": det_conf, "period_id": pid},
+        appearance=_appearance_for(view_id, cid),
     )
 
 
 def escalation_to_memory_event(esc, *, view_id: int, box=None):
-    """Build a MemoryEvent from an Escalation object (live hook)."""
+    """Build a MemoryEvent from an Escalation object (short-term hook).
+
+    Escalation occurrences are tracker uncertainty, so they carry no
+    confidence and only ever reach short-term day context — never long-term
+    memory (see LongTermMemory._store_qualifies).
+    """
     from agent.memory import MemoryEvent
 
+    end = esc.end_time or esc.time
     return MemoryEvent(
         time=esc.time,
         end_time=esc.end_time,
@@ -335,15 +369,18 @@ def escalation_to_memory_event(esc, *, view_id: int, box=None):
         kind="escalation",
         text=f"[{esc.name or esc.code}] {esc.reason}",
         code=esc.code,
+        image_names=_keyframe_names(esc.time, end, 2),
+        detection={"cat_id": esc.cat_id, "period_id": esc.period_id},
     )
 
 
 def escalation_dict_to_memory_event(row: dict, *, view_id: int, box=None):
-    """Build a MemoryEvent from an escalations.jsonl dict (replay hook)."""
+    """Build a MemoryEvent from an escalations.jsonl dict (short-term hook)."""
     from agent.memory import MemoryEvent
 
     time = parse_message_time(row["time"])
     end_raw = row.get("end_time")
+    end = parse_message_time(end_raw) if end_raw else time
     return MemoryEvent(
         time=time,
         end_time=parse_message_time(end_raw) if end_raw else None,
@@ -354,6 +391,8 @@ def escalation_dict_to_memory_event(row: dict, *, view_id: int, box=None):
         kind="escalation",
         text=f"[{row.get('name') or row.get('code')}] {row.get('reason')}",
         code=row.get("code"),
+        image_names=_keyframe_names(time, end, 2),
+        detection={"cat_id": row.get("cat_id"), "period_id": row.get("period_id")},
     )
 
 
@@ -427,11 +466,26 @@ class TrackingRun:
                 self.memory.bootstrap(Path(bootstrap_frame).read_bytes())
             except Exception:
                 logger.exception("memory bootstrap failed; continuing in text-only mode")
+        self.short_term = None
+        if self.memory is not None:
+            try:
+                from agent.memory import DailyShortTermMemory
+
+                self.short_term = DailyShortTermMemory(self.memory.config, self.view_id, self.memory)
+                self.short_term.start_session(start, store.run_dir.name)
+            except Exception:
+                logger.exception("short-term memory init failed; continuing without it")
+                self.short_term = None
         self.validator = validator
         if self.validator is None and validate:
             from agent.validation import ValidationWorker
 
-            self.validator = ValidationWorker(journal=store.append_validation, memory=self.memory, box_lookup=self._esc_box)
+            self.validator = ValidationWorker(
+                journal=store.append_validation,
+                memory=self.memory,
+                box_lookup=self._esc_box,
+                short_term=self.short_term,
+            )
         if self.validator is not None:
             self.validator.start()
 
@@ -468,6 +522,11 @@ class TrackingRun:
             self.memory.tick(now)
         except Exception:
             logger.exception("memory tick failed")
+        if self.short_term is not None:
+            try:
+                self.short_term.rollover(now)
+            except Exception:
+                logger.exception("short-term rollover failed")
 
     def _period_box(self, period_id) -> tuple | None:
         """Median box of a closed period's detections (None when unavailable)."""
@@ -492,33 +551,64 @@ class TrackingRun:
             return
         try:
             pid = row[14] if isinstance(row, list) and len(row) > 14 else None
+            box = self._period_box(pid)
             event = period_row_to_memory_event(
                 row,
                 view_id=self.view_id,
                 id_to_name=self.id_to_name,
-                box=self._period_box(pid),
+                box=box,
             )
-            self.memory.store(event)
+            self.memory.store(event)  # kept only when high-confidence (trust gate)
+            if self.short_term is not None:
+                self.short_term.record_period(
+                    period_id=pid,
+                    cat_id=event.cat_id,
+                    cat_name=self.id_to_name.get(event.cat_id) if event.cat_id is not None else None,
+                    start=event.time,
+                    end=event.end_time or event.time,
+                    detections=int(row[3] or 0),
+                    mean_conf=event.confidence,
+                    box=box,
+                    keyframes=event.image_names,
+                )
         except Exception:
             logger.exception("memory period store failed; dropping event")
 
     def _memory_store_escalation(self, esc) -> None:
-        if self.memory is None:
+        # Escalation occurrences are tracker uncertainty: short-term day
+        # context only, never long-term knowledge.
+        if self.short_term is None:
             return
         try:
-            self.memory.store(escalation_to_memory_event(esc, view_id=self.view_id))
+            event = escalation_to_memory_event(esc, view_id=self.view_id)
+            self.short_term.record_episode(
+                name=esc.name or esc.code,
+                code=esc.code,
+                time=event.time,
+                reason=esc.reason,
+                cat_id=esc.cat_id,
+                period_id=esc.period_id,
+                image_names=event.image_names,
+            )
         except Exception:
-            logger.exception("memory escalation store failed; dropping event")
+            logger.exception("short-term episode store failed; dropping event")
 
     def _shutdown_memory(self) -> None:
         if self.memory is None:
             return
+        try:
+            if self.short_term is not None:
+                self.short_term.merge_into(self.memory)
+                self.memory.promote()
+        except Exception:
+            logger.exception("short-term merge failed; day stays unmerged")
         try:
             self.memory.shutdown()
         except Exception:
             logger.exception("memory shutdown failed")
         finally:
             self.memory = None
+            self.short_term = None
 
     # -- ingest --
 

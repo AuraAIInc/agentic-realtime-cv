@@ -17,3 +17,4 @@ promotion: {idle_seconds: 300, min_pattern_support: 3, stable_weight_cap: 50,
 worker: {queue_warn_depth: 100, promote_coalesce: true}
 store_dir: "agent/memory/data"          # per-view file view_<id>_long_term.yaml (durable; git-ignored)
 llm: {model_role: memory, max_units_per_call: 8}
+quality: {min_store_confidence: 0.7, short_term_keyframes: 3}  # long-term keeps only high-confidence records

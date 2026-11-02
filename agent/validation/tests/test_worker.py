@@ -163,3 +163,39 @@ def test_worker_uses_memory_for_context_and_verdict():
     assert memory.stored[0].kind == "label"
     assert memory.stored[0].code == "T2"
     assert "confirm" in memory.stored[0].text
+
+
+class _StubShortTerm:
+    def __init__(self):
+        self.verdicts = []
+
+    def record_verdict(self, name, verdict):
+        self.verdicts.append((name, verdict))
+        return True
+
+
+def test_worker_verdict_carries_confidence_evidence_and_short_term():
+    async def backend(query, schema, code):
+        return _review_json()
+
+    async def failing(query, schema, code):
+        raise RuntimeError("boom")
+
+    memory = _StubMemory()
+    short_term = _StubShortTerm()
+    worker = ValidationWorker(backend=backend, memory=memory, short_term=short_term)
+    worker.start()
+    worker.enqueue(_esc())
+    worker.stop(timeout=30)
+    event = memory.stored[0]
+    assert event.confidence == 0.9
+    assert event.image_names == ["2026-10-28-16-35-21-976102.jpg"] * 2
+    assert event.detection["cat_id"] == 25
+    assert short_term.verdicts == [("E6-T2", "confirm")]
+
+    memory2 = _StubMemory()
+    worker2 = ValidationWorker(backend=failing, memory=memory2)
+    worker2.start()
+    worker2.enqueue(_esc())
+    worker2.stop(timeout=30)
+    assert memory2.stored[0].confidence == 0.0  # errors carry no knowledge

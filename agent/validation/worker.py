@@ -106,11 +106,12 @@ class ValidationWorker:
     called with every op dict; ``memory`` enables context + verdict events.
     """
 
-    def __init__(self, backend="supervisor", *, journal=None, memory=None, box_lookup=None):
+    def __init__(self, backend="supervisor", *, journal=None, memory=None, box_lookup=None, short_term=None):
         self._backend = backend
         self._journal = journal
         self._memory = memory
         self._box_lookup = box_lookup
+        self._short_term = short_term
         self._inbox: queue.Queue = queue.Queue()
         self._pending: list = []
         self._started = threading.Event()
@@ -226,22 +227,61 @@ class ValidationWorker:
             return None
 
     def _memory_verdict(self, esc, review: dict) -> None:
+        name = getattr(esc, "name", None) or getattr(esc, "code", "?")
+        if self._short_term is not None:
+            try:
+                self._short_term.record_verdict(name, str(review.get("verdict")))
+            except Exception:
+                logger.exception("short-term verdict store failed; dropping event")
         if self._memory is None:
             return
         try:
             from agent.memory import MemoryEvent
 
+            when = getattr(esc, "time", None) or datetime.datetime.now()
+            end = getattr(esc, "end_time", None) or when
+            box = None
+            if self._box_lookup is not None:
+                try:
+                    box = self._box_lookup(esc)
+                except Exception:
+                    box = None
+            try:
+                from agent.tracking.cat_config import appearance_for_tracking_id
+
+                appearance = appearance_for_tracking_id(
+                    int(getattr(self._memory.config, "view_id", 0) or 0),
+                    getattr(esc, "cat_id", None),
+                ) or ""
+            except Exception:
+                appearance = ""
+            verdict = review.get("verdict")
             self._memory.store(
                 MemoryEvent(
-                    time=getattr(esc, "time", None) or datetime.datetime.now(),
+                    time=when,
                     end_time=getattr(esc, "end_time", None),
                     view_id=int(getattr(self._memory.config, "view_id", 0) or 0),
+                    box=tuple(box) if box else None,
                     cat_id=getattr(esc, "cat_id", None),
                     period_id=getattr(esc, "period_id", None),
                     kind="label",
-                    text=f"[{getattr(esc, 'name', None) or esc.code}] {review.get('verdict')}"
-                    + (f": {review.get('error')}" if review.get("verdict") == "error" else ""),
+                    text=f"[{name}] {verdict}"
+                    + (f": {review.get('error')}" if verdict == "error" else ""),
                     code=esc.code,
+                    # Decisive pixel-judged verdicts are high-confidence
+                    # conclusions; errors carry no knowledge and are dropped
+                    # by the trust gate.
+                    confidence=0.0 if verdict == "error" else 0.9,
+                    image_names=[
+                        when.strftime("%Y-%m-%d-%H-%M-%S-%f") + ".jpg",
+                        end.strftime("%Y-%m-%d-%H-%M-%S-%f") + ".jpg",
+                    ],
+                    detection={
+                        "box": list(box) if box else None,
+                        "cat_id": getattr(esc, "cat_id", None),
+                        "period_id": getattr(esc, "period_id", None),
+                    },
+                    appearance=appearance if verdict != "error" else "",
                 )
             )
         except Exception:

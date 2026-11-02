@@ -16,9 +16,16 @@ class MemoryEvent:
     box: tuple[float, float, float, float] | None = None
     cat_id: int | None = None
     period_id: int | None = None
-    kind: str = "period"  # "period" | "escalation" | "label"
+    kind: str = "period"  # "period" | "escalation" | "label" | "summary"
     text: str = ""
     code: str | None = None  # T1..T7 / P1..P7 when from escalation
+    # Trust + evidence. Long-term memory only keeps high-confidence events
+    # (see LongTermMemory._store_qualifies); every kept record carries its
+    # original image names, the detection snapshot, and plain-language text.
+    confidence: float | None = None  # 0..1; None = untrusted
+    image_names: list[str] = field(default_factory=list)
+    detection: dict = field(default_factory=dict)  # {box, cat_id, conf, ...}
+    appearance: str = ""  # profile appearance line, e.g. "Qbo: long-haired cream ..."
 
 
 @dataclass
@@ -38,6 +45,7 @@ class MemoryHit:
     text: str
     score: float = 0.0
     unobserved: bool = False
+    # Evidence for the hit: {"images": [image names], "detections": [snapshots]}.
     extra: dict = field(default_factory=dict)
 
 

@@ -7,6 +7,7 @@ environment overrides so tuning needs no code change.
 
 from __future__ import annotations
 
+import datetime
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -94,6 +95,11 @@ class MemoryConfig:
     store_dir: str = "agent/memory/data"
     llm_model_role: str = "memory"
     max_units_per_call: int = 8
+    # Trust gate: long-term memory keeps only period/label/summary events at
+    # or above this confidence (escalation occurrences never qualify — they
+    # belong to short-term day context, not durable knowledge).
+    min_store_confidence: float = 0.7
+    short_term_keyframes: int = 3  # key-frame images per short-term period entry
 
     @classmethod
     def from_yaml(cls, path: str | Path | None = None) -> "MemoryConfig":
@@ -148,6 +154,11 @@ class MemoryConfig:
             cfg.llm_model_role = str(llm["model_role"])
         if "max_units_per_call" in llm:
             cfg.max_units_per_call = int(llm["max_units_per_call"])
+        quality = raw.get("quality") or {}
+        if "min_store_confidence" in quality:
+            cfg.min_store_confidence = float(quality["min_store_confidence"])
+        if "short_term_keyframes" in quality:
+            cfg.short_term_keyframes = int(quality["short_term_keyframes"])
         return cfg.with_env_overrides()
 
     def with_env_overrides(self) -> "MemoryConfig":
@@ -171,8 +182,15 @@ class MemoryConfig:
         self.store_dir = _str("MEMORY_STORE_DIR", self.store_dir)
         self.llm_model_role = _str("MEMORY_LLM_MODEL_ROLE", self.llm_model_role)
         self.max_units_per_call = _int("MEMORY_MAX_UNITS_PER_CALL", self.max_units_per_call)
+        self.min_store_confidence = _float("MEMORY_MIN_STORE_CONFIDENCE", self.min_store_confidence)
+        self.short_term_keyframes = _int("MEMORY_SHORT_TERM_KEYFRAMES", self.short_term_keyframes)
         return self
 
     def store_path(self, view_id: int | None = None) -> Path:
         vid = self.view_id if view_id is None else view_id
         return Path(self.store_dir) / f"view_{vid}_long_term.yaml"
+
+    def short_term_path(self, day: datetime.date, view_id: int | None = None) -> Path:
+        """Plain-language Markdown file for one day of short-term memory."""
+        vid = self.view_id if view_id is None else view_id
+        return Path(self.store_dir) / f"view_{vid}_short_term_{day.isoformat()}.md"

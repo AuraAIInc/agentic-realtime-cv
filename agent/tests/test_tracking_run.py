@@ -8,7 +8,7 @@ import datetime
 import logging
 from types import SimpleNamespace
 
-from agent.main import TrackingRun
+from agent.main import TrackingRun, escalation_to_memory_event, period_row_to_memory_event
 
 T0 = datetime.datetime(2026, 10, 28, 16, 33, 0)
 
@@ -31,3 +31,24 @@ def test_log_period_row_skips_padding_nones(caplog):
     with caplog.at_level(logging.INFO, logger="agent.main"):
         TrackingRun._log_period_row(run, None)
     assert "period closed" not in caplog.text
+
+
+def test_period_memory_event_carries_confidence_and_evidence():
+    event = period_row_to_memory_event(_row(), view_id=3, id_to_name={25: "Qb"}, box=(1, 2, 3, 4))
+    assert event.confidence == 0.8
+    assert event.image_names == [
+        "2026-10-28-16-33-00-000000.jpg",
+        "2026-10-28-16-35-30-000000.jpg",
+        "2026-10-28-16-38-00-000000.jpg",
+    ]
+    assert event.detection["cat_id"] == 25 and event.detection["period_id"] == 7
+    assert event.appearance.startswith("Qb:")
+
+
+def test_escalation_memory_event_is_untrusted_short_term_only():
+    from agent.escalation import Escalation
+
+    esc = Escalation(time=T0, scope="frame", code="T2", reason="r", cat_id=25, seq=6)
+    event = escalation_to_memory_event(esc, view_id=3)
+    assert event.kind == "escalation" and event.confidence is None
+    assert event.image_names == ["2026-10-28-16-33-00-000000.jpg"]

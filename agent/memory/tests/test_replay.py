@@ -50,6 +50,7 @@ def _synthetic_events():
                 time=base + datetime.timedelta(minutes=i), view_id=3,
                 box=SOFA_BOX, cat_id=1, period_id=12 + i, kind="period",
                 text="Qb naps on the dark sofa in the afternoon.",
+                confidence=0.95,
             )
         )
     for i in range(3):
@@ -58,6 +59,7 @@ def _synthetic_events():
                 time=base + datetime.timedelta(minutes=i), view_id=3,
                 box=BOWL_BOX, cat_id=2, period_id=20 + i, kind="period",
                 text="Qbo eats from the food bowl near the sofa.",
+                confidence=0.95,
             )
         )
     events.append(

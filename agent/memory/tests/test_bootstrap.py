@@ -58,7 +58,7 @@ def test_bootstrap_marks_l0_unobserved_until_refined(mem):
     assert ctx.spatial[0].unobserved is True
     assert "Stub" in ctx.spatial[0].text  # inherited from L2 at read time
     mem.store(
-        MemoryEvent(time=T0, view_id=3, box=SOFA_BOX, cat_id=1, text="Qb naps.")
+        MemoryEvent(time=T0, view_id=3, box=SOFA_BOX, cat_id=1, text="Qb naps.", confidence=0.95)
     )
     mem.drain()
     ctx = mem.invoke(MemoryQuery(time=T0, box=SOFA_BOX, spatial_radius=0))
@@ -104,7 +104,7 @@ def test_bootstrap_failure_degrades_to_text_only(tmp_path):
 
 def test_text_only_store_marks_vision_unknown(mem):
     mem.store(
-        MemoryEvent(time=T0, view_id=3, box=SOFA_BOX, cat_id=1, text="Qb naps.")
+        MemoryEvent(time=T0, view_id=3, box=SOFA_BOX, cat_id=1, text="Qb naps.", confidence=0.95)
     )
     mem.drain()
     assert mem.mem_store.bootstrapped is False
@@ -120,7 +120,7 @@ def test_text_only_store_marks_vision_unknown(mem):
 def test_first_store_with_image_auto_bootstraps(mem):
     assert mem.mem_store.bootstrapped is False
     mem.store(
-        MemoryEvent(time=T0, view_id=3, box=SOFA_BOX, cat_id=1, text="Qb naps."),
+        MemoryEvent(time=T0, view_id=3, box=SOFA_BOX, cat_id=1, text="Qb naps.", confidence=0.95),
         image=b"first-frame-bytes",
     )
     mem.drain()

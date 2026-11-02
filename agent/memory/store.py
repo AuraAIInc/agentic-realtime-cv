@@ -27,10 +27,14 @@ class SpatialUnit:
     background: str = ""
     cat_contrast: str = ""
     activity: str = ""
+    appearance: str = ""  # what the cats seen here look like (plain language)
+    behavior: str = ""  # what the cats seen here typically do (plain language)
     keywords: list[str] = field(default_factory=list)
     weight: int = 0
     contradictions: int = 0
     recent: list[str] = field(default_factory=list)
+    images: list[str] = field(default_factory=list)  # original image names (bounded)
+    detections: list[dict] = field(default_factory=list)  # detection snapshots (bounded)
     stats: dict = field(default_factory=lambda: {"visits": 0, "by_cat": {}})
     updated: str | None = None
     sources: list[str] = field(default_factory=list)
@@ -42,6 +46,8 @@ class SpatialUnit:
             and not self.background
             and not self.cat_contrast
             and not self.activity
+            and not self.appearance
+            and not self.behavior
             and int(self.stats.get("visits", 0)) == 0
             and not self.recent
         )
@@ -54,10 +60,14 @@ class SpatialUnit:
             "background": self.background,
             "cat_contrast": self.cat_contrast,
             "activity": self.activity,
+            "appearance": self.appearance,
+            "behavior": self.behavior,
             "keywords": list(self.keywords),
             "weight": int(self.weight),
             "contradictions": int(self.contradictions),
             "recent": list(self.recent),
+            "images": list(self.images),
+            "detections": [dict(d) for d in self.detections],
             "stats": _norm_stats(self.stats),
             "updated": self.updated,
             "sources": list(self.sources),
@@ -72,10 +82,14 @@ class SpatialUnit:
             background=str(data.get("background") or ""),
             cat_contrast=str(data.get("cat_contrast") or ""),
             activity=str(data.get("activity") or ""),
+            appearance=str(data.get("appearance") or ""),
+            behavior=str(data.get("behavior") or ""),
             keywords=[str(k) for k in data.get("keywords", []) or []],
             weight=int(data.get("weight", 0)),
             contradictions=int(data.get("contradictions", 0)),
             recent=[str(r) for r in data.get("recent", []) or []],
+            images=[str(i) for i in data.get("images", []) or []],
+            detections=[dict(d) for d in data.get("detections", []) or []],
             stats=_norm_stats(data.get("stats")),
             updated=data.get("updated"),
             sources=[str(s) for s in data.get("sources", []) or []],
@@ -90,6 +104,8 @@ class TemporalUnit:
     weight: int = 0
     contradictions: int = 0
     recent: list[str] = field(default_factory=list)
+    images: list[str] = field(default_factory=list)  # original image names (bounded)
+    detections: list[dict] = field(default_factory=list)  # detection snapshots (bounded)
     stats: dict = field(default_factory=lambda: {"visits": 0, "by_cat": {}})
     updated: str | None = None
     sources: list[str] = field(default_factory=list)
@@ -110,6 +126,8 @@ class TemporalUnit:
             "weight": int(self.weight),
             "contradictions": int(self.contradictions),
             "recent": list(self.recent),
+            "images": list(self.images),
+            "detections": [dict(d) for d in self.detections],
             "stats": _norm_stats(self.stats),
             "updated": self.updated,
             "sources": list(self.sources),
@@ -124,6 +142,8 @@ class TemporalUnit:
             weight=int(data.get("weight", 0)),
             contradictions=int(data.get("contradictions", 0)),
             recent=[str(r) for r in data.get("recent", []) or []],
+            images=[str(i) for i in data.get("images", []) or []],
+            detections=[dict(d) for d in data.get("detections", []) or []],
             stats=_norm_stats(data.get("stats")),
             updated=data.get("updated"),
             sources=[str(s) for s in data.get("sources", []) or []],

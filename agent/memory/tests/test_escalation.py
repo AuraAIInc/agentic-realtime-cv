@@ -35,12 +35,14 @@ def mem(tmp_path):
                 time=datetime.datetime(2026, 10, day, 14, 2), view_id=3,
                 box=SOFA_BOX, cat_id=1, kind="period",
                 text="Qb naps on the sofa every afternoon.",
+                confidence=0.95,
             )
         )
     m.store(
         MemoryEvent(
             time=T0, view_id=3, box=BOWL_BOX, cat_id=2, kind="period",
             text="Qbo eats from the food bowl by the wall.",
+            confidence=0.95,
         )
     )
     m.drain()
@@ -86,6 +88,7 @@ def test_merge_family_covers_gap_span(mem):
         MemoryEvent(
             time=T0 + datetime.timedelta(hours=1), view_id=3, box=SOFA_BOX,
             cat_id=1, kind="period", text="Qb still asleep on the sofa.",
+            confidence=0.95,
         )
     )
     mem.drain()

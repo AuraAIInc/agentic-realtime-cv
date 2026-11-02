@@ -44,6 +44,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _LOG_SNIP = 200
+_EVIDENCE_IMAGES = 5  # original image names kept per unit (newest wins)
+_EVIDENCE_DETECTIONS = 3  # detection snapshots kept per unit (newest wins)
 
 
 def _log_snip(text: str) -> str:
@@ -147,6 +149,16 @@ class LongTermMemory:
 
     # ---- sync reads (locked) ----
 
+    @staticmethod
+    def _hit_extra(unit) -> dict:
+        """Evidence carried on a hit: original images + detection snapshots."""
+        if unit is None:
+            return {}
+        return {
+            "images": list(getattr(unit, "images", []) or []),
+            "detections": [dict(d) for d in (getattr(unit, "detections", []) or [])],
+        }
+
     def invoke(self, query: MemoryQuery) -> MemoryContext:
         with self.worker.lock:
             spatial_hits: list[MemoryHit] = []
@@ -160,6 +172,7 @@ class LongTermMemory:
                         view, unobserved = self.mem_store.effective_l0(ncid, self.spatial)
                         text = view.get("activity") or view.get("environment") or ""
                         dist = max(abs(cc - col), abs(cr - row))
+                        stored = self.mem_store.get_spatial("L0", ncid)
                         spatial_hits.append(
                             MemoryHit(
                                 level="L0",
@@ -167,6 +180,7 @@ class LongTermMemory:
                                 text=text,
                                 score=1.0 / (1.0 + dist),
                                 unobserved=unobserved,
+                                extra=self._hit_extra(stored),
                             )
                         )
                     parent = self.spatial.parent(0, col, row)
@@ -180,6 +194,7 @@ class LongTermMemory:
                                     unit_id=pid,
                                     text=punit.activity or punit.environment or "",
                                     score=0.5,
+                                    extra=self._hit_extra(punit),
                                 )
                             )
                     l2 = self.mem_store.get_spatial("L2", "r0c0")
@@ -190,6 +205,7 @@ class LongTermMemory:
                                 unit_id="r0c0",
                                 text=l2.activity or l2.environment or "",
                                 score=0.25,
+                                extra=self._hit_extra(l2),
                             )
                         )
             temporal_hits: list[MemoryHit] = []
@@ -197,7 +213,10 @@ class LongTermMemory:
                 unit = self.mem_store.get_temporal("slot_5min", sid)
                 if unit is not None and not unit.is_empty:
                     temporal_hits.append(
-                        MemoryHit(level="slot_5min", unit_id=sid, text=unit.summary, score=1.0)
+                        MemoryHit(
+                            level="slot_5min", unit_id=sid, text=unit.summary,
+                            score=1.0, extra=self._hit_extra(unit),
+                        )
                     )
             for lname, bid in (
                 ("hour", self.temporal.hour_id(query.time)),
@@ -207,7 +226,10 @@ class LongTermMemory:
                 unit = self.mem_store.get_temporal(lname, bid)
                 if unit is not None and not unit.is_empty:
                     temporal_hits.append(
-                        MemoryHit(level=lname, unit_id=bid, text=unit.summary, score=0.5)
+                        MemoryHit(
+                            level=lname, unit_id=bid, text=unit.summary,
+                            score=0.5, extra=self._hit_extra(unit),
+                        )
                     )
             semantic = self.semantic_search(query.text) if query.text else []
             brief = self._render_brief(query, spatial_hits, temporal_hits, semantic)
@@ -299,6 +321,7 @@ class LongTermMemory:
                             MemoryHit(
                                 level=level, unit_id=bid,
                                 text=unit.summary, score=0.5,
+                                extra=self._hit_extra(unit),
                             )
                         )
                 cur += step
@@ -321,12 +344,16 @@ class LongTermMemory:
                     if unit.is_empty:
                         continue
                     hay = " ".join(
-                        [unit.environment, unit.background, unit.cat_contrast, unit.activity]
+                        [
+                            unit.environment, unit.background, unit.cat_contrast,
+                            unit.activity, unit.appearance, unit.behavior,
+                        ]
                     )
                     scored.append(
                         self._score_unit(
                             label, uid, unit.activity or unit.environment,
                             hay, unit.keywords, tokens, needle,
+                            self._hit_extra(unit),
                         )
                     )
             for lname in self.mem_store.temporal_names:
@@ -337,6 +364,7 @@ class LongTermMemory:
                         self._score_unit(
                             lname, uid, unit.summary, unit.summary,
                             unit.keywords, tokens, needle,
+                            self._hit_extra(unit),
                         )
                     )
             hits = [h for h in scored if h.score > 0]
@@ -352,12 +380,13 @@ class LongTermMemory:
         keywords: list[str],
         tokens: set[str],
         needle: str,
+        extra: dict | None = None,
     ) -> MemoryHit:
         unit_tokens = set(extract_keywords(haystack)) | {k.lower() for k in keywords}
         score = float(len(tokens & unit_tokens))
         if needle and needle in haystack.lower():
             score += 0.5
-        return MemoryHit(level=level, unit_id=uid, text=display, score=score)
+        return MemoryHit(level=level, unit_id=uid, text=display, score=score, extra=extra or {})
 
     def _render_brief(
         self,
@@ -388,9 +417,46 @@ class LongTermMemory:
 
     # ---- worker jobs (run on the worker thread under the write lock) ----
 
+    def _store_qualifies(self, event: MemoryEvent) -> tuple[bool, str]:
+        """Trust gate: long-term memory keeps only high-confidence records.
+
+        Original high-confidence detections (kind ``period``) and
+        high-confidence supervisor-validation conclusions (kind ``label``)
+        qualify at or above ``min_store_confidence``; curated day summaries
+        (kind ``summary``) always qualify. Escalation occurrences and anything
+        untrusted belong to short-term day context, not durable knowledge.
+        """
+        if event.kind == "summary":
+            return True, "curated day summary"
+        if event.kind not in ("period", "label"):
+            return False, f"kind {event.kind!r} is short-term context, not durable knowledge"
+        if event.confidence is None:
+            return False, "missing confidence"
+        if event.confidence < self.config.min_store_confidence:
+            return False, f"confidence {event.confidence:.2f} < {self.config.min_store_confidence:.2f}"
+        return True, "high confidence"
+
+    @staticmethod
+    def _attach_evidence(unit, event: MemoryEvent) -> None:
+        """Keep the event's original images + detection snapshot on the unit."""
+        for name in event.image_names or []:
+            name = str(name)
+            if name and name not in unit.images:
+                unit.images.append(name)
+        del unit.images[: -_EVIDENCE_IMAGES:]
+        if event.detection:
+            snap = {k: event.detection[k] for k in event.detection if k in ("box", "cat_id", "conf", "period_id", "time")}
+            if snap and snap not in unit.detections:
+                unit.detections.append(snap)
+        del unit.detections[: -_EVIDENCE_DETECTIONS:]
+
     def _do_store(self, payload: dict) -> StoreResult:
         event: MemoryEvent = payload["event"]
         with self.worker.lock:
+            ok, reason = self._store_qualifies(event)
+            if not ok:
+                logger.info("memory store skipped (%s): %s", self._source_label(event), reason)
+                return StoreResult(spatial_ids=[], temporal_ids=[], persisted=False)
             spatial_ids: list[str] = []
             temporal_ids: list[str] = []
             if event.box is not None:
@@ -634,6 +700,9 @@ class LongTermMemory:
     def _merge_spatial_text(self, unit: SpatialUnit, event: MemoryEvent) -> None:
         stamp = event.time.isoformat(timespec="minutes")
         self._bump_counters(unit, event)
+        self._attach_evidence(unit, event)
+        if event.appearance and event.appearance not in unit.appearance:
+            unit.appearance = f"{unit.appearance}; {event.appearance}".strip("; ")
         note, keywords, contradicts = self._store_llm_update(
             unit.activity, unit.weight, event
         )
@@ -657,6 +726,7 @@ class LongTermMemory:
     def _merge_temporal_text(self, unit: TemporalUnit, event: MemoryEvent) -> None:
         stamp = event.time.isoformat(timespec="minutes")
         self._bump_counters(unit, event)
+        self._attach_evidence(unit, event)
         note, keywords, contradicts = self._store_llm_update(
             unit.summary, unit.weight, event
         )
@@ -683,6 +753,8 @@ class LongTermMemory:
         return {
             "id": child.id,
             "text": child.activity or child.environment,
+            "appearance": child.appearance,
+            "behavior": child.behavior,
             "keywords": list(child.keywords),
             "visits": int(child.stats.get("visits", 0)),
             "weight": int(child.weight),
@@ -698,11 +770,27 @@ class LongTermMemory:
         }
 
     def _qualified(self, kids: list) -> list:
-        """Children with support >= ``min_pattern_support``, dominant first."""
+        """Children with support >= ``min_pattern_support``, dominant first.
+
+        Curated ``summary`` units (short-term day merges) always qualify:
+        they are already compressed truth, the opposite of one-off noise.
+        """
         support = self.config.min_pattern_support
-        out = [k for k in kids if int(k.stats.get("visits", 0)) >= support]
+        out = [
+            k for k in kids
+            if int(k.stats.get("visits", 0)) >= support or "summary" in (k.sources or [])
+        ]
         out.sort(key=lambda k: (-int(k.stats.get("visits", 0)), k.id))
         return out
+
+    @staticmethod
+    def _inherit_sources(parent, kids: list) -> None:
+        """Provenance follows the text: a parent summarized from curated
+        children stays curated, so the narrative rolls all the way up."""
+        inherited = set(parent.sources or [])
+        for kid in kids:
+            inherited.update(kid.sources or [])
+        parent.sources = sorted(inherited)
 
     @staticmethod
     def _roll_stats(kids: list) -> tuple[int, dict[str, int]]:
@@ -859,6 +947,17 @@ class LongTermMemory:
                 if text:
                     parent.activity = text
                     promoted += 1
+                    self._inherit_sources(parent, qualified)
+                appearance = truncate_words(
+                    str(out.get("appearance", "") or ""), WORD_CAPS.get(label, 100)
+                )
+                if appearance:
+                    parent.appearance = appearance
+                behavior = truncate_words(
+                    str(out.get("behavior", "") or ""), WORD_CAPS.get(label, 100)
+                )
+                if behavior:
+                    parent.behavior = behavior
                 kws = [str(k) for k in out.get("keywords", []) or []]
                 if kws:
                     parent.keywords = sorted(set(parent.keywords) | set(kws))
@@ -966,6 +1065,7 @@ class LongTermMemory:
                 if text:
                     parent.summary = text
                     promoted += 1
+                    self._inherit_sources(parent, qualified)
                 kws = [str(k) for k in out.get("keywords", []) or []]
                 if kws:
                     parent.keywords = sorted(set(parent.keywords) | set(kws))

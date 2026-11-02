@@ -21,6 +21,7 @@ from pathlib import Path
 from agent.memory.prompts import (
     BOOTSTRAP_VISION_SCHEMA,
     PROMOTE_SUMMARY_SCHEMA,
+    SPATIAL_SUMMARY_SCHEMA,
     STORE_UPDATE_SCHEMA,
     bootstrap_vision_input,
     bootstrap_vision_instructions,
@@ -141,7 +142,11 @@ class LLMClient(ABC):
 
     @abstractmethod
     def summarize(self, level: str, children: list[dict], stats: dict) -> dict:
-        """Return ``{text, keywords}`` compressing children into a parent."""
+        """Return ``{text, keywords}`` compressing children into a parent.
+
+        Spatial levels (L1/L2) additionally return ``appearance`` and
+        ``behavior`` zone descriptions; ``text`` carries the activity.
+        """
 
     @abstractmethod
     def bootstrap(self, image: bytes) -> dict:
@@ -190,16 +195,21 @@ class MetaModelClient(LLMClient):
 
     def summarize(self, level: str, children: list[dict], stats: dict) -> dict:
         cap = WORD_CAPS.get(level, 100)
+        spatial = level in ("L1", "L2")
         data = self._json_call(
             promote_summary_instructions(level, cap),
             promote_summary_input(level, children, stats, cap),
             "memory_promote_summary",
-            PROMOTE_SUMMARY_SCHEMA,
+            SPATIAL_SUMMARY_SCHEMA if spatial else PROMOTE_SUMMARY_SCHEMA,
         )
-        return {
-            "text": str(data.get("text", "") or ""),
+        out = {
+            "text": str(data.get("activity" if spatial else "text", "") or ""),
             "keywords": [str(k) for k in data.get("keywords", []) or []],
         }
+        if spatial:
+            out["appearance"] = str(data.get("appearance", "") or "")
+            out["behavior"] = str(data.get("behavior", "") or "")
+        return out
 
     def bootstrap(self, image: bytes) -> dict:
         payload = bytes(image)
@@ -297,7 +307,15 @@ class StubLLMClient(LLMClient):
             for kw in child.get("keywords", []):
                 if kw not in keywords:
                     keywords.append(kw)
-        return {"text": " ".join(words[:cap]), "keywords": keywords[:8]}
+        out = {"text": " ".join(words[:cap]), "keywords": keywords[:8]}
+        if level in ("L1", "L2"):
+            apps = [str(c.get("appearance", "")) for c in children if c.get("appearance")]
+            behavs = [str(c.get("behavior", "")) for c in children if c.get("behavior")]
+            if not behavs:  # mirror the prompt: behavior derives from activity lines
+                behavs = texts
+            out["appearance"] = " ".join(" ".join(apps).split()[:cap])
+            out["behavior"] = " ".join(" ".join(behavs).split()[:cap])
+        return out
 
     def bootstrap(self, image: bytes) -> dict:
         return {

@@ -133,7 +133,7 @@ def test_stats_only_rollup_still_drives_upper_levels(tmp_path):
     try:
         m.store(MemoryEvent(
             time=datetime.datetime(2026, 10, 31, 14, 2), view_id=3,
-            box=(500.0, 300.0, 600.0, 400.0), cat_id=1, text="Qb naps once.",
+            box=(500.0, 300.0, 600.0, 400.0), cat_id=1, text="Qb naps once.", confidence=0.95,
         ))
         m.drain()
         m.promote()  # non-force: dirty-subtree walk
@@ -162,7 +162,7 @@ def test_temporal_stats_rollup_drives_day_and_week(tmp_path):
         when = datetime.datetime(2026, 10, 31, 14, 2)
         m.store(MemoryEvent(
             time=when, view_id=3,
-            box=(500.0, 300.0, 600.0, 400.0), cat_id=1, text="Qb naps once.",
+            box=(500.0, 300.0, 600.0, 400.0), cat_id=1, text="Qb naps once.", confidence=0.95,
         ))
         m.drain()
         receipt = m.promote()  # non-force: dirty-subtree walk

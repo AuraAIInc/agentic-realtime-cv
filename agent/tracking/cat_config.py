@@ -65,4 +65,22 @@ def resolve_cat_ids(view_id: int, config_dir=None) -> tuple:
     return cat_ids, id_to_name
 
 
-__all__ = ["resolve_cat_ids", "known_views", "load_cat_profiles", "CONFIG_DIR"]
+def appearance_for_tracking_id(view_id: int, tracking_id: int, config_dir=None) -> str | None:
+    """One-line appearance text for a tracker label, e.g. ``"Qbo: long-haired ..."``.
+
+    Returns None when the view/label has no profile or no summary (callers
+    must treat appearance as optional enrichment, never a requirement).
+    """
+    view_id, tracking_id = int(view_id), int(tracking_id)
+    for cat in load_cat_profiles(config_dir):
+        for key, tid in (cat.get("tracking_ids") or {}).items():
+            m = _VIEW_KEY_RE.match(key)
+            if m and int(m.group(1)) == view_id and int(tid) == tracking_id:
+                summary = (cat.get("summary") or "").strip()
+                if not summary:
+                    return None
+                return f"{cat.get('name', tracking_id)}: {summary}"
+    return None
+
+
+__all__ = ["resolve_cat_ids", "known_views", "load_cat_profiles", "appearance_for_tracking_id", "CONFIG_DIR"]

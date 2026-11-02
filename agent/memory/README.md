@@ -20,9 +20,36 @@ the `agent/escalation` module. Full design:
 - `prompts.py` — store-update, promote-summary, environment-bootstrap prompts.
 - `long_term.py` — `LongTermMemory`: store/invoke/promote/reset/tick/
   semantic_search.
-- `short_term.py` — interface + in-memory stub (full build is a later phase).
-- `data/` — durable runtime YAML per view (`view_<id>_long_term.yaml`,
-  git-ignored). Never under `agent/output/` (temp-only).
+- `short_term.py` — `DailyShortTermMemory`: full-fidelity day log + day-end
+  merge into long-term memory.
+- `data/` — durable runtime files per view (`view_<id>_long_term.yaml` +
+  `view_<id>_short_term_<day>.md`, git-ignored). Never under `agent/output/`
+  (temp-only).
+
+## Trust policy
+
+Long-term memory keeps **only high-confidence knowledge**: original
+high-confidence detections (`kind="period"`, confidence ≥
+`min_store_confidence`, default 0.7) and high-confidence supervisor-validation
+conclusions (`kind="label"`, decisive verdicts at 0.9; `error` verdicts at 0.0
+are dropped). Escalation occurrences are tracker uncertainty — they go to
+short-term day context only. Every kept record carries its original image
+names, the detection snapshot, and plain-language text, and every
+`MemoryHit.extra` surfaces that evidence (`{"images": [...], "detections":
+[...]}`). Each spatial zone describes cat appearance, activities, behavior,
+and background view in plain language.
+
+## Short-term memory
+
+`DailyShortTermMemory` remembers **every** period activity across one day
+(all confidences): each closed period with its detections and a few key
+frames, plus tracker episodes and their validation verdicts. A new session
+starts a new `## Session` section (live state resets); event time crossing
+midnight merges the old day into long-term memory (curated `summary` events
+that promote into the top spatial levels and the day bucket) and starts a new
+day. Session end merges the session the same way; merged sessions are marked
+so nothing merges twice. The day file (`view_<id>_short_term_<day>.md`) is
+re-rendered in plain language on every change.
 
 ## Usage
 
@@ -32,7 +59,10 @@ from agent.memory import LongTermMemory, MemoryConfig, MemoryEvent, MemoryQuery
 mem = LongTermMemory(config=MemoryConfig.from_yaml())
 mem.store(MemoryEvent(time=now, view_id=3, box=(500, 300, 600, 400),
                       cat_id=25, period_id=12, kind="period",
-                      text="Qb naps on the dark sofa."))
+                      text="Qb naps on the dark sofa.", confidence=0.9,
+                      image_names=["2026-10-28-16-34-00-000000.jpg"],
+                      detection={"cat_id": 25, "conf": 0.9},
+                      appearance="Qb: short-haired white cat."))
 ctx = mem.invoke(MemoryQuery(time=now, box=(500, 300, 600, 400)))
 print(ctx.brief)          # one-line summary of what was found
 print(ctx.spatial)        # nearby cells: environment / background / contrast

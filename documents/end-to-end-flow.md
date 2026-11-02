@@ -181,17 +181,28 @@ copy is wanted, `MYSQL_VALIDATED_DDL` in `apply.py` is the table to create.
 
 ## 7. Memory: observe everything, promote in background
 
-`LongTermMemory` ([agent/memory/](../agent/memory/); `--memory`) runs on its
-own worker thread; every hook is best-effort and never breaks the run:
+Memory (`--memory`) runs on its own worker thread; every hook is best-effort
+and never breaks the run. Design: [spatial-temporal-memory-design.md](spatial-temporal-memory-design.md).
 
-- `store()` per closed period row and per escalation (spatial L0/L1/L2 cells
-  + temporal slot/hour/day/week buckets; design:
-  [spatial-temporal-memory-design.md](spatial-temporal-memory-design.md)).
-- `tick(now)` per frame; idle ticks and explicit `promote()` roll stats
-  bottom-up and rewrite parent summaries via the LLM (StubLLM offline
-  fallback when no model key).
-- Validation verdicts are stored as `label` events, closing the loop:
-  tracking → escalation → verdict → memory → future validation context.
+**Long-term** (`LongTermMemory`) keeps only high-confidence knowledge:
+original high-confidence detections (period confidence ≥ 0.7) and decisive
+supervisor-validation conclusions (`error` verdicts are dropped). Every record
+carries its original image names, the detection snapshot, and plain-language
+text; every zone describes cat appearance, activities, behavior, and
+background view. `tick(now)` per frame; idle ticks and explicit `promote()`
+roll stats bottom-up and rewrite parent summaries via the LLM (StubLLM
+offline fallback when no model key).
+
+**Short-term** (`DailyShortTermMemory`) remembers every period activity across
+one day (all confidences): each closed period with detections + key frames,
+plus tracker episodes and their verdicts, in a plain-language
+`view_<id>_short_term_<day>.md` re-rendered on every change. New sessions open
+a new section; midnight (event time) merges the day into long-term memory
+(curated summaries promoting into the top spatial levels and the day bucket);
+session end merges the session the same way, marked so nothing merges twice.
+
+Validation verdicts are stored as high-confidence `label` events, closing the
+loop: tracking → escalation → verdict → memory → future validation context.
 
 ## 8. Run artifacts (`output/tracking_runs/<run>/`)
 

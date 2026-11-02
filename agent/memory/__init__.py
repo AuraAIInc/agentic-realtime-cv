@@ -25,7 +25,7 @@ from agent.memory.models import (
     PromoteResult,
     StoreResult,
 )
-from agent.memory.short_term import InMemoryShortTermMemory, ShortTermMemory
+from agent.memory.short_term import DailyShortTermMemory
 from agent.memory.spatial import SpatialIndex
 from agent.memory.store import MemoryStore, SpatialUnit, TemporalUnit
 from agent.memory.temporal import TemporalIndex
@@ -57,6 +57,5 @@ __all__ = [
     "load_model_settings",
     "truncate_words",
     "LongTermMemory",
-    "ShortTermMemory",
-    "InMemoryShortTermMemory",
+    "DailyShortTermMemory",
 ]
