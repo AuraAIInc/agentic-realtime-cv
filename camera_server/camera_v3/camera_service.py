@@ -79,20 +79,17 @@ class CameraService:
         return frame, t
 
     def _frame_at(self, at: str | None):
-        """(frame, time, loop detections for it). Live frames (at=None) carry no detections;
-        use the loop's last message for those."""
         if not at:
-            frame, t = self._latest()
-            return frame, t, []
+            return self._latest()
         want = parse_time(at)
         found = self.buffer.nearest(want)
         if found is None:
             raise RuntimeError("frame buffer is empty")
-        t, frame, dets = found
+        t, frame = found
         if want < t and (t - want).total_seconds() > 1.0:
             span = self.buffer.span()
             raise RuntimeError(f"frame at {at} has already left the buffer (oldest kept: {span.get('oldest')})")
-        return frame, t, dets
+        return frame, t
 
     def _render(self, frame, t, max_side) -> tuple[dict, bytes]:
         """JPEG for the client, shrunk so its longest side is <= max_side (None = as is)."""
@@ -136,36 +133,20 @@ class CameraService:
         return out
 
     # ------------------------------------------------------------ captures
-    def capture_frame(self, box=None, padding=0.15, max_side=1280, at=None, draw_detections=False):
+    def capture_frame(self, box=None, padding=0.15, max_side=1280, at=None):
         """Newest (or buffered) stream frame, optionally cropped to a padded display-coords box.
 
-        With draw_detections, the loop's boxes for that same frame are drawn and
-        returned in meta["detections"], so one call shows the frame and what the
-        model saw in it. For live frames (at=None) the boxes come from the loop's
-        last processed message, which may be a frame behind.
+        Always returns the raw pixels, never drawn on: this server runs on a weak
+        CPU, and the caller validates detections from the raw image anyway.
         """
-        frame, t, dets = self._frame_at(at)
-        if not at:
-            last = self.loop.last_message or {}
-            dets, dets_from = list(last.get("detections") or []), last.get("create_time")
-        else:
-            dets_from = _iso(t)
+        frame, t = self._frame_at(at)
         if not box:
-            if draw_detections and dets:
-                frame = imaging.draw_detections(frame.copy(), dets, tuple(self.cfg.camera_img_size))
-            meta, data = self._render(frame, t, max_side)
-        else:
-            roi = imaging.pad_box(box, padding, self.cfg.camera_img_size)
-            crop, _ = imaging.crop_display_roi(frame, roi, self.cfg.camera_img_size)
-            if draw_detections and dets:
-                crop = crop.copy()  # the ROI is a view into the source frame; never draw on it
-                imaging.draw_detections(crop, dets, tuple(self.cfg.camera_img_size), view=tuple(roi))
-            meta, data = self._render(crop, t, max_side)
-            meta["roi_display"] = roi
-            meta["zoom_factor"] = round(imaging.frame_size(frame)[0] / self.cfg.camera_img_size[0], 3)
-        if draw_detections:
-            meta["detections"] = dets
-            meta["detections_frame"] = dets_from
+            return self._render(frame, t, max_side)
+        roi = imaging.pad_box(box, padding, self.cfg.camera_img_size)
+        crop, _ = imaging.crop_display_roi(frame, roi, self.cfg.camera_img_size)
+        meta, data = self._render(crop, t, max_side)
+        meta["roi_display"] = roi
+        meta["zoom_factor"] = round(imaging.frame_size(frame)[0] / self.cfg.camera_img_size[0], 3)
         return meta, data
 
     # ------------------------------------------------------------ high resolution
@@ -302,7 +283,7 @@ class CameraService:
         return {n: self.inference.registry.describe(n) for n in self.inference.registry.names()}
 
     def detect(self, model="default", at=None, roi=None, imgsz=None, conf=None, timeout=60.0) -> dict:
-        frame, t, _ = self._frame_at(at)
+        frame, t = self._frame_at(at)
         if roi:
             roi = imaging.clamp_box(roi, self.cfg.camera_img_size)
         frame = frame.copy()

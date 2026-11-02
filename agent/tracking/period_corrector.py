@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime
 import heapq
+import itertools
 import logging
 import time
 from collections import defaultdict
@@ -25,9 +26,12 @@ logger = logging.getLogger(__name__)
 
 
 class PeriodCorrector:
-    def __init__(self, cat_ids: list[int], escalation_config=None):
+    def __init__(self, cat_ids: list[int], escalation_config=None, escalation_seq=None):
         self.cat_ids = list(cat_ids)
         self.escalation_config = escalation_config or EscalationConfig.from_env()
+        # Shared run-wide counter (itertools.count) so frame and period escalations
+        # number continuously; a private one when the caller passes nothing.
+        self._esc_seq = escalation_seq if escalation_seq is not None else itertools.count(1)
         self.escalations = []
         self.prev_period_end = {}  # cat_id -> (end_time, last_box, period_id, trail boxes)
         self._open_prev = {}  # period_id -> prev_period_end snapshot at open (or None)
@@ -48,7 +52,7 @@ class PeriodCorrector:
     def _escalate(self, code, reason, start, end, cat_id=None, period_id=None, metrics=None):
         emit_escalation(
             self.escalations,
-            Escalation(time=start, end_time=end, scope="period", code=code, reason=reason, cat_id=cat_id, period_id=period_id, metrics=metrics or {}),
+            Escalation(time=start, end_time=end, scope="period", code=code, reason=reason, cat_id=cat_id, period_id=period_id, metrics=metrics or {}, seq=next(self._esc_seq)),
         )
 
     def coordinate_period_groups(self):

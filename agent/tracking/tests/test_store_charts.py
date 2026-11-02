@@ -2,6 +2,8 @@
 
 import datetime
 import json
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,7 +26,7 @@ def test_runstore_creates_run_dir_and_jsonl(tmp_path):
     store.append_revised({"create_time": T0.isoformat(), "cat_id": 25})
     store.append_period({"period_id": 1})
     store.append_image({"create_time": T0.isoformat()})
-    store.append_escalation(Escalation(time=T0, scope="frame", code="T5", reason="test"))
+    store.append_escalation(Escalation(time=T0, scope="frame", code="T5", reason="test", seq=4))
     meta_path = store.write_run_json({"run": "r1", "view_id": 3})
     store.close()
 
@@ -35,6 +37,7 @@ def test_runstore_creates_run_dir_and_jsonl(tmp_path):
     assert store.counters == {"stream": 1, "revised": 1, "periods": 1, "images": 1, "escalations": 1, "deleted": 0}
     esc_line = json.loads((run_dir / "escalations.jsonl").read_text().splitlines()[0])
     assert esc_line["code"] == "T5" and esc_line["escalation"] is True
+    assert (esc_line["seq"], esc_line["name"]) == (4, "E4-T5")
 
 
 def test_filesink_accepts_sink_protocol_calls(tmp_path):
@@ -100,14 +103,16 @@ def _synth_rows(n, cat_ids):
 def test_charts_render_two_nonempty_pngs(tmp_path):
     cat_ids = [25, 26]
     escalations = [
-        Escalation(time=T0 + datetime.timedelta(seconds=20), scope="frame", code="T5", reason="t"),
+        Escalation(time=T0 + datetime.timedelta(seconds=20), scope="frame", code="T5", reason="t", seq=1),
         Escalation(
             time=T0 + datetime.timedelta(seconds=10),
             end_time=T0 + datetime.timedelta(seconds=40),
             scope="period",
             code="P1",
             reason="p",
+            seq=2,
         ),
+        {"time": (T0 + datetime.timedelta(seconds=30)).isoformat(), "scope": "frame", "code": "T3"},
     ]
     out = tmp_path / "charts"
     orig, rev = plot_detection_charts(
@@ -120,6 +125,28 @@ def test_charts_render_two_nonempty_pngs(tmp_path):
     )
     assert orig.name == "original.png" and rev.name == "revised.png"
     assert orig.stat().st_size > 0 and rev.stat().st_size > 0
+
+
+def test_process_frame_labels_escalations_below_the_line(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    from agent.tracking.process_viz import render_process_frame
+
+    calls = []
+    monkeypatch.setattr(plt, "text", lambda *a, **k: calls.append((a, k)))
+    fake_track = SimpleNamespace(
+        buffer={0: [(T0, 10, 10, 100, 100)]},
+        revised_detection={0: []},
+        base={0: None},
+        target={0: None},
+        escalations=[Escalation(time=T0, scope="frame", code="T5", reason="t", seq=1)],
+    )
+    period_escs = [Escalation(time=T0, end_time=T0 + datetime.timedelta(seconds=5), scope="period", code="P1", reason="p", seq=2)]
+    out = render_process_frame(fake_track, period_escs, 0, str(tmp_path / "f.jpg"))
+    assert out is not None and Path(out).stat().st_size > 0
+    labels = [a[2] for a, _ in calls]
+    assert labels == ["E1-T5", "E2-P1"]
+    assert all(k.get("color") == "red" for _, k in calls)
 
 
 def test_charts_handle_empty_input(tmp_path):

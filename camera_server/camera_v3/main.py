@@ -17,7 +17,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-LOG_FORMAT = "%(asctime)s - [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s"
+LOG_FORMAT = "%(asctime)s - [%(levelname)s] %(filename)s:%(lineno)d: %(message)s"
 logger = logging.getLogger("camera_v3")
 
 # .env files read at startup, lowest priority first: the repo root (shared .env), then

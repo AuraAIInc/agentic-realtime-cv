@@ -136,7 +136,7 @@ class DetectionLoop:
             "settings": settings.as_dict() if mode == "override" else None,
         }
         self.publish(json.dumps(msg))
-        self.buffer.add(captured_at, full, detections)
+        self.buffer.add(captured_at, full)
         self.tracks.update(captured_at, detections)
         t4 = time.monotonic()
 

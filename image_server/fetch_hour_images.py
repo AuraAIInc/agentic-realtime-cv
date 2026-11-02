@@ -44,6 +44,7 @@ import argparse
 import base64
 import datetime
 import json
+import logging
 import os
 import re
 import sys
@@ -57,6 +58,8 @@ MINUTE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}$")
 PREFIXED_RE = re.compile(r"^(\d+)_(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{6}\.jpg)$")
 RETRIEVED_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "retrieved_images")
 
+logger = logging.getLogger(__name__)
+
 
 REPO_ENV = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 
@@ -65,7 +68,7 @@ def load_env():
     # minimal reader for the repo-root .env (no python-dotenv needed), whatever the working
     # directory; its values win over shell exports, like the servers that share it
     if not os.path.isfile(REPO_ENV):
-        print(f"warning: {REPO_ENV} not found, using the environment only", file=sys.stderr)
+        logger.warning(f"{REPO_ENV} not found, using the environment only")
         return
     for line in open(REPO_ENV):
         line = line.strip()
@@ -255,7 +258,7 @@ def normalize_width(images_dir, labels_dir, width):
             os.replace(old_txt, os.path.join(labels_dir, new[:-4] + ".txt"))
         renamed += 1
     if renamed:
-        print(f"renamed {renamed} files to {width}-digit index width")
+        logger.info(f"renamed {renamed} files to {width}-digit index width")
     return renamed
 
 
@@ -468,13 +471,13 @@ def write_labels(out, targets, by_time, view_sizes, cat_names, box_size, skip_in
             space = space or actual
             if space is None:
                 if not warned_space:
-                    print("warning: no box coordinate space (view table empty?) and unreadable JPEG; skipping those boxes")
+                    logger.warning("no box coordinate space (view table empty?) and unreadable JPEG; skipping those boxes")
                     warned_space = True
                 bad_boxes += 1
                 continue
             if actual and aspect_mismatch(space, actual):
                 if not warned_aspect:
-                    print(f"warning: image is {actual[0]}x{actual[1]} but boxes use {space[0]}x{space[1]} space; normalizing by the box space")
+                    logger.warning(f"image is {actual[0]}x{actual[1]} but boxes use {space[0]}x{space[1]} space; normalizing by the box space")
                     warned_aspect = True
             yolo = to_yolo(r[1], r[2], r[3], r[4], space[0], space[1])
             if yolo is None:
@@ -489,9 +492,9 @@ def write_labels(out, targets, by_time, view_sizes, cat_names, box_size, skip_in
         written += 1
     orphan = sum(len(v) for t, v in by_time.items() if t not in present_times)
     if bad_boxes:
-        print(f"  {bad_boxes} boxes skipped (no coordinate space or degenerate)")
+        logger.info(f"{bad_boxes} boxes skipped (no coordinate space or degenerate)")
     if orphan:
-        print(f"  {orphan} detection rows had no matching downloaded image")
+        logger.info(f"{orphan} detection rows had no matching downloaded image")
     return written, kept, empty, skipped
 
 
@@ -505,14 +508,14 @@ def write_viz(out, start_dt, end_dt, revised, width, height):
         import matplotlib
         matplotlib.use("Agg")
     except ImportError:
-        print("viz skipped: matplotlib is not installed")
+        logger.warning("viz skipped: matplotlib is not installed")
         return False
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, os.path.join(repo_root, "existing_work_before_hackathon"))
     try:
         from model.visualization import plot_detection_details
     except ImportError as e:
-        print(f"viz skipped: cannot import visualization ({str(e)[:150]})")
+        logger.warning(f"viz skipped: cannot import visualization ({str(e)[:150]})")
         return False
     dest = os.path.join(out, "detections.png")
     try:
@@ -520,7 +523,7 @@ def write_viz(out, start_dt, end_dt, revised, width, height):
                                     revised=revised, width=width, height=height,
                                     save_path=dest, show=False)
     except Exception as e:
-        print(f"viz skipped: chart failed ({str(e)[:200]})")
+        logger.warning(f"viz skipped: chart failed ({str(e)[:200]})")
         return False
     finally:
         try:
@@ -529,13 +532,14 @@ def write_viz(out, start_dt, end_dt, revised, width, height):
         except Exception:
             pass
     if not ok:
-        print("viz skipped: no data for this hour")
+        logger.warning("viz skipped: no data for this hour")
         return False
-    print(f"chart: {dest}")
+    logger.info(f"chart: {dest}")
     return True
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - [%(levelname)s] %(filename)s:%(lineno)d: %(message)s")
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("hour", nargs="?", default=None,
                         help="YYYY-MM-DD-HH, 24-hour clock, e.g. 2025-05-05-19 (omit when --start/--end pin the hour)")
@@ -586,7 +590,7 @@ def main():
     names = list_hour(client, args.hour)
     if not names:
         sys.exit(f"no images for {args.hour}")
-    print(f"{len(names)} images  {names[0]} .. {names[-1]}")
+    logger.info(f"{len(names)} images  {names[0]} .. {names[-1]}")
 
     width = index_width(len(names))
     images_dir = os.path.join(out, "images")
@@ -600,13 +604,13 @@ def main():
         targets = filter_range(targets, start_b, end_b)
         if not targets:
             sys.exit(f"no images in range {start_b} .. {end_b}")
-        print(f"{len(targets)} images in range {start_b} .. {end_b}")
+        logger.info(f"{len(targets)} images in range {start_b} .. {end_b}")
     if args.limit is not None:
         targets = targets[: max(0, args.limit)]
 
     todo, already, migrated = plan_downloads(images_dir, labels_dir, out, targets)
     if already or migrated:
-        print(f"skipping {already} already downloaded, reusing {migrated} existing files")
+        logger.info(f"skipping {already} already downloaded, reusing {migrated} existing files")
 
     lock = threading.Lock()
     pending = iter(todo)
@@ -636,7 +640,7 @@ def main():
             with lock:
                 done[0] += 1
                 if done[0] % 100 == 0 or done[0] == len(todo):
-                    print(f"  {done[0]}/{len(todo)}", flush=True)
+                    logger.info(f"download progress: {done[0]}/{len(todo)}")
 
     start = time.time()
     if todo:
@@ -646,27 +650,27 @@ def main():
         for t in threads:
             t.join()
 
-    print(f"saved to {out} in {time.time() - start:.0f}s, {len(failed)} failed")
+    logger.info(f"saved to {out} in {time.time() - start:.0f}s, {len(failed)} failed")
     for name, error in failed[:10]:
-        print(f"  {name}: {error}")
+        logger.error(f"{name}: {error}")
 
     label_error = False
     view_sizes: dict = {}
     if args.labels != "none" and not failed:
         try:
             by_time, view_sizes, cat_names = fetch_detections(args.labels, start_dt, end_dt, args.view_id)
-            print(f"{sum(len(v) for v in by_time.values())} rows from {args.labels}_detection"
-                  + (f" (view {args.view_id})" if args.view_id is not None else ""))
+            logger.info(f"{sum(len(v) for v in by_time.values())} rows from {args.labels}_detection"
+                        + (f" (view {args.view_id})" if args.view_id is not None else ""))
             written, kept, empty, skipped = write_labels(
                 out, targets, by_time, view_sizes, cat_names, box_size,
                 args.skip_interpolated, args.min_conf, args.overwrite_labels)
-            print(f"labels: {written} written, {kept} kept (existing), {empty} images without detections"
-                  + (f", {skipped} skipped" if skipped else ""))
+            logger.info(f"labels: {written} written, {kept} kept (existing), {empty} images without detections"
+                        + (f", {skipped} skipped" if skipped else ""))
         except SystemExit as e:
-            print(f"labels failed: {e}")
+            logger.error(f"labels failed: {e}")
             label_error = True
     elif args.labels != "none":
-        print("skipping labels: some downloads failed (rerun to resume, then labels will be written)")
+        logger.warning("skipping labels: some downloads failed (rerun to resume, then labels will be written)")
         label_error = True
 
     if not args.no_viz:

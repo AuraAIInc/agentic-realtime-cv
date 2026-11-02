@@ -23,10 +23,13 @@ logger = logging.getLogger(__name__)
 
 
 class TrackCorrector:
-    def __init__(self, cat_ids: list[int], escalation_config=None, period_id_factory=None):
+    def __init__(self, cat_ids: list[int], escalation_config=None, period_id_factory=None, escalation_seq=None):
         self.cat_ids = list(cat_ids)
         self.escalation_config = escalation_config or EscalationConfig.from_env()
         self._period_ids = period_id_factory if period_id_factory is not None else itertools.count(1)
+        # Shared run-wide counter (itertools.count) so frame and period escalations
+        # number continuously; a private one when the caller passes nothing.
+        self._esc_seq = escalation_seq if escalation_seq is not None else itertools.count(1)
         self.escalations = []
         self.min_conf = 0.4
         self.buffer_range = 15  # sec
@@ -113,7 +116,7 @@ class TrackCorrector:
     def _escalate(self, code, reason, time, cat_id=None, period_id=None, metrics=None):
         emit_escalation(
             self.escalations,
-            Escalation(time=time, scope="frame", code=code, reason=reason, cat_id=cat_id, period_id=period_id, metrics=metrics or {}),
+            Escalation(time=time, scope="frame", code=code, reason=reason, cat_id=cat_id, period_id=period_id, metrics=metrics or {}, seq=next(self._esc_seq)),
         )
 
     def smooth_buffer(self, cat_idx):

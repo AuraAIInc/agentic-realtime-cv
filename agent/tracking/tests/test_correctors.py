@@ -115,6 +115,33 @@ def test_track_duplicate_tie_escalates_with_json_log():
     assert any(o.get("code") == "T3" and o["escalation"] is True for o in lines)
 
 
+def test_shared_counter_numbers_frame_and_period_continuously():
+    import itertools
+
+    seq = itertools.count(1)
+    tc = TrackCorrector(cat_ids=[0, 1], escalation_seq=seq)
+    pc = PeriodCorrector(cat_ids=[0, 1], escalation_seq=seq)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        tc._escalate("T5", "frame one", T0)
+        pc._escalate("P1", "period one", T0, T0)
+        tc._escalate("T3", "frame two", T0)
+    assert [e.name for e in tc.escalations] == ["E1-T5", "E3-T3"]
+    assert [e.name for e in pc.escalations] == ["E2-P1"]
+    lines = [json.loads(line) for line in buf.getvalue().splitlines()]
+    assert [o["name"] for o in lines] == ["E1-T5", "E2-P1", "E3-T3"]
+
+
+def test_private_counters_start_at_one_each():
+    tc = TrackCorrector(cat_ids=[0, 1])
+    pc = PeriodCorrector(cat_ids=[0, 1])
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        tc._escalate("T5", "t", T0)
+        pc._escalate("P1", "p", T0, T0)
+    assert tc.escalations[0].name == "E1-T5" and pc.escalations[0].name == "E1-P1"
+
+
 def test_track_target_fallback_escalates_on_weak_boxes():
     tc = TrackCorrector(cat_ids=[0, 1])
     buf = io.StringIO()

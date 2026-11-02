@@ -23,6 +23,12 @@ Period codes (PeriodCorrector):
     P5 low_quality          winner's mean conf low or mostly missing frames
     P6 merge_candidate      period may connect to the same cat's previous period
     P7 static_link          both ends static and overlapping; sleeping cat split by a long gap
+
+Numbering: every escalation also carries a run-wide sequence number (``seq``,
+1-based, continuous across frame and period scopes in emission order) and a
+display name ``E<seq>-<code>`` (e.g. ``E3-T5``, ``E7-P1``). The tracking run
+shares one counter between both correctors; the visualizers print the name
+below each red line/span, and ``to_json()`` carries both fields.
 """
 
 from __future__ import annotations
@@ -30,26 +36,38 @@ from __future__ import annotations
 import datetime
 import json
 import math
+import sys
+import logging
 from dataclasses import dataclass, field
 
 from agent.escalation.escalation_config import EscalationConfig  # noqa: F401 (re-exported; thresholds live in escalation_config.py)
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
 class Escalation:
     time: datetime.datetime
     scope: str  # "frame" or "period"
-    code: str  # T1..T7, P1..P6
+    code: str  # T1..T7, P1..P7
     reason: str
     end_time: datetime.datetime | None = None  # period scope: the flagged span
     cat_id: int | None = None
     period_id: int | None = None
     metrics: dict = field(default_factory=dict)
+    seq: int | None = None  # run-wide number, assigned by the correctors
+
+    @property
+    def name(self) -> str | None:
+        """Display name ``E<seq>-<code>`` (None when unnumbered)."""
+        return f"E{self.seq}-{self.code}" if self.seq is not None else None
 
     def to_json(self) -> str:
         return json.dumps(
             {
                 "escalation": True,
+                "seq": self.seq,
+                "name": self.name,
                 "time": self.time.isoformat(timespec="microseconds"),
                 "end_time": self.end_time.isoformat(timespec="microseconds") if self.end_time else None,
                 "scope": self.scope,
@@ -62,10 +80,23 @@ class Escalation:
         )
 
 
+def esc_label(esc) -> str:
+    """Short label for charts: the ``E<seq>-<code>`` name, or the bare code."""
+    if isinstance(esc, dict):
+        return esc.get("name") or esc.get("code") or "?"
+    return getattr(esc, "name", None) or getattr(esc, "code", None) or "?"
+
+
 def emit(escalations: list, esc: Escalation) -> Escalation:
-    """Record the point for the visualizer and print one JSON line for review."""
+    """Record the point for the visualizer and write one JSON line to stdout for review."""
+    from agent.escalation.prompting import build_prompt
+    from agent.escalation.review_schema import review_schema_json
+
     escalations.append(esc)
-    print(esc.to_json(), flush=True)
+    sys.stdout.write(esc.to_json() + "\n")
+    sys.stdout.flush()
+    logger.info("Escalation prompt %s:\n%s", esc.name or esc.code, build_prompt(esc))
+    logger.info("Escalation output schema %s:\n%s", esc.name or esc.code, review_schema_json(esc.code))
     return esc
 
 

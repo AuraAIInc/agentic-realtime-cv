@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import datetime
 import json
+import logging
 import os
 import sys
 
@@ -34,6 +35,8 @@ from tracking_mcp.history import History
 from tracking_mcp.live_state import LiveState
 from tracking_mcp.server import build_server
 
+logger = logging.getLogger(__name__)
+
 FAKE_PERIOD_BASE = 10**12  # never collides with real period ids
 
 
@@ -47,7 +50,7 @@ def stub_writes(corrector, counter):
 
 def replay(view_id: int, start: datetime.datetime, end: datetime.datetime) -> LiveState:
     detections = load_detections(MysqlDB(), view_id, start, end)
-    print(f"Loaded {len(detections)} rows, {detections['create_time'].nunique()} frames")
+    logger.info(f"Loaded {len(detections)} rows, {detections['create_time'].nunique()} frames")
     counter = iter(range(FAKE_PERIOD_BASE, FAKE_PERIOD_BASE + 10**6))
     tc = stub_writes(TrackCorrector(view_id=view_id), counter)
     pc = stub_writes(PeriodCorrector(view_id=view_id), counter)
@@ -80,8 +83,8 @@ async def call(mcp, name: str, args: dict) -> dict:
     text = next(b.text for b in blocks if getattr(b, "type", None) == "text")
     out = json.loads(text)
     status = "ERROR" if out.get("error") else "ok"
-    print(f"\n=== {name}({args}) -> {status} ({out['timing']['elapsed_ms']} ms)")
-    print(json.dumps(out, indent=1)[:2500])
+    logger.info(f"=== {name}({args}) -> {status} ({out['timing']['elapsed_ms']} ms)")
+    logger.info(json.dumps(out, indent=1)[:2500])
     return out
 
 
@@ -108,4 +111,9 @@ async def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+        format="%(asctime)s - [%(levelname)s] %(filename)s:%(lineno)d: %(message)s",
+    )
+    logger.setLevel(logging.INFO)  # the reply dump is this script's whole output
     asyncio.run(main())

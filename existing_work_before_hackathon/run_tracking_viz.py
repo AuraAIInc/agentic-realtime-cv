@@ -10,6 +10,7 @@ Usage (from existing_work_before_hackathon/):
 import argparse
 import datetime
 import glob
+import logging
 import os
 import sys
 
@@ -25,6 +26,8 @@ import pandas as pd
 from tqdm.auto import tqdm
 
 from model.db import MysqlDB
+
+logger = logging.getLogger(__name__)
 from model.period_corrector import PeriodCorrector
 from model.track_corrector import TrackCorrector
 
@@ -79,14 +82,14 @@ def frames_to_video(frame_dir, video_path, fps):
 
     frames = sorted(glob.glob(os.path.join(frame_dir, "*.jpg")))
     if not frames:
-        print("No frames to stitch.")
+        logger.warning("No frames to stitch.")
         return
     height, width = cv2.imread(frames[0]).shape[:2]
     writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
     for f in frames:
         writer.write(cv2.resize(cv2.imread(f), (width, height)))
     writer.release()
-    print(f"Video saved: {video_path}")
+    logger.info(f"Video saved: {video_path}")
 
 
 def main():
@@ -108,7 +111,7 @@ def main():
     end_time = datetime.datetime.fromisoformat(args.end)
 
     detections = load_detections(MysqlDB(), args.view_id, start_time, end_time, args.table)
-    print(f"Loaded {len(detections)} rows, {detections['create_time'].nunique()} frames")
+    logger.info(f"Loaded {len(detections)} rows, {detections['create_time'].nunique()} frames")
 
     track_corrector = make_read_only(TrackCorrector(view_id=args.view_id))
     period_corrector = make_read_only(PeriodCorrector(view_id=args.view_id))
@@ -116,8 +119,8 @@ def main():
     track_corrector.images = detections.dropna(subset=["cat_id"])
     plot_cat(track_corrector, period_corrector, args.cat_idx)
     counts = detections["cat_id"].dropna().astype(int).value_counts()
-    print("Detections per cat_idx:", {track_corrector.id_to_idx.get(c, f"?{c}"): n for c, n in counts.items()})
-    print(f"Plotting cat_idx {args.cat_idx} (cat_id {track_corrector.idx_to_id[args.cat_idx]})")
+    logger.info("Detections per cat_idx: %s", {track_corrector.id_to_idx.get(c, f"?{c}"): n for c, n in counts.items()})
+    logger.info(f"Plotting cat_idx {args.cat_idx} (cat_id {track_corrector.idx_to_id[args.cat_idx]})")
 
     # plot_2mins saves into ./tracking_process, so work inside the output dir
     os.makedirs(args.out, exist_ok=True)
@@ -134,15 +137,16 @@ def main():
         ):
             if is_append:
                 for period in period_corrector.process_detection(revised, view_id=args.view_id):
-                    tqdm.write(f"Period: {list(period)}")
+                    logger.info(f"Period: {list(period)}")
             else:
                 period_corrector.unprocess_detection(revised)
 
     frame_dir = os.path.join(args.out, "tracking_process")
-    print(f"Frames saved: {frame_dir}")
+    logger.info(f"Frames saved: {frame_dir}")
     if not args.no_video:
         frames_to_video(frame_dir, os.path.join(args.out, "tracking_process.mp4"), args.fps)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - [%(levelname)s] %(filename)s:%(lineno)d: %(message)s")
     main()
