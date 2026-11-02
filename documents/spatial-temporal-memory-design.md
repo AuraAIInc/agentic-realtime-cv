@@ -1,19 +1,27 @@
-# Spatial-Temporal Memory: Long-Term First (Plan + Design)
+# Spatial-Temporal Memory: Long-Term (Design)
 
 ## Goal
 
-Build a spatial-temporal long-term memory in `agent/memory/` whose store is a
+A spatial-temporal long-term memory in `agent/memory/` whose store is a
 plain-language YAML file, with a hierarchical spatial tree (2D grid, N=3 levels
-by default) and a hierarchical temporal tree (1D time buckets, 4 levels to start),
+by default) and a hierarchical temporal tree (1D time buckets, 4 levels),
 plus `store` / `invoke` / `promote` / `reset` and a semantic search augment.
 All store/promote LLM work runs on a dedicated worker thread fed by a FIFO job
 queue: callers enqueue and continue, the worker executes jobs one by one.
 Promotion compresses each parent to dominant patterns only, weighting old stable
 patterns over fresh input so the latest observation cannot overfit memory. The
-store bootstraps from the first received image. Design short-term memory now;
-implement it after long-term memory is green. The direct consumer of `invoke` is
-the `agent/escalation` module. Keyword semantic search for v1; true embedding
-search is a deferred future phase.
+store bootstraps from the first received image. The direct consumer of `invoke`
+is the validation worker's escalation briefs. Keyword semantic search for v1;
+true embedding search is a deferred future phase.
+
+Trust policy (built): long-term memory keeps **only high-confidence
+knowledge** — original high-confidence detections and high-confidence
+supervisor-validation conclusions. Escalation occurrences and anything
+untrusted belong to short-term day context, never durable knowledge. Every
+record carries its original image names, the detection snapshot, and
+plain-language text; every spatial zone describes cat appearance, activities,
+behavior, and background view. Short-term memory is designed and built in
+[short-term-memory-design.md](short-term-memory-design.md).
 
 ## Success Criteria
 
@@ -22,6 +30,8 @@ search is a deferred future phase.
 - `memory_config.yaml` defines the spatial/temporal structure with working defaults.
 - Long-term store persists as human-readable YAML; top spatial level describes the
   whole view; each temporal level captures its own aspect (events, mix, routine, habits).
+  Every zone carries appearance/behavior descriptions and bounded evidence
+  (original image names + detection snapshots); every hit surfaces them.
 - `store` and `promote` use the Muse LLM API via the worker queue; the ingest
   loop never blocks on an LLM call; `invoke` does structural nearest-unit
   retrieval; `semantic_search` supports natural-language queries.
@@ -38,7 +48,8 @@ search is a deferred future phase.
 
 ## Background (grounded facts)
 
-- `agent/memory/` today holds only a README stub pointing at Project Plan Part 2.
+- `agent/memory/` holds the built store: config, tree math, YAML store, worker,
+  LLM client, prompts, long-term + short-term memory, and tests.
 - `agent/escalation/escalation.py` defines `Escalation(time, scope, code, reason,
   end_time, cat_id, period_id, metrics)` and `emit()`; codes T1-T7 (frame) and
   P1-P7 (period) are the query vocabulary memory must serve.
@@ -74,7 +85,8 @@ search is a deferred future phase.
 - `llm_client.py` - Meta Model API wrapper + `StubLLMClient` for tests.
 - `prompts.py` - store-update, promote-summary, environment-bootstrap prompts.
 - `long_term.py` - `LongTermMemory`: store/invoke/promote/reset/tick/semantic_search.
-- `short_term.py` - interface + in-memory stub (full build is a later phase).
+- `short_term.py` - `DailyShortTermMemory`: day log + day-end merge (see the
+  short-term design doc).
 - `tests/` - offline unit tests + replay integration test.
 
 ### Memory config defaults (`memory_config.yaml`)
@@ -99,6 +111,7 @@ promotion: {idle_seconds: 300, min_pattern_support: 3, stable_weight_cap: 50,
 worker: {queue_warn_depth: 100, promote_coalesce: true}
 store_dir: "agent/memory/data"          # per-view file view_<id>_long_term.yaml (durable; git-ignored)
 llm: {model_role: memory, max_units_per_call: 8}
+quality: {min_store_confidence: 0.7, short_term_keyframes: 3}  # trust gate + short-term key frames
 ```
 
 L0 at 100px (2x the 50px `period_area_count` precedent) distinguishes sofa from
@@ -125,10 +138,14 @@ spatial:
       background: "Dark grey fabric, fairly uniform."
       cat_contrast: "High contrast: a white cat stands out clearly here."
       activity: "Qb naps here most afternoons; Qbo rarely visits."
+      appearance: "Qb: short-haired white cat with faint silver shading."
+      behavior: "Qb settles on the left cushion and sleeps for hours."
       keywords: [sofa, nap, qb]
       weight: 24                 # effective observations, capped at stable_weight_cap
       contradictions: 0          # consecutive contradicting batches vs stable text
       recent: ["2026-10-31T14:00 Qb settled on the left cushion."]
+      images: ["2026-10-31-14-00-00-000000.jpg"]   # originals, newest 5
+      detections: [{box: [500, 300, 600, 400], cat_id: 25, conf: 0.9}]  # newest 3
       stats: {visits: 24, by_cat: {qb: 21, qbo: 3}}
       updated: "2026-10-31T14:05:00"
       sources: ["period 12", "period 15"]
@@ -139,6 +156,8 @@ temporal:
     - id: "2026-10-31T14:00"
       summary: "Qb walked from the doorway to the sofa and settled."
       keywords: [qb, sofa, walking]
+      images: [...]              # same bounded evidence as spatial units
+      detections: [...]
   hour: [...]  # activity mix: who was active/resting, where
   day: [...]   # routine: meals, naps, play bouts, anything unusual
   week: [...]  # habits and drift: stable routines, new spots, changes
@@ -181,9 +200,13 @@ class MemoryEvent:
     time: datetime; end_time: datetime | None; view_id: int
     box: tuple[float, float, float, float] | None  # view pixels
     cat_id: int | None; period_id: int | None
-    kind: str            # "period" | "escalation" | "label"
+    kind: str            # "period" | "escalation" | "label" | "summary"
     text: str            # plain-language observation
     code: str | None     # T1..T7 / P1..P7 when from escalation
+    confidence: float | None     # 0..1; None = untrusted (trust gate)
+    image_names: list[str]       # original image names (evidence)
+    detection: dict              # {box, cat_id, conf, ...} snapshot
+    appearance: str              # profile appearance line for the event's cat
 
 @dataclass
 class MemoryQuery:
@@ -225,6 +248,17 @@ class LongTermMemory:
   thresholds are programmatic, so behavior is testable with the stub.
 - Persist after each promotion (atomic tmp+rename); clear dirty flags only for
   units actually summarized.
+- Trust gate (`_store_qualifies`, built): `store()` keeps only `period` /
+  `label` events at or above `min_store_confidence` (default 0.7) plus
+  `summary` events (curated day merges, always qualify). Escalation
+  occurrences, error verdicts (confidence 0.0), and untrusted (`None`) events
+  are skipped with a log line — they belong to short-term day context.
+- Curated rollup (built): `summary`-sourced units always qualify for text
+  rollup regardless of visit support, and a summarized parent inherits its
+  children's `sources`, so day narratives roll all the way up instead of
+  stopping at stats-only parents. Spatial summaries return
+  `{activity, appearance, behavior, keywords}`; appearance/behavior come only
+  from children's lines, never invented.
 
 ### Bootstrap from the first image
 
@@ -269,22 +303,24 @@ class LongTermMemory:
   only, promote coalescing, and a per-promotion call budget with graceful
   deferral.
 
-### Short-term memory (designed now, built later)
+### Short-term memory (built)
 
-In-memory deque of recent `MemoryEvent`s (default 15-min horizon, mirroring the
-tracker buffer) plus live per-cat state (last box, moving/resting). Same
-`store`/`invoke` shape, no persistence, no LLM, no worker (direct calls).
-`invoke` checks short-term first, then long-term; long-term `store` can distill
-from it. v1 ships the interface + stub so escalation code can be written
-against it.
+`DailyShortTermMemory` (`agent/memory/short_term.py`) remembers every period
+activity across one day — all confidences — plus tracker episodes and their
+validation verdicts, in a plain-language `view_<id>_short_term_<day>.md`
+re-rendered on every change. New sessions open a new section; midnight (event
+time) merges the day into long-term memory as curated `summary` events that
+promote into the top spatial levels and the day bucket; session end merges the
+same way, marked so nothing merges twice. Full design:
+[short-term-memory-design.md](short-term-memory-design.md).
 
-### Future phases (not v1)
+### Future phases
 
-- Phase 5: full short-term memory + escalation read-through (`invoke` merges
-  short-term live state with long-term context).
-- Phase 6: embedding-based semantic search once a Meta embeddings endpoint is
-  confirmed (new `roles.embedding`; vectors stored beside the YAML, never in
-  it); month temporal level if week summaries grow unwieldy.
+- Escalation read-through: `invoke` merges live short-term entries with
+  long-term hits for validation briefs (currently briefs read long-term only).
+- Embedding-based semantic search once a Meta embeddings endpoint is confirmed
+  (new `roles.embedding`; vectors stored beside the YAML, never in it); month
+  temporal level if week summaries grow unwieldy.
 
 ## Approach
 
@@ -315,9 +351,10 @@ phase 5, embeddings as phase 6.
    `invoke_for_escalation` + code-family mapping, idle `tick`. LLM errors
    degrade to pending-observation mode, never raise.
 4. Integration, replay test, docs.
-   Surfaces: `TrackingRun` hooks (`store` on period close + `emit`, `tick` per
-   message, `shutdown` in `finish()`, optional `--bootstrap-frame`), replay
-   integration test over an existing `agent/output/tracking_runs/` run,
+   Surfaces: `TrackingRun` hooks (trusted `store` on period close, short-term
+   record on period close + `emit`, `tick` per message, short-term merge +
+   `shutdown` in `finish()`, optional `--bootstrap-frame`), replay integration
+   test over an existing `output/tracking_runs/` run,
    `agent/memory/README.md` rewrite.
 
 ## Validation Plan
@@ -358,5 +395,6 @@ phase 5, embeddings as phase 6.
   verify at build time and match the exact working call shape.
 - No embeddings endpoint in `models.json` today: keyword semantic search is the
   v1 approach; embeddings are phase 6, only if an endpoint is confirmed.
-- Open question: none blocking. Store sources are period verdicts + escalations
-  for v1; supervisor-task labels plug into the same `MemoryEvent` later.
+- Open question: none blocking. Store sources are high-confidence period
+  verdicts + decisive supervisor-validation labels + curated day summaries;
+  escalation occurrences stay in short-term day context by design.
