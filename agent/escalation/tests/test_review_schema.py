@@ -11,29 +11,36 @@ from agent.escalation import REVIEW_SCHEMAS, Escalation, emit, review_model_for,
 ALL_CODES = {"T1", "T2", "T3", "T4", "T5", "T6", "T7", "P1", "P2", "P3", "P4", "P5", "P6", "P7"}
 
 
-def test_every_code_has_schema_with_verdict_and_shared_fields():
+def test_every_code_has_minimal_schema():
     assert set(REVIEW_SCHEMAS) == ALL_CODES
     for code, model in REVIEW_SCHEMAS.items():
         schema = json.loads(review_schema_json(code))
         assert "verdict" in schema["properties"], code
         assert schema["properties"]["verdict"].get("enum"), code
-        for field in ("escalation", "confidence", "explanation", "frames_checked", "needs_human"):
-            assert field in schema["properties"], (code, field)
-        assert "confidence" in schema["required"], code
+        assert schema["required"] == ["verdict"], code
+        allowed = {"verdict"}
+        if code in ("T1", "T2", "P1", "P4", "P5"):
+            allowed.add("chosen_cat_id")
+        if code == "T7":
+            allowed.add("cut_time")
+        assert set(schema["properties"]) == allowed, code
 
 
 def test_reviews_validate_and_reject_bad_verdicts():
-    good = {"escalation": "E6-T2", "confidence": 0.9, "explanation": "saw cat 25 clearly", "verdict": "confirm"}
-    assert review_model_for("T2").model_validate(good).verdict == "confirm"
+    assert review_model_for("T2").model_validate({"verdict": "confirm"}).verdict == "confirm"
+    assert review_model_for("T2").model_validate({"verdict": "reassign_other", "chosen_cat_id": 26}).chosen_cat_id == 26
+    assert review_model_for("T7").model_validate({"verdict": "shorten_gap", "cut_time": "2026-10-28T16:34:00"}).cut_time
     with pytest.raises(ValidationError):
-        review_model_for("T2").model_validate({**good, "verdict": "maybe"})
+        review_model_for("T2").model_validate({"verdict": "maybe"})
     with pytest.raises(ValidationError):
-        review_model_for("P6").model_validate({"escalation": "E9-P6", "verdict": "merge"})
+        review_model_for("T2").model_validate({"verdict": "confirm", "confidence": 0.9})
+    with pytest.raises(ValidationError):
+        review_model_for("P6").model_validate({})
 
 
 def test_unknown_code_falls_back_to_base_model():
     assert review_model_for("T9").__name__ == "EscalationReview"
-    assert "verdict" not in json.loads(review_schema_json("T9"))["properties"]
+    assert set(json.loads(review_schema_json("T9"))["properties"]) == {"verdict"}
 
 
 def test_emit_logs_schema_after_prompt(caplog, capsys):

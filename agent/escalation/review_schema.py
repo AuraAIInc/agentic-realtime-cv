@@ -1,9 +1,9 @@
 """Expected LLM review output for each escalation code, as pydantic models.
 
-The reviewer (human or LLM) answers an escalation prompt with one JSON object
-following the code's model below. ``review_schema_json(code)`` renders the
-model's JSON schema (with plain-language descriptions) so it can be pasted
-into the review request; ``emit()`` logs it right after the prompt.
+Kept minimal on purpose: only the fields the validation parser reads
+(``verdict``, plus ``chosen_cat_id`` / ``cut_time`` where a verdict names
+one). ``review_schema_json(code)`` renders the model's JSON schema so it can
+be pasted into the review request; ``emit()`` logs it right after the prompt.
 """
 
 from __future__ import annotations
@@ -15,21 +15,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class EscalationReview(BaseModel):
-    """Shared fields every escalation review must return."""
+    """One parsed verdict. Subclasses narrow ``verdict`` to the code's options."""
 
     model_config = ConfigDict(extra="forbid")
 
-    escalation: str = Field(description="Display name being reviewed, e.g. 'E6-T2'.")
-    confidence: float = Field(ge=0.0, le=1.0, description="How sure you are, 0 (guessing) to 1 (certain).")
-    explanation: str = Field(description="One or two sentences: what you saw in the key frames that decided it.")
-    frames_checked: list[str] = Field(
-        default_factory=list,
-        description="Key-frame timestamps you looked at (ISO format).",
-    )
-    needs_human: bool = Field(
-        default=False,
-        description="True when the images are too unclear and a person should look.",
-    )
+    verdict: str = Field(description="The decision (allowed values depend on the escalation code).")
 
 
 class T1Review(EscalationReview):
@@ -133,8 +123,8 @@ class P4Review(EscalationReview):
     """Long visit nobody could label."""
 
     verdict: Literal["assign_cat", "split_fragments", "confirm_unknown"] = Field(
-        description="assign_cat: you can tell which cat it is (say which in chosen_cat_id). split_fragments: label "
-        "parts differently, describe the split in explanation. confirm_unknown: genuinely unidentifiable."
+        description="assign_cat: you can tell which cat it is (say which in chosen_cat_id). split_fragments: mixed "
+        "cats, needs a human (rows kept as-is). confirm_unknown: genuinely unidentifiable."
     )
     chosen_cat_id: int | None = Field(default=None, description="Required when verdict is assign_cat.")
 
@@ -144,7 +134,7 @@ class P5Review(EscalationReview):
 
     verdict: Literal["keep", "drop", "trim_core", "reassign"] = Field(
         description="keep: a real visit, keep it. drop: noise padded with guesses, delete it. trim_core: keep only "
-        "the high-certainty core, describe the kept span in explanation. reassign: another cat (say which in "
+        "the high-certainty core (flagged for a human; rows kept as-is). reassign: another cat (say which in "
         "chosen_cat_id)."
     )
     chosen_cat_id: int | None = Field(default=None, description="Required when verdict is reassign.")

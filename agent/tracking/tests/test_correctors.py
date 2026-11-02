@@ -151,9 +151,223 @@ def test_track_target_fallback_escalates_on_weak_boxes():
             box = [10 + 100 * s, 10, 100 + 100 * s, 100]
             list(tc.process_images(T0 + datetime.timedelta(seconds=s), {0: box + [0, 0.45]}, 0, 0, 0, 0))
     assert "T5" in [e.code for e in tc.escalations]
+    t5 = next(e for e in tc.escalations if e.code == "T5")
+    assert t5.metrics["target_box"] is not None and len(t5.metrics["target_box"]) == 4
+
+
+def test_synth_run_sampler_collects_interp_boxes_only():
+    tc = TrackCorrector(cat_ids=[0])
+    for i in range(10):
+        t = T0 + datetime.timedelta(seconds=i)
+        tc.revised_detection[0].append(np.array([t, 10 + i, 10, 100 + i, 100, None, 0.4, 0, 1], dtype=object))
+    tc.revised_detection[0].append(np.array([T0 + datetime.timedelta(seconds=10), 10, 10, 100, 100, 0, 0.9, 0, 1], dtype=object))
+    frames = tc._sample_synth_run(0, T0, T0 + datetime.timedelta(seconds=10), cap=4)
+    assert len(frames) == 4
+    assert frames[0] == {"t": T0.isoformat(timespec="microseconds"), "box": [10.0, 10.0, 100.0, 100.0]}
+    assert frames[-1]["t"] == (T0 + datetime.timedelta(seconds=9)).isoformat(timespec="microseconds")
+    assert all(set(f) == {"t", "box"} and len(f["box"]) == 4 for f in frames)
+
+
+def test_jump_frame_context_captures_pre_post_and_mids():
+    from agent.tracking.track_corrector import jump_frame_context
+
+    pre = np.array([T0, 10, 10, 100, 100, 0, 0.9, 0, 1], dtype=object)
+    post = np.array([T0 + datetime.timedelta(seconds=5), 400, 10, 490, 100, 0, 0.52, 0, 2], dtype=object)
+    mids = [np.array([T0 + datetime.timedelta(seconds=i), 100 + i, 10, 190 + i, 100, None, 0.4, 0, 1], dtype=object) for i in range(1, 7)]
+    ctx = jump_frame_context(pre, post, mids)
+    assert ctx["pre_time"] == T0.isoformat(timespec="microseconds")
+    assert ctx["pre_box"] == [10.0, 10.0, 100.0, 100.0]
+    assert ctx["post_box"] == [400.0, 10.0, 490.0, 100.0]
+    assert len(ctx["retracted_frames"]) == 4  # sampled down from 6
+    assert ctx["retracted_frames"][0]["t"] == (T0 + datetime.timedelta(seconds=1)).isoformat(timespec="microseconds")
+
+
+def test_p5_carries_counts_box_and_key_frames():
+    pc = PeriodCorrector(cat_ids=[25, 26])
+    for i in range(8):
+        t = T0 + datetime.timedelta(seconds=i * 10)
+        orig = 26 if i % 4 == 0 else None
+        box = [10 + i, 10, 100 + i, 100] if i % 4 != 3 else [None, None, None, None]
+        pc.detections.append(np.array([t, *box, orig, 0.5, 26, 7], dtype=object))
+    assert pc._median_winner_box(7, 26) == [14.0, 10.0, 104.0, 100.0]
+    frames = pc._sample_period_frames(7, cap=4)
+    assert len(frames) == 4
+    assert frames[0]["real"] is True and frames[0]["box"] == [10.0, 10.0, 100.0, 100.0]
+    assert frames[-1]["box"] is None and frames[-1]["real"] is False
+    stats = {"detect_length": np.array([0, 2]), "detect_conf": np.array([0.0, 0.5]),
+             "detect_rate": np.array([0.0, 0.1]), "length": 8}
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        pc._check_vote_escalations(7, stats, np.array([0.0, 9.0]), 1, 9.0, (T0, T0 + datetime.timedelta(seconds=70)))
+    p5 = next(e for e in pc.escalations if e.code == "P5")
+    assert p5.metrics["total_frames"] == 8
+    assert p5.metrics["detect_counts"] == {"26": 2}
+    assert p5.metrics["winner_box"] == [14.0, 10.0, 104.0, 100.0]
+    assert len(p5.metrics["key_frames"]) == 6
+
+
+def test_nearness_source_reports_reference_position():
+    tc = TrackCorrector(cat_ids=[25, 26])
+    assert tc._nearness_source(0, [400, 20, 490, 200]) == {}
+    tc.last_detection[0] = [T0, 350, 25, 440, 205, 25, 0.9, 25]
+    src = tc._nearness_source(0, [400, 20, 490, 200])
+    assert src["source_time"] == T0.isoformat(timespec="microseconds")
+    assert src["source_box"] == [350.0, 25.0, 440.0, 205.0]
+    assert src["source_distance_px"] == (50**2 + 5**2) ** 0.5  # centers (445, 110) vs (395, 115)
+    assert src["source_threshold_px"] == 160.0
+    tc.last_detection[0] = None
+    tc.base[0] = [T0, 350, 25, 440, 205, 25, 0.9, 25]
+    assert tc._nearness_source(0, [400, 20, 490, 200])["source_box"] == [350.0, 25.0, 440.0, 205.0]
+
+
+def test_p6_carries_prev_span_and_boundary_boxes():
+    pc = PeriodCorrector(cat_ids=[25])
+    prev_start = T0 - datetime.timedelta(minutes=2)
+    pc.prev_period_end[25] = (T0, [10, 20, 100, 200], 101, [[10, 20, 100, 200]])
+    pc.connected_periods[101] = [prev_start, T0]
+    det = np.array([T0 + datetime.timedelta(seconds=39), 120, 30, 210, 210, 25, 0.8, 25, 102], dtype=object)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        pc._check_merge_candidate(25, 102, det)
+    p6 = next(e for e in pc.escalations if e.code == "P6")
+    assert p6.metrics["prev_start"] == prev_start
+    assert p6.metrics["prev_end_box"] == [10.0, 20.0, 100.0, 200.0]
+    assert p6.metrics["new_start_box"] == [120.0, 30.0, 210.0, 210.0]
+
+
+def test_p2_carries_key_frames():
+    pc = PeriodCorrector(cat_ids=[25, 26])
+    for i in range(12):
+        t = T0 + datetime.timedelta(seconds=i)
+        pc.detections.append(np.array([t, 10 + i, 10, 100 + i, 100, 25, 0.4, 25, 7], dtype=object))
+    stats = {"detect_length": np.array([12, 0]), "detect_conf": np.array([0.4, 0.0]),
+             "detect_rate": np.array([1.0, 0.0]), "length": 12}
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        pc._check_vote_escalations(7, stats, np.array([2.0, 0.0]), 0, 9.0, (T0, T0 + datetime.timedelta(seconds=11)))
+    p2 = next(e for e in pc.escalations if e.code == "P2")
+    assert len(p2.metrics["key_frames"]) == 6
+    assert p2.metrics["key_frames"][0]["box"] == [10.0, 10.0, 100.0, 100.0]
+
+
+def _seed_jump_reset(tc, detecting):
+    tc.right_time = T0 + datetime.timedelta(seconds=60)
+    tc.base[0] = [T0, 10, 10, 100, 100, 25, 0.9, 25]
+    tc.detecting[0] = detecting
+    for i in range(3):
+        t = T0 + datetime.timedelta(seconds=50 + i)
+        tc.buffer[0].append(np.array([t, None, None, None, None, None, 0, None], dtype=object))
+        tc.buffer_origin[0].append(np.array([t, None, None, None, None, None, 0, None], dtype=object))
+
+
+def test_jump_reset_carries_anchor_and_sighting_boxes():
+    tc = TrackCorrector(cat_ids=[25])
+    _seed_jump_reset(tc, True)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        tc.add_new_detection_to_buffer({25: [400, 400, 500, 500, 25, 0.6]})
+    t4 = next(e for e in tc.escalations if e.code == "T4")
+    assert t4.metrics["base_box"] == [10.0, 10.0, 100.0, 100.0]
+    assert t4.metrics["base_time"] == T0.isoformat(timespec="microseconds")
+    assert t4.metrics["box"] == [400.0, 400.0, 500.0, 500.0]
+    assert t4.metrics["wiped_rows"] == 3
+    assert t4.metrics["had_open_visit"] is True
+    assert "closed the period" in t4.reason
+    assert tc.base[0] is None and tc.detecting[0] is False
+
+
+def test_jump_reset_without_open_visit_says_so():
+    tc = TrackCorrector(cat_ids=[25])
+    _seed_jump_reset(tc, False)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        tc.add_new_detection_to_buffer({25: [400, 400, 500, 500, 25, 0.6]})
+    t4 = next(e for e in tc.escalations if e.code == "T4")
+    assert t4.metrics["had_open_visit"] is False
+    assert "no visit was open to close" in t4.reason
+
+
+def test_multi_match_carries_disputed_box_and_candidate_refs():
+    tc = TrackCorrector(cat_ids=[0, 1, 2])
+    tc.right_time = T0
+    tc.last_detection[0] = [T0, 10, 10, 100, 100, 0, 0.9, 0]
+    tc.last_detection[1] = [T0, 400, 400, 500, 500, 1, 0.9, 1]
+    tc.buffer[1].append(np.array([T0, 12, 12, 102, 102, 1, 0.9, 1], dtype=object))
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        tc.add_new_detection_to_buffer({2: [12, 12, 102, 102, 2, 0.55]})
+    t1 = next(e for e in tc.escalations if e.code == "T1")
+    assert t1.metrics["box"] == [12.0, 12.0, 102.0, 102.0]
+    refs = t1.metrics["candidate_refs"]
+    assert refs["0"]["rule"] == "iou_last"
+    assert refs["0"]["source_box"] == [10.0, 10.0, 100.0, 100.0]
+    assert refs["1"]["rule"] == "iou_buffer"
+
+
+def test_duplicate_tie_carries_both_boxes():
+    tc = TrackCorrector(cat_ids=[0, 1])
+    tc.right_time = T0
+    box = [10, 10, 100, 100]
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        tc.add_new_detection_to_buffer({0: box + [0, 0.60], 1: box + [1, 0.62]})
+    t3 = next(e for e in tc.escalations if e.code == "T3")
+    assert t3.metrics["kept_box"] == [10.0, 10.0, 100.0, 100.0]
+    assert t3.metrics["killed_box"] == [10.0, 10.0, 100.0, 100.0]
+    assert t3.metrics["kept_conf"] == 0.62 and t3.metrics["killed_conf"] == 0.60
 
 
 # ---------------------------------------------------------------- PeriodCorrector
+
+
+def test_conflict_reassign_names_taking_period():
+    pc = PeriodCorrector(cat_ids=[0, 1])
+    box_a = [10, 10, 100, 100]
+    box_b = [300, 300, 400, 400]
+    _feed_period(pc, 101, 0, T0, 24, box_a, lambda i: 0)
+    _feed_period(pc, 102, 1, T0 + datetime.timedelta(seconds=10), 24, box_b, lambda i: i % 2)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        list(pc.process_detection(_close8(T0 + datetime.timedelta(seconds=34), 0)))
+        list(pc.process_detection(_close8(T0 + datetime.timedelta(seconds=34), 1)))
+    p3 = next(e for e in pc.escalations if e.code == "P3")
+    assert p3.period_id == 102
+    assert p3.metrics["wanted_cat_id"] == 0
+    assert p3.metrics["taken_by_period_id"] == 101
+    assert p3.metrics["taken_by_span"][0] == T0.isoformat(timespec="microseconds")
+    assert len(p3.metrics["key_frames"]) == 6
+
+
+def test_p4_carries_counts_and_key_frames():
+    pc = PeriodCorrector(cat_ids=[25, 26])
+    for i in range(40):
+        t = T0 + datetime.timedelta(seconds=i * 2)
+        orig = 26 if i % 2 == 0 else None
+        pc.detections.append(np.array([t, 10 + i, 10, 100 + i, 100, orig, 0.5, 26, 7], dtype=object))
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        pc._check_unknown_escalation(7, (T0, T0 + datetime.timedelta(seconds=80)), 40)
+    p4 = next(e for e in pc.escalations if e.code == "P4")
+    assert p4.metrics["detect_counts"] == {"26": 20}
+    assert len(p4.metrics["key_frames"]) == 6
+
+
+def test_p7_carries_prev_span_and_boundary_boxes():
+    pc = PeriodCorrector(cat_ids=[25])
+    prev_start = T0 - datetime.timedelta(minutes=2)
+    pc.prev_period_end[25] = (T0, [10, 20, 100, 200], 101, [[10, 20, 100, 200], [11, 21, 101, 201]])
+    pc.connected_periods[101] = [prev_start, T0]
+    pc._open_prev[102] = pc.prev_period_end[25]
+    for i in range(4):
+        t = T0 + datetime.timedelta(seconds=120 + i)
+        pc.detections.append(np.array([t, 10 + i, 20, 100 + i, 200, 25, 0.8, 25, 102], dtype=object))
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        pc._check_static_link(102)
+    p7 = next(e for e in pc.escalations if e.code == "P7")
+    assert p7.metrics["prev_start"] == prev_start
+    assert p7.metrics["prev_end_box"] == [10.0, 20.0, 100.0, 200.0]
+    assert p7.metrics["new_start_box"] == [10.0, 20.0, 100.0, 200.0]
 
 
 def _det9(t, box, orig, conf, cat, pid):
@@ -184,6 +398,9 @@ def test_period_close_vote_escalates():
     p1 = next(e for e in pc.escalations if e.code == "P1")
     assert p1.scope == "period" and p1.end_time is not None and p1.end_time > p1.time
     assert "P2" not in codes and "P5" not in codes  # strong tie: only the vote is unsure
+    assert set(p1.metrics["votes"]) == {"0", "1"}
+    assert p1.metrics["runner_up_cat_id"] in (0, 1)
+    assert len(p1.metrics["key_frames"]) == 6
 
 
 def test_period_merge_candidate_escalates():

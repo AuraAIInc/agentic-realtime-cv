@@ -16,7 +16,7 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 
-from agent.escalation import Escalation, EscalationConfig, box_distance, box_iou, max_displacement, top_two_margin, window_is_static
+from agent.escalation import Escalation, EscalationConfig, box_distance, box_iou, even_pick, max_displacement, top_two_margin, window_is_static
 from agent.escalation import emit as emit_escalation
 from agent.tracking.sinks import InMemorySink
 
@@ -94,17 +94,52 @@ class PeriodCorrector:
                 coordinated_cat_id_dict[period_id] = self.idx_to_id[int(scored_idx)]
                 if period_id in reassigned and int(scored_idx) != original_top[period_id]:
                     start, end = period_bounds[period_id]
+                    wanted = self.idx_to_id[original_top[period_id]]
+                    taker, taker_span = None, None
+                    for pid2, cat2 in coordinated_cat_id_dict.items():
+                        if cat2 != wanted or pid2 not in period_bounds:
+                            continue
+                        s2, e2 = period_bounds[pid2]
+                        if s2 < end and start < e2:
+                            taker, taker_span = pid2, [s2.isoformat(timespec="microseconds"), e2.isoformat(timespec="microseconds")]
+                            break
                     self._escalate(
                         "P3",
-                        f"period {period_id} wanted cat {self.idx_to_id[original_top[period_id]]} but it was taken by an overlapping period; assigned cat {self.idx_to_id[int(scored_idx)]} instead",
+                        f"period {period_id} wanted cat {wanted} but it was taken by an overlapping period; assigned cat {self.idx_to_id[int(scored_idx)]} instead",
                         start,
                         end,
                         cat_id=self.idx_to_id[int(scored_idx)],
                         period_id=period_id,
-                        metrics={"wanted_cat_id": self.idx_to_id[original_top[period_id]]},
+                        metrics={
+                            "wanted_cat_id": wanted,
+                            "taken_by_period_id": taker,
+                            "taken_by_span": taker_span,
+                            "key_frames": self._sample_period_frames(period_id),
+                        },
                     )
         assert len(coordinated_cat_id_dict) == len(period_stats), {k: v for k, v in period_stats.items() if k not in coordinated_cat_id_dict}
         return coordinated_cat_id_dict, period_stats, period_score
+
+    def _period_rows(self, period_id) -> list:
+        """Committed rows of one period, in time order."""
+        return [d for d in self.detections if len(d) > 8 and d[8] == period_id]
+
+    def _median_winner_box(self, period_id, cat_id) -> list | None:
+        """Median box of the winner's real sightings (None when there are none)."""
+        boxes = [[float(v) for v in d[1:5]] for d in self._period_rows(period_id) if d[1] is not None and d[5] == cat_id]
+        if not boxes:
+            return None
+        cols = [sorted(c) for c in zip(*boxes)]
+        return [cols[i][len(cols[i]) // 2] for i in range(4)]
+
+    def _sample_period_frames(self, period_id, cap: int = 6) -> list:
+        """Sampled frames across a period: time, box (or None), real-sighting flag."""
+        rows = [d for d in self._period_rows(period_id) if d[0] is not None]
+        out = []
+        for d in (rows[i] for i in even_pick(len(rows), cap)):
+            box = [float(v) for v in d[1:5]] if d[1] is not None else None
+            out.append({"t": d[0].isoformat(timespec="microseconds"), "box": box, "real": bool(box) and not pd.isna(d[5])})
+        return out
 
     def _check_vote_escalations(self, period_id, stats, score, top_idx, margin, bounds):
         cfg = self.escalation_config
@@ -120,7 +155,16 @@ class PeriodCorrector:
                 end,
                 cat_id=top_cat,
                 period_id=period_id,
-                metrics={"scores": list(score), "margin": margin},
+                metrics={
+                    "scores": list(score),
+                    "margin": margin,
+                    "runner_up_cat_id": runner_cat,
+                    "votes": {
+                        str(self.idx_to_id[i]): {"score": round(float(score[i]), 1), "frames": int(stats["detect_length"][i])}
+                        for i in range(len(score))
+                    },
+                    "key_frames": self._sample_period_frames(period_id),
+                },
             )
         if float(score[top_idx]) < cfg.weak_winner_score or stats["detect_length"][top_idx] < cfg.weak_winner_min_length:
             self._escalate(
@@ -130,7 +174,11 @@ class PeriodCorrector:
                 end,
                 cat_id=top_cat,
                 period_id=period_id,
-                metrics={"score": float(score[top_idx]), "detect_length": int(stats["detect_length"][top_idx])},
+                metrics={
+                    "score": float(score[top_idx]),
+                    "detect_length": int(stats["detect_length"][top_idx]),
+                    "key_frames": self._sample_period_frames(period_id),
+                },
             )
         winner_conf = float(stats["detect_conf"][top_idx])
         winner_rate = float(stats["detect_rate"][top_idx])
@@ -142,7 +190,14 @@ class PeriodCorrector:
                 end,
                 cat_id=top_cat,
                 period_id=period_id,
-                metrics={"detect_conf": winner_conf, "detect_rate": winner_rate},
+                metrics={
+                    "detect_conf": winner_conf,
+                    "detect_rate": winner_rate,
+                    "total_frames": int(stats["length"]),
+                    "detect_counts": {str(self.idx_to_id[i]): int(n) for i, n in enumerate(stats["detect_length"]) if int(n) > 0},
+                    "winner_box": self._median_winner_box(period_id, top_cat),
+                    "key_frames": self._sample_period_frames(period_id),
+                },
             )
 
     def _check_unknown_escalation(self, period_id, bounds, n_rows):
@@ -150,13 +205,23 @@ class PeriodCorrector:
         start, end = bounds
         seconds = (end - start).total_seconds()
         if seconds > cfg.unknown_min_seconds or n_rows > cfg.unknown_min_frames:
+            counts: dict = {}
+            for d in self._period_rows(period_id):
+                if len(d) > 5 and not pd.isna(d[5]):
+                    key = str(int(d[5]))
+                    counts[key] = counts.get(key, 0) + 1
             self._escalate(
                 "P4",
                 f"period {period_id} got no cat but ran {seconds:.0f} s / {n_rows} frames; a long track nobody could label",
                 start,
                 end,
                 period_id=period_id,
-                metrics={"seconds": seconds, "rows": n_rows},
+                metrics={
+                    "seconds": seconds,
+                    "rows": n_rows,
+                    "detect_counts": counts,
+                    "key_frames": self._sample_period_frames(period_id),
+                },
             )
 
     def save_period_to_db(self, coordinated_cat_id_dict, period_stats, period_score, view_id, sink):
@@ -308,6 +373,7 @@ class PeriodCorrector:
             return
         distance = box_distance(prev_box, detection[1:5])
         if distance < cfg.merge_max_distance:
+            prev_span = self.connected_periods.get(prev_period_id) or []
             self._escalate(
                 "P6",
                 f"period {period_id} may connect to previous period {prev_period_id} of cat {cat_id}: gap {gap:.1f} s, box distance {distance:.0f} px",
@@ -315,7 +381,14 @@ class PeriodCorrector:
                 detection[0],
                 cat_id=cat_id,
                 period_id=period_id,
-                metrics={"prev_period_id": prev_period_id, "gap_seconds": gap, "distance_px": distance},
+                metrics={
+                    "prev_period_id": prev_period_id,
+                    "gap_seconds": gap,
+                    "distance_px": distance,
+                    "prev_start": prev_span[0] if prev_span else None,
+                    "prev_end_box": [float(v) for v in prev_box],
+                    "new_start_box": [float(v) for v in detection[1:5]],
+                },
             )
 
     def _check_static_link(self, period_id):
@@ -347,6 +420,7 @@ class PeriodCorrector:
         prev_disp = max_displacement(prev_trail)
         overlap = box_iou(head[0], prev_box)
         if window_is_static(head, cfg.static_max_px) and window_is_static(prev_trail, cfg.static_max_px) and overlap > cfg.static_overlap_iou:
+            prev_span = self.connected_periods.get(prev_period_id) or []
             self._escalate(
                 "P7",
                 f"period {period_id} starts static where period {prev_period_id} ended static (overlap {overlap:.2f}, gap {gap:.0f} s): possibly one sleeping cat split by weak detections",
@@ -362,6 +436,9 @@ class PeriodCorrector:
                     "prev_displacement_px": prev_disp,
                     "new_head_frames": len(head),
                     "prev_trail_frames": len(prev_trail),
+                    "prev_start": prev_span[0] if prev_span else None,
+                    "prev_end_box": [float(v) for v in prev_box],
+                    "new_start_box": [float(v) for v in head[0]],
                 },
             )
 
