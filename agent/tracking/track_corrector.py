@@ -15,7 +15,7 @@ from collections import Counter, deque
 
 import numpy as np
 
-from agent.escalation import Escalation, EscalationConfig
+from agent.escalation import Escalation, EscalationConfig, even_pick
 from agent.escalation import emit as emit_escalation
 from agent.tracking.sinks import InMemorySink
 
@@ -113,6 +113,18 @@ class TrackCorrector:
     def match_buffer_history(self, new_cat_id, img_detected, cat_idx):
         return self.match_buffer_history_rule(new_cat_id, img_detected, cat_idx) is not None
 
+    def _nearness_source(self, cat_idx, new_box) -> dict:
+        """The reference position a distance-rule relabel was based on (T2 prompt evidence)."""
+        ref = self.last_detection[cat_idx] if self.last_detection[cat_idx] is not None else self.base[cat_idx]
+        if ref is None or ref[1] is None:
+            return {}
+        return {
+            "source_time": ref[0].isoformat(timespec="microseconds"),
+            "source_box": [float(v) for v in ref[1:5]],
+            "source_distance_px": float(get_distance(new_box, ref[1:5])),
+            "source_threshold_px": float(self.img_width / 4),
+        }
+
     def _escalate(self, code, reason, time, cat_id=None, period_id=None, metrics=None):
         emit_escalation(
             self.escalations,
@@ -147,15 +159,26 @@ class TrackCorrector:
             return
 
         multi_label_kills = []
+        pre_boxes = {cid: ([float(v) for v in det[:4]], float(det[5])) for cid, det in img_detected.items()}
         img_detected = remove_multi_labeling(img_detected, multi_label_kills)
         for killed_id, kept_id, dup_iou, conf_margin in multi_label_kills:
             if conf_margin < self.escalation_config.duplicate_tie_margin:
+                killed_box, killed_conf = pre_boxes.get(killed_id, (None, None))
+                kept_box, kept_conf = pre_boxes.get(kept_id, (None, None))
                 self._escalate(
                     "T3",
                     f"duplicate boxes (IoU {dup_iou:.2f}) kept cat {kept_id} over cat {killed_id} on a {conf_margin:.2f} confidence margin",
                     self.right_time,
                     cat_id=kept_id,
-                    metrics={"killed_cat_id": killed_id, "iou": dup_iou, "conf_margin": conf_margin},
+                    metrics={
+                        "killed_cat_id": killed_id,
+                        "iou": dup_iou,
+                        "conf_margin": conf_margin,
+                        "killed_box": killed_box,
+                        "kept_box": kept_box,
+                        "killed_conf": killed_conf,
+                        "kept_conf": kept_conf,
+                    },
                 )
 
         correct_from_to = {}
@@ -189,20 +212,36 @@ class TrackCorrector:
                 if rule is not None:
                     matched[c_id] = rule
             if len(matched) >= 2:
+                new_box = [float(v) for v in img_detected[relabeled_id][:4]]
+                refs = {}
+                for c_id, rule in matched.items():
+                    refs[str(c_id)] = {"rule": rule, **self._nearness_source(self.id_to_idx[c_id], new_box)}
                 self._escalate(
                     "T1",
                     f"detection labeled cat {relabeled_id} fits {len(matched)} cats {sorted(matched)}; kept first match cat {assigned_id}",
                     self.right_time,
                     cat_id=assigned_id,
-                    metrics={"original_cat_id": relabeled_id, "candidates": matched, "chosen_cat_id": assigned_id},
+                    metrics={
+                        "original_cat_id": relabeled_id,
+                        "candidates": matched,
+                        "chosen_cat_id": assigned_id,
+                        "box": new_box,
+                        "candidate_refs": refs,
+                    },
                 )
             elif matched.get(assigned_id) == "distance":
+                new_box = [float(v) for v in img_detected[relabeled_id][:4]]
                 self._escalate(
                     "T2",
                     f"detection labeled cat {relabeled_id} relabeled to cat {assigned_id} by center distance alone, no IoU support",
                     self.right_time,
                     cat_id=assigned_id,
-                    metrics={"original_cat_id": relabeled_id, "rule": "distance"},
+                    metrics={
+                        "original_cat_id": relabeled_id,
+                        "rule": "distance",
+                        "box": new_box,
+                        **self._nearness_source(self.id_to_idx[assigned_id], new_box),
+                    },
                 )
         corrected_img_detected = {}
         for cat_id in img_detected:
@@ -222,13 +261,22 @@ class TrackCorrector:
                     else None
                 )
                 if jump_iou is not None and jump_iou < 0.2:
+                    was_detecting = self.detecting[cat_idx]
+                    close_note = "and closed the period" if was_detecting else "but no visit was open to close"
                     self._escalate(
                         "T4",
-                        f"cat {cat_id} new box missed the base (IoU {jump_iou:.2f}); wiped {len(self.buffer[cat_idx])} buffered rows and closed the period",
+                        f"cat {cat_id} new box missed the base (IoU {jump_iou:.2f}); wiped {len(self.buffer[cat_idx])} buffered rows {close_note}",
                         self.right_time,
                         cat_id=cat_id,
                         period_id=self.period_id[cat_idx] or None,
-                        metrics={"base_iou": jump_iou, "wiped_rows": len(self.buffer[cat_idx])},
+                        metrics={
+                            "base_iou": jump_iou,
+                            "wiped_rows": len(self.buffer[cat_idx]),
+                            "base_time": self.base[cat_idx][0].isoformat(timespec="microseconds"),
+                            "base_box": [float(v) for v in self.base[cat_idx][1:5]],
+                            "box": [float(x1), float(y1), float(x2), float(y2)],
+                            "had_open_visit": bool(was_detecting),
+                        },
                     )
                     for k in range(len(self.buffer[cat_idx])):
                         self.buffer[cat_idx][k][1:7] = [None] * 5 + [0]
@@ -313,12 +361,19 @@ class TrackCorrector:
         logger.debug(f"Cat: {cat_idx} --- Target (normal): {list(target_det) if target_det is not None else None}")
         self.max_buffer_conf[cat_idx] = max_conf
         if target_det is not None:
+            base = self.base[cat_idx]
             self._escalate(
                 "T5",
                 f"cat {self.idx_to_id[cat_idx]} target is a fallback guess: nothing overlaps the base and nothing above 0.5 conf (best {max_conf:.2f})",
                 self.right_time,
                 cat_id=self.idx_to_id[cat_idx],
-                metrics={"target_conf": max_conf, "target_time": target_det[0]},
+                metrics={
+                    "target_conf": max_conf,
+                    "target_time": target_det[0],
+                    "target_box": [float(v) for v in target_det[1:5]] if target_det[1] is not None else None,
+                    "base_time": base[0].isoformat(timespec="microseconds") if base is not None else None,
+                    "base_box": [float(v) for v in base[1:5]] if base is not None else None,
+                },
             )
         elif self.detecting[cat_idx] and any(b[1] is not None for b in self.buffer[cat_idx]):
             self._escalate(
@@ -329,6 +384,17 @@ class TrackCorrector:
                 period_id=self.period_id[cat_idx] or None,
                 metrics={"buffer_rows": len(self.buffer[cat_idx])},
             )
+
+    def _sample_synth_run(self, cat_idx, start, end, cap: int = 6) -> list:
+        """Sample interpolated boxes committed in [start, end] (T7 prompt references).
+
+        Returns [{"t": iso-timestamp, "box": [x1, y1, x2, y2]}] — real sightings
+        (original_cat_id set) are excluded, endpoints always kept.
+        """
+        rows = [r for r in self.revised_detection[cat_idx] if r[1] is not None and r[5] is None and start <= r[0] <= end]
+        if len(rows) > cap:
+            rows = [rows[i] for i in even_pick(len(rows), cap)]
+        return [{"t": r[0].isoformat(timespec="microseconds"), "box": [float(v) for v in r[1:5]]} for r in rows]
 
     def collect_buffer(self, cat_idx, sink, view_id):
         # self.check_buffer_label()
@@ -360,21 +426,28 @@ class TrackCorrector:
                         if distance > 300:
                             old_period_id = self.period_id[cat_idx]
                             self.period_id[cat_idx] = self.get_new_period_id()
-                            retracted = 0
+                            retracted = []
                             while len(self.revised_detection[cat_idx]) > 0 and self.revised_detection[cat_idx][-1][5] is None:
                                 remove_detection = self.revised_detection[cat_idx].pop()
                                 self.original_detection[cat_idx].pop()
                                 self.remove_revised_detection_from_db(remove_detection, sink)
                                 # print("Remove detection:", list(remove_detection))
-                                retracted += 1
+                                retracted.append(remove_detection)
                                 yield False, remove_detection
+                            retracted.reverse()
                             self._escalate(
                                 "T6",
-                                f"cat {self.idx_to_id[cat_idx]} box jumped {distance:.0f} px; split period {old_period_id} -> {self.period_id[cat_idx]} and retracted {retracted} interpolated rows",
+                                f"cat {self.idx_to_id[cat_idx]} box jumped {distance:.0f} px; split period {old_period_id} -> {self.period_id[cat_idx]} and retracted {len(retracted)} interpolated rows",
                                 revised[0],
                                 cat_id=self.idx_to_id[cat_idx],
                                 period_id=self.period_id[cat_idx],
-                                metrics={"distance_px": distance, "box_conf": revised[6], "old_period_id": old_period_id, "retracted_rows": retracted},
+                                metrics={
+                                    "distance_px": distance,
+                                    "box_conf": revised[6],
+                                    "old_period_id": old_period_id,
+                                    "retracted_rows": len(retracted),
+                                    **jump_frame_context(last_revised, revised, retracted),
+                                },
                             )
                 # create_time, box_x1, box_y1, box_x2, box_y2, conf, cat_id, period_id = revised_detection
 
@@ -419,13 +492,18 @@ class TrackCorrector:
                 if run_start is None:
                     self._synth_run[cat_idx] = [poop[0], False]
                 elif not run_flagged and (poop[0] - run_start).total_seconds() > self.escalation_config.synth_gap_seconds:
+                    gap_seconds = (poop[0] - run_start).total_seconds()
                     self._escalate(
                         "T7",
-                        f"cat {self.idx_to_id[cat_idx]} committed {(poop[0] - run_start).total_seconds():.1f} s of interpolated-only frames with no real detection",
+                        f"cat {self.idx_to_id[cat_idx]} committed {gap_seconds:.1f} s of interpolated-only frames with no real detection",
                         poop[0],
                         cat_id=self.idx_to_id[cat_idx],
                         period_id=self.period_id[cat_idx] or None,
-                        metrics={"gap_start": run_start, "gap_seconds": (poop[0] - run_start).total_seconds()},
+                        metrics={
+                            "gap_start": run_start,
+                            "gap_seconds": gap_seconds,
+                            "interp_frames": self._sample_synth_run(cat_idx, run_start, poop[0]),
+                        },
                     )
                     self._synth_run[cat_idx][1] = True
             else:
@@ -597,6 +675,23 @@ def get_distance(boxA, boxB):
     centerBy = (boxB[1] + boxB[3]) / 2
     distance = np.sqrt((centerAx - centerBx) ** 2 + (centerAy - centerBy) ** 2)
     return distance
+
+
+def jump_frame_context(last_revised, revised, retracted: list, cap: int = 4) -> dict:
+    """Pre/post-jump frames plus sampled intermediates for a T6 prompt (all JSON-safe)."""
+    mids = [
+        {"t": r[0].isoformat(timespec="microseconds"), "box": [float(v) for v in r[1:5]]}
+        for r in retracted
+        if r[1] is not None
+    ]
+    if len(mids) > cap:
+        mids = [mids[i] for i in even_pick(len(mids), cap)]
+    return {
+        "pre_time": last_revised[0].isoformat(timespec="microseconds"),
+        "pre_box": [float(v) for v in last_revised[1:5]],
+        "post_box": [float(v) for v in revised[1:5]],
+        "retracted_frames": mids,
+    }
 
 
 def get_speed(detectA, detectB):

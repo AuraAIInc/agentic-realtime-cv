@@ -148,6 +148,13 @@ def window_is_static(boxes, max_px: float) -> bool:
     return disp is not None and disp < max_px
 
 
+def even_pick(n: int, cap: int) -> list:
+    """Evenly spaced indices into n items (endpoints always kept)."""
+    if n <= cap:
+        return list(range(n))
+    return [round(i * (n - 1) / (cap - 1)) for i in range(cap)]
+
+
 def _jsonable(v):
     if isinstance(v, dict):
         return {str(k): _jsonable(x) for k, x in v.items()}
