@@ -5,15 +5,23 @@ from agent.escalation.escalation import (
     box_distance,
     box_iou,
     emit,
+    esc_label,
     max_displacement,
     top_two_margin,
     window_is_static,
 )
 from agent.escalation.escalation_config import EscalationConfig
+from agent.escalation.prompting import build_prompt
+from agent.escalation.review_schema import REVIEW_SCHEMAS, review_model_for, review_schema_json
 
 __all__ = [
     "Escalation",
+    "REVIEW_SCHEMAS",
+    "build_prompt",
     "emit",
+    "review_model_for",
+    "review_schema_json",
+    "esc_label",
     "EscalationConfig",
     "top_two_margin",
     "box_distance",

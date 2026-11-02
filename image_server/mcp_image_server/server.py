@@ -173,7 +173,7 @@ def main() -> None:
     # Always the repo-root .env (shared with the agent), whatever the working directory; its
     # values win over shell exports so a stale `export MCP_AUTH_TOKEN=...` cannot take over.
     loaded = load_dotenv(REPO_ENV, override=True)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - [%(levelname)s] %(filename)s:%(lineno)d: %(message)s")
     logger.info(f".env: {REPO_ENV} ({'loaded' if loaded else 'NOT FOUND'})")
     settings = Settings.from_env()
 

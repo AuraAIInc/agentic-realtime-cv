@@ -19,6 +19,12 @@ live in this package (`escalation.py`, `escalation_config.py`, re-exported
 from `__init__.py`). The tracking correctors import from here. Behavior is
 identical to the legacy `existing_work_before_hackathon/model/` sources.
 
+Every escalation is numbered run-wide in emission order, continuous across both
+scopes: `seq` 1, 2, 3… and display name `E<seq>-<code>` (e.g. `E3-T5`,
+`E7-P1`). The name is printed on the stdout JSON line, stored in
+`escalations.jsonl`, and drawn below each red line/span when visualization is
+enabled. Unnumbered escalations (legacy records) fall back to the bare code.
+
 Frame codes (TrackCorrector):
 
 | Code | Name | Meaning |

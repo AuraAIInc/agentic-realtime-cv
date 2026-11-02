@@ -30,6 +30,7 @@ from __future__ import annotations
 import datetime
 import json
 import math
+import sys
 from dataclasses import dataclass, field
 
 from model.escalation_config import EscalationConfig  # noqa: F401 (re-exported; thresholds live in escalation_config.py)
@@ -63,9 +64,10 @@ class Escalation:
 
 
 def emit(escalations: list, esc: Escalation) -> Escalation:
-    """Record the point for the visualizer and print one JSON line for review."""
+    """Record the point for the visualizer and write one JSON line to stdout for review."""
     escalations.append(esc)
-    print(esc.to_json(), flush=True)
+    sys.stdout.write(esc.to_json() + "\n")
+    sys.stdout.flush()
     return esc
 
 

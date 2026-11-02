@@ -23,6 +23,7 @@ from agent.escalation import (
     box_distance,
     box_iou,
     emit,
+    esc_label,
     max_displacement,
     top_two_margin,
     window_is_static,
@@ -53,6 +54,21 @@ def test_escalation_json_line_shape():
     assert obj["cat_id"] == 1 and obj["period_id"] == 7
     assert obj["metrics"] == {"margin": 0.02, "when": T0.isoformat(timespec="microseconds")}
     assert "\n" not in line
+
+
+def test_escalation_name_numbers_continuously():
+    assert Escalation(time=T0, scope="frame", code="T5", reason="t", seq=3).name == "E3-T5"
+    assert Escalation(time=T0, scope="period", code="P1", reason="p", seq=7).name == "E7-P1"
+    assert Escalation(time=T0, scope="frame", code="T5", reason="t").name is None
+    obj = json.loads(Escalation(time=T0, scope="frame", code="T5", reason="t", seq=3).to_json())
+    assert (obj["seq"], obj["name"]) == (3, "E3-T5")
+
+
+def test_esc_label_falls_back_to_code():
+    assert esc_label(Escalation(time=T0, scope="frame", code="T5", reason="t", seq=3)) == "E3-T5"
+    assert esc_label(Escalation(time=T0, scope="frame", code="T5", reason="t")) == "T5"
+    assert esc_label({"name": "E7-P1", "code": "P1"}) == "E7-P1"
+    assert esc_label({"code": "P1"}) == "P1"  # legacy jsonl without names
 
 
 def test_top_two_margin():

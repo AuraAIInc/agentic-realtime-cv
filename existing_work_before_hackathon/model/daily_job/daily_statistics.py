@@ -98,7 +98,7 @@ def prepare_data(db: MysqlDB, date, cat_id, view_id, data, speed_threshold=3):
     row.append(int(score * 100))
     columns.append("score")
 
-    print(row)
+    logger.info(row)
     return row, columns
 
 

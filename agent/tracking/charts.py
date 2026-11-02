@@ -3,7 +3,8 @@
 One lane per cat, x = time, each detection a vertical bar spanning its
 ``box_x1..box_x2`` normalized by the image width. Frame-scope escalations
 are red vertical lines; period-scope escalations are red spans clipped to
-the plotted window.
+the plotted window. Each line/span is labeled with its escalation name
+(``E<seq>-<code>``) at the bottom.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 
+from agent.escalation import esc_label
 from agent.tracking.process_viz import CAT_COLORS
 
 
@@ -70,10 +72,12 @@ def _plot_strip(rows, path, title, cat_ids, names, escalations, width):
             start, end, scope = _esc_span(esc)
             if start is None or end < lo or start > hi:
                 continue
+            label_x = max(start, lo)
             if scope == "period":
-                ax.axvspan(max(start, lo), min(end, hi), color="red", alpha=0.12)
+                ax.axvspan(label_x, min(end, hi), color="red", alpha=0.12)
             else:
                 ax.axvline(start, color="red", lw=1.5, alpha=0.85)
+            ax.text(label_x, -0.5, esc_label(esc), rotation=90, va="bottom", ha="center", color="red", fontsize=7)
         ax.set_xlim(lo, hi)
         ax.set_title(title)
     else:

@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)  # repo root, not cwd
 
 import datetime
 import time
@@ -640,7 +641,7 @@ class TrackCorrector:
         DELETE FROM revised_detection WHERE create_time = '{revised_detection[0]}' AND cat_id = {revised_detection[7]}
         """
         # self.db.execute_delete(sql)
-        print(sql)
+        logger.debug(sql)
 
     def finish_up(self):
         logger.info("Finishing up Tracker ... ")
@@ -761,14 +762,14 @@ if __name__ == "__main__":
     LEFT JOIN aura_cat.images img ON det.image_name = img.image_name
     WHERE img.create_time > '{time_left}' AND img.create_time < '{time_right}'
     """
-    print(sql)
+    logger.debug(sql)
     detections = pd.DataFrame(db.execute_query(sql), columns=columns)
 
     columns = ["image_name", "create_time", "is_grey"]
     sql = f"""
     SELECT {", ".join(columns)} from images WHERE create_time > '{time_left}' AND create_time < '{time_right}'
     """
-    print(sql)
+    logger.debug(sql)
 
     images = pd.DataFrame(db.execute_query(sql), columns=columns)
     images = images.sort_values("create_time")
@@ -787,5 +788,5 @@ if __name__ == "__main__":
         for p in cat_revised_detection:
             if p[-1] != period_id or False:
                 period_id = p[-1]
-                print(list(p))
-        print()
+                logger.info(list(p))
+        logger.info('')

@@ -1,8 +1,13 @@
+import logging
+
 import pymysql
 from dbutils.pooled_db import PooledDB
 from dotenv import load_dotenv
-load_dotenv()
+from pathlib import Path
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)  # repo root, not cwd
 import os
+
+logger = logging.getLogger(__name__)
 
 class MysqlDB(object):
     pool: PooledDB
@@ -33,8 +38,7 @@ class MysqlDB(object):
             cursor.execute(query, args)
             results = cursor.fetchall()
         except Exception as e:
-            print(query)
-            print(args)
+            logger.error(f"DB query failed: {query} | args={args}")
             raise e
         finally:
             cursor.close()
@@ -48,8 +52,7 @@ class MysqlDB(object):
             cursor.execute(query, args)
             result = cursor.fetchone()
         except Exception as e:
-            print(query)
-            print(args)
+            logger.error(f"DB query failed: {query} | args={args}")
             raise e
         finally:
             cursor.close()
@@ -65,8 +68,7 @@ class MysqlDB(object):
             result = cursor.rowcount
         except Exception as e:
             conn.rollback()
-            print(query)
-            print(args)
+            logger.error(f"DB query failed: {query} | args={args}")
             raise e
         finally:
             cursor.close()
@@ -86,8 +88,7 @@ class MysqlDB(object):
             result = cursor.rowcount
         except Exception as e:
             conn.rollback()
-            print(query)
-            print(args)
+            logger.error(f"DB query failed: {query} | args={args}")
             raise e
         finally:
             cursor.close()
@@ -106,8 +107,7 @@ class MysqlDB(object):
             conn.commit()
         except Exception as e:
             conn.rollback()
-            print(query)
-            print(args)
+            logger.error(f"DB query failed: {query} | args={args}")
             raise e
         finally:
             cursor.close()
@@ -134,8 +134,7 @@ class MysqlDB(object):
             cursor.execute(query, args)
             results = cursor.fetchall()
         except Exception as e:
-            print(query)
-            print(args)
+            logger.error(f"DB query failed: {query} | args={args}")
             raise e
         finally:
             cursor.close()
@@ -156,8 +155,7 @@ python
             last_id = cursor.lastrowid
         except Exception as e:
             conn.rollback()
-            print(query)
-            print(args)
+            logger.error(f"DB query failed: {query} | args={args}")
             raise e
         finally:
             cursor.close()
@@ -177,7 +175,7 @@ python
             conn.commit()
         except Exception as e:
             conn.rollback()
-            print(query)
+            logger.error(f"DB batch failed at: {query}")
             raise e
         finally:
             cursor.close()
@@ -198,7 +196,7 @@ python
             result = cursor.rowcount
         except Exception as e:
             conn.rollback()
-            print(script)
+            logger.error(f"DB script failed: {script}")
             raise e
         finally:
             cursor.close()
@@ -217,8 +215,7 @@ python
             conn.commit()
         except Exception as e:
             conn.rollback()
-            print(query)
-            print(args)
+            logger.error(f"DB query failed: {query} | args={args}")
             raise e
         finally:
             cursor.close()
@@ -237,8 +234,7 @@ python
             conn.commit()
         except Exception as e:
             conn.rollback()
-            print(query)
-            print(args)
+            logger.error(f"DB query failed: {query} | args={args}")
             raise e
         finally:
             cursor.close()

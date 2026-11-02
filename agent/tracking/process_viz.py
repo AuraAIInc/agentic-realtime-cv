@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import glob
+import logging
 import os
 import shutil
 
@@ -17,6 +18,10 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+
+from agent.escalation import esc_label
+
+logger = logging.getLogger(__name__)
 
 CAT_COLORS = ["#4A8CC3", "#E37939", "#8FBC89", "#F6A600", "#D5E4A8", "#9392BE", "#8891DB", "#E3A8A1", "#B5CDA3"]
 
@@ -102,10 +107,13 @@ def render_process_frame(track_corrector, period_escalations, cat_idx, out_path,
     for esc in frame_escalations or []:
         if window_left <= esc.time <= window_right:
             plt.axvline(esc.time, color="red", lw=1.5, alpha=0.85)
+            plt.text(esc.time, 0, esc_label(esc), rotation=90, va="bottom", ha="center", color="red", fontsize=7)
     for esc in period_escalations or []:
         span_start, span_end = esc.time, esc.end_time or esc.time
         if span_end >= window_left and span_start <= window_right:
-            plt.axvspan(max(span_start, window_left), min(span_end, window_right), color="red", alpha=0.12)
+            left = max(span_start, window_left)
+            plt.axvspan(left, min(span_end, window_right), color="red", alpha=0.12)
+            plt.text(left, 0, esc_label(esc), rotation=90, va="bottom", ha="center", color="red", fontsize=7)
 
     # plt.text(buffer[cat_id][-1][0], 2.05, buffer[cat_id][-1][0], ha='center')
     plt.title(
@@ -126,14 +134,14 @@ def stitch_mp4(frame_dir, video_path, fps):
 
     frames = sorted(glob.glob(os.path.join(frame_dir, "*.jpg")))
     if not frames:
-        print("No frames to stitch.")
+        logger.warning("No frames to stitch.")
         return None
     height, width = cv2.imread(frames[0]).shape[:2]
     writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
     for f in frames:
         writer.write(cv2.resize(cv2.imread(f), (width, height)))
     writer.release()
-    print(f"Video saved: {video_path}")
+    logger.info(f"Video saved: {video_path}")
     return video_path
 
 

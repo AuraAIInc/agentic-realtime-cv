@@ -16,6 +16,7 @@ import logging
 import os
 import threading
 import time
+from pathlib import Path
 
 import camera_sim  # noqa: F401  (adds camera_server/ to sys.path)
 from camera_v3.camera_service import CameraService
@@ -24,7 +25,7 @@ from camera_sim.config import DEFAULT_CONFIG, SimConfig, from_yaml
 from camera_sim.replay_source import ReplaySource
 from camera_sim.weights import LazyS3Store, ensure_hub_weights
 
-LOG_FORMAT = "%(asctime)s - [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s"
+LOG_FORMAT = "%(asctime)s - [%(levelname)s] %(filename)s:%(lineno)d: %(message)s"
 logger = logging.getLogger("camera_sim")
 
 
@@ -204,7 +205,9 @@ class SimCameraService(CameraService):
 def main(argv=None) -> None:
     from dotenv import load_dotenv
 
-    load_dotenv()
+    # Always the repo-root .env (agent/camera_sim/main.py -> parents[2]),
+    # never whatever the current working directory happens to be.
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
     a = parse_args(argv)

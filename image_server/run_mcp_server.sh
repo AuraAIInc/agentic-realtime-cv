@@ -10,6 +10,10 @@ if pkill -f "python -m mcp_image_server"; then
 fi
 VENV="${ORIGINAL_VENV:-$HOME/camera_server/.venv}"
 [ -f "$VENV/bin/activate" ] && source "$VENV/bin/activate"
+# The venv is borrowed, not built from requirements-mcp.txt: make sure the
+# declared deps (notably Pillow, needed for box/max_side transforms) are
+# actually installed. No-op when everything is satisfied.
+python -m pip install -q -r requirements-mcp.txt || echo "WARNING: pip install failed; starting anyway"
 nohup python -m mcp_image_server >> mcp_server.log 2>&1 &
 echo "mcp_image_server started (pid $!), log: $(pwd)/mcp_server.log (venv: ${VIRTUAL_ENV:-system python})"
 # Stream the log; Ctrl-C stops only the tail, the server keeps running.

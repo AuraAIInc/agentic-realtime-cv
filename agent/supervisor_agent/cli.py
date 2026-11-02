@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 
 from supervisor_agent.agent import MCPAgent, RunOptions, RunResult, ToolStep
 from supervisor_agent.config import AgentConfig
@@ -25,6 +26,16 @@ from supervisor_agent.local_tools import LocalTools
 from supervisor_agent.local_tools.skills import SkillTools
 from supervisor_agent.mcp_hub import MCPHub
 from supervisor_agent.tasks import TaskRunner, chat_options
+
+logger = logging.getLogger(__name__)
+
+
+def _out(text: str = "", *, flush: bool = False) -> None:
+    """Write one stdout line: the CLI's output channel (logging goes to stderr)."""
+    sys.stdout.write(str(text) + "\n")
+    if flush:
+        sys.stdout.flush()
+
 
 _COLOR = sys.stdout.isatty() and not os.getenv("NO_COLOR")
 
@@ -73,29 +84,29 @@ def _print_event(kind: str, data) -> None:
         turn, req = data
         rest = {k: v for k, v in req.items() if k != "instructions"}
         rest["tools"] = [t["name"] for t in req["tools"]]  # full tool schemas are logged at startup
-        # print(grey(
+        # _out(grey(
         #     f"── LLM request (turn {turn}) ──\n[instructions]\n{req['instructions']}\n[request]\n"
         #     + json.dumps(_redact_images(rest), indent=2, ensure_ascii=False)
         # ), flush=True)
     elif kind == "tool_calls":
         for name, args in data:
-            print(green(f"  → {name}({args})"), flush=True)
+            _out(green(f"  → {name}({args})"), flush=True)
     elif kind == "tool_result":
         s: ToolStep = data
         status = "ERROR" if s.is_error else "ok"
         server = f", server {_secs(s.server_elapsed_ms)}" if s.server_elapsed_ms is not None else ""
         imgs = f", {len(s.images_saved)} image(s) saved" if s.images_saved else ""
-        print(green(f"  ← {s.tool}: {status} (round trip {_secs(s.round_trip_ms)}{server}{imgs})"), flush=True)
+        _out(green(f"  ← {s.tool}: {status} (round trip {_secs(s.round_trip_ms)}{server}{imgs})"), flush=True)
         if s.error:
-            print(green(f"     {s.error}"), flush=True)
+            _out(green(f"     {s.error}"), flush=True)
 
 
 def _print_result(r: RunResult, cfg: AgentConfig) -> None:
-    print("\n" + blue(r.answer.strip()) + "\n")
+    _out("\n" + blue(r.answer.strip()) + "\n")
     u = r.usage
     cost = cfg.estimate_cost_usd(u, r.model)
     cost_s = f"${cost:.4f}" if cost is not None else f"? (no pricing for {r.model})"
-    print(
+    _out(
         grey(
             f"[{r.model} | turns {r.turns} | tool calls {len(r.tool_steps)} | LLM {_secs(r.llm_ms)} | "
             f"tools {_secs(r.tools_ms)} | total {_secs(r.total_ms)} | "
@@ -104,7 +115,7 @@ def _print_result(r: RunResult, cfg: AgentConfig) -> None:
         )
     )
     if r.run_dir:
-        print(grey(f"[trace + images: {r.run_dir}]"))
+        _out(grey(f"[trace + images: {r.run_dir}]"))
 
 
 async def amain(args) -> int:
@@ -122,21 +133,21 @@ async def amain(args) -> int:
         hub.add_local(local, "Cat profiles, reference images, trajectory checks, contact sheets, label set and zones (agent_data/).")
         hub.add_local(SkillTools(), "Task skills (skills/): invoking one loads its full instructions.")
         for name, err in hub.failed.items():
-            print(f"[warning] {name} server unavailable: {err}", file=sys.stderr)
+            logger.warning(f"{name} server unavailable: {err}")
         if not any(t.server not in hub.local for t in hub.tools.values()):
-            print("No MCP tools available; check CAMERA_MCP_URL / IMAGE_MCP_URL and tokens.", file=sys.stderr)
+            logger.error("No MCP tools available; check CAMERA_MCP_URL / IMAGE_MCP_URL and tokens.")
             return 2
         if args.list_tools:
             for t in hub.tools.values():
-                print(f"{t.qualified_name}: {t.description.splitlines()[0] if t.description else ''}")
+                _out(f"{t.qualified_name}: {t.description.splitlines()[0] if t.description else ''}")
             return 0
 
         agent = MCPAgent(cfg, hub, on_event=_print_event)
         if args.task:
             payload = _load_payload(args.payload)
             out = await TaskRunner(agent, local).run(args.task, payload)
-            print(json.dumps(out, indent=2, default=str))
-            print(grey(f"[model called: {out.get('model_called')} | images {out.get('images_used', 0)} | {out.get('elapsed_s')} s | log {out.get('log_id', '-')}]"))
+            _out(json.dumps(out, indent=2, default=str))
+            _out(grey(f"[model called: {out.get('model_called')} | images {out.get('images_used', 0)} | {out.get('elapsed_s')} s | log {out.get('log_id', '-')}]"))
             return 0
         chat_opts = chat_options(local.store) if args.labels else None
         if chat_opts is None and not args.full_tools:
@@ -145,11 +156,11 @@ async def amain(args) -> int:
             r = await agent.run(" ".join(args.query), options=chat_opts)
             _print_result(r, cfg)
             if args.json:
-                print(r.to_json())
+                _out(r.to_json())
             return 0
 
         mode = "label manager" if args.labels else "MCP agent"
-        print(f"{mode} ({cfg.model}) with {len(hub.tools)} tools. Empty line or Ctrl-D to quit.")
+        _out(f"{mode} ({cfg.model}) with {len(hub.tools)} tools. Empty line or Ctrl-D to quit.")
         prev = None
         while True:
             try:
@@ -176,7 +187,9 @@ def _load_payload(arg: str | None) -> dict:
 def main() -> None:
     from dotenv import load_dotenv
 
-    load_dotenv()
+    # Always the repo-root .env (agent/supervisor_agent/cli.py -> parents[2]),
+    # never whatever the current working directory happens to be.
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
     p = argparse.ArgumentParser(description="Muse Spark agent over the RCAT MCP servers")
     p.add_argument("query", nargs="*", help="question to answer (omit for interactive mode)")
     p.add_argument("--servers", help="JSON file: list of {name, url, token}")
@@ -194,7 +207,7 @@ def main() -> None:
     p.add_argument("--full-tools", action="store_true", help="expose every tool in chat (default hides schedules, zones, labels, raw DB reads)")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args()
-    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(asctime)s - [%(levelname)s] %(filename)s:%(lineno)d: %(message)s")
     # Always show the servers and tools loaded at startup.
     logging.getLogger("supervisor_agent.mcp_hub").setLevel(logging.INFO)
     sys.exit(asyncio.run(amain(args)))

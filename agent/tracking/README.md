@@ -42,6 +42,14 @@ Replay a recorded camera stream through the same ingest loop:
   --replay /tmp/stream.jsonl --plot
 ```
 
+Replay straight from MySQL (read-only, no intermediate file):
+
+```bash
+.venv/bin/python -m agent.main --view-id 3 \
+  --start 2026-10-27-14-00 --end 2026-10-27-14-05 \
+  --replay-db --plot
+```
+
 Replay with per-frame process visualization + MP4 for the first cat:
 
 ```bash

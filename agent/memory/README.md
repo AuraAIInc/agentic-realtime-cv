@@ -89,8 +89,9 @@ reads take an `RLock`, so `invoke` never waits on LLM jobs. Rules:
   and never raises into the ingest loop.
 - `TrackingRun` calls `tick()` per message, `store()` on period close and on
   every emitted escalation, and `shutdown()` in `finish()`, so nothing is lost.
-  Run with `--no-memory` to skip memory entirely (no `agent.memory` import),
-  or `--bootstrap-frame frame.jpg` to seed vision descriptions from one image.
+  Memory is currently disconnected by default (tracking only escalates and
+  prints full detail); pass `--memory` to re-enable the link, or
+  `--bootstrap-frame frame.jpg` to seed vision descriptions from one image.
 - Tests use `StubLLMClient` (deterministic, offline) + `drain()` between
   phases; `shutdown()` in a fixture teardown.
 

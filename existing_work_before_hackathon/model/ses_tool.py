@@ -1,8 +1,12 @@
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)  # repo root, not cwd
+import logging
 import os
 import boto3
+
+logger = logging.getLogger(__name__)
 from botocore.exceptions import ClientError
 from model.my_logging import logger
 
@@ -38,7 +42,7 @@ def send_email(email: str, subject: str, context: str) -> bool:
         )
         return True
     except ClientError as e:
-        print(f"Error sending email: {e.response['Error']['Message']}")
+        logger.error(f"Error sending email: {e.response['Error']['Message']}")
         return False
 
 

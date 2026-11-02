@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime
+import itertools
 import json
 import logging
 import math
@@ -63,10 +64,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--view-id", type=int, required=True, help="camera view id (cat ids resolve from cats.yaml tracking_ids)")
     parser.add_argument("--start", required=True, help='window start, e.g. "2026-10-27-14-00"')
-    parser.add_argument("--end", required=True, help='window end minute, same format; the whole minute is included (window is start <= t < end+60s)')
+    parser.add_argument("--end", required=True, help="window end minute, same format; the whole minute is included (window is start <= t < end+60s)")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--live", action="store_true", help="serve a websocket ingest endpoint; the camera pushes until --end or Ctrl-C")
     mode.add_argument("--replay", metavar="PATH", help="replay a camera-format stream.jsonl file filtered to the window")
+    mode.add_argument("--replay-db", action="store_true", help="replay raw detections straight from MySQL (read-only, no intermediate file)")
     parser.add_argument("--port", type=int, default=8000, help="listen port for --live (default 8000)")
     parser.add_argument("--min-conf", type=float, default=0.5, help="keep detections strictly above this confidence (default 0.5)")
     parser.add_argument("--plot", action=argparse.BooleanOptionalAction, default=True, help="write original.png/revised.png charts (default --plot)")
@@ -78,8 +80,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--memory",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="feed period verdicts + escalations to spatial-temporal memory (default --memory; --no-memory skips it entirely)",
+        default=False,
+        help="feed period verdicts + escalations to spatial-temporal memory (default --no-memory: "
+        "tracking only escalates and prints full detail; pass --memory to re-enable the agent link)",
     )
     parser.add_argument(
         "--bootstrap-frame",
@@ -265,9 +268,14 @@ def period_row_to_memory_event(row: list, *, view_id: int, id_to_name=None, box=
     name = (id_to_name or {}).get(coord) if coord is not None else None
     text = _period_text(pid, start, end, coord, name, row[3], row[4], row[7])
     return MemoryEvent(
-        time=start, end_time=end, view_id=int(view_id), box=box,
-        cat_id=int(coord) if coord is not None else None, period_id=pid,
-        kind="period", text=text,
+        time=start,
+        end_time=end,
+        view_id=int(view_id),
+        box=box,
+        cat_id=int(coord) if coord is not None else None,
+        period_id=pid,
+        kind="period",
+        text=text,
     )
 
 
@@ -282,13 +290,24 @@ def period_dict_to_memory_event(row: dict, *, view_id: int, id_to_name=None, box
     winner = row.get("winner") or {}
     name = (id_to_name or {}).get(coord) if coord is not None else None
     text = _period_text(
-        pid, start, end, coord, name,
-        winner.get("detect_length"), winner.get("detect_conf"), winner.get("score"),
+        pid,
+        start,
+        end,
+        coord,
+        name,
+        winner.get("detect_length"),
+        winner.get("detect_conf"),
+        winner.get("score"),
     )
     return MemoryEvent(
-        time=start, end_time=end, view_id=int(view_id), box=box,
-        cat_id=int(coord) if coord is not None else None, period_id=pid,
-        kind="period", text=text,
+        time=start,
+        end_time=end,
+        view_id=int(view_id),
+        box=box,
+        cat_id=int(coord) if coord is not None else None,
+        period_id=pid,
+        kind="period",
+        text=text,
     )
 
 
@@ -297,9 +316,15 @@ def escalation_to_memory_event(esc, *, view_id: int, box=None):
     from agent.memory import MemoryEvent
 
     return MemoryEvent(
-        time=esc.time, end_time=esc.end_time, view_id=int(view_id), box=box,
-        cat_id=esc.cat_id, period_id=esc.period_id, kind="escalation",
-        text=f"[{esc.code}] {esc.reason}", code=esc.code,
+        time=esc.time,
+        end_time=esc.end_time,
+        view_id=int(view_id),
+        box=box,
+        cat_id=esc.cat_id,
+        period_id=esc.period_id,
+        kind="escalation",
+        text=f"[{esc.name or esc.code}] {esc.reason}",
+        code=esc.code,
     )
 
 
@@ -310,10 +335,15 @@ def escalation_dict_to_memory_event(row: dict, *, view_id: int, box=None):
     time = parse_message_time(row["time"])
     end_raw = row.get("end_time")
     return MemoryEvent(
-        time=time, end_time=parse_message_time(end_raw) if end_raw else None,
-        view_id=int(view_id), box=box, cat_id=row.get("cat_id"),
-        period_id=row.get("period_id"), kind="escalation",
-        text=f"[{row.get('code')}] {row.get('reason')}", code=row.get("code"),
+        time=time,
+        end_time=parse_message_time(end_raw) if end_raw else None,
+        view_id=int(view_id),
+        box=box,
+        cat_id=row.get("cat_id"),
+        period_id=row.get("period_id"),
+        kind="escalation",
+        text=f"[{row.get('name') or row.get('code')}] {row.get('reason')}",
+        code=row.get("code"),
     )
 
 
@@ -338,7 +368,7 @@ class TrackingRun:
         mode: str = "replay",
         args_dict: dict | None = None,
         record_raw: bool = False,
-        memory: bool = True,
+        memory: bool = False,  # disconnected for now; pass True / --memory to re-enable
         memory_store_path=None,
         memory_llm_client=None,
         bootstrap_frame: str | None = None,
@@ -351,8 +381,9 @@ class TrackingRun:
         self._known = set(self.cat_ids)
         self.store = store
         self.sink = FileSink(store)
-        self.track = TrackCorrector(cat_ids=self.cat_ids)
-        self.period = PeriodCorrector(cat_ids=self.cat_ids)
+        self._esc_seq = itertools.count(1)  # run-wide escalation numbering, shared by both correctors
+        self.track = TrackCorrector(cat_ids=self.cat_ids, escalation_seq=self._esc_seq)
+        self.period = PeriodCorrector(cat_ids=self.cat_ids, escalation_seq=self._esc_seq)
         self.min_conf = min_conf
         self.process_viz = process_viz
         self.cat_idx = cat_idx
@@ -415,11 +446,7 @@ class TrackingRun:
     def _period_box(self, period_id) -> tuple | None:
         """Median box of a closed period's detections (None when unavailable)."""
         try:
-            boxes = [
-                [d[1], d[2], d[3], d[4]]
-                for d in self.period.detections
-                if len(d) >= 9 and d[8] == period_id and d[1] is not None
-            ]
+            boxes = [[d[1], d[2], d[3], d[4]] for d in self.period.detections if len(d) >= 9 and d[8] == period_id and d[1] is not None]
         except Exception:
             return None
         if not boxes:
@@ -440,7 +467,9 @@ class TrackingRun:
         try:
             pid = row[14] if isinstance(row, list) and len(row) > 14 else None
             event = period_row_to_memory_event(
-                row, view_id=self.view_id, id_to_name=self.id_to_name,
+                row,
+                view_id=self.view_id,
+                id_to_name=self.id_to_name,
                 box=self._period_box(pid),
             )
             self.memory.store(event)
@@ -506,6 +535,13 @@ class TrackingRun:
         if self.process_viz:
             self._render_frame()
         self.counts["messages_processed"] += 1
+        # logger.info(
+        #     "frame #%d %s kept=%d escs=%d",
+        #     self.counts["messages_processed"],
+        #     create_time.strftime("%m-%d %H:%M:%S"),
+        #     stats["kept"],
+        #     len(self._escs.all),
+        # )
         return "processed"
 
     def _ingest(self, create_time, img_detected: dict, msg: dict) -> None:
@@ -520,9 +556,29 @@ class TrackingRun:
         ):
             if is_append:
                 for row in self.period.process_detection(revised, view_id=self.view_id, sink=self.sink):
+                    self._log_period_row(row)
                     self._memory_store_period_row(row)
             else:
                 self.period.unprocess_detection(revised)
+
+    def _log_period_row(self, row) -> None:
+        """One summary line per closed period (same fields as the memory event)."""
+        if row is None:  # finish_up yields padding Nones between real rows
+            return
+        coord = row[2]
+        logger.info(
+            "period closed: %s",
+            _period_text(
+                row[14] if len(row) > 14 else None,
+                _parse_period_ts(row[0]),
+                _parse_period_ts(row[1]),
+                coord,
+                self.id_to_name.get(coord) if coord is not None else None,
+                row[3],
+                row[4],
+                row[7],
+            ),
+        )
 
     def _persist_new_escalations(self) -> None:
         for esc in self._escs.drain(self.track):
@@ -547,6 +603,7 @@ class TrackingRun:
         self.track.finish_up(self.sink)
         self._persist_new_escalations()
         for row in self.period.finish_up(self.view_id, self.sink):
+            self._log_period_row(row)
             self._memory_store_period_row(row)
         self._persist_new_escalations()
         if self._raw_fh is not None:
@@ -738,13 +795,36 @@ def run_replay(run: TrackingRun, path: str) -> Path:
     return run.finish()
 
 
+def run_replay_db(run: TrackingRun) -> Path:
+    from agent.tracking.db_stream import connect, fetch_messages
+
+    try:
+        db = connect()
+    except Exception as e:
+        raise SystemExit(f"cannot connect to MySQL for --replay-db: {e}")
+    try:
+        for msg in fetch_messages(db, run.view_id, run.start, run.end_exclusive):
+            try:
+                run.process_message(msg)
+            except Exception:
+                run.counts["messages_error"] += 1
+                logger.exception("dropping message after ingest error")
+    except KeyboardInterrupt:
+        logger.warning("interrupted (Ctrl-C); finalizing partial run")
+    logger.info(f"replayed db: {run.counts['messages_processed']} processed, {run.counts['messages_seen']} seen")
+    return run.finish()
+
+
 # ---------------------------------------------------------------- main
 
 
 def main(argv=None) -> int:
+    from agent.env import load_repo_env
+
+    load_repo_env()
     parser = build_arg_parser()
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - [%(levelname)s] %(filename)s:%(lineno)d: %(message)s")
     try:
         start, end_exclusive = resolve_window(args.start, args.end)
     except ValueError as e:
@@ -758,7 +838,7 @@ def main(argv=None) -> int:
     if args.process_viz and not 0 <= args.cat_idx < len(cat_ids):
         parser.error(f"--cat-idx {args.cat_idx} out of range for {len(cat_ids)} cats (0..{len(cat_ids) - 1})")
 
-    mode = "live" if args.live else "replay"
+    mode = "live" if args.live else ("replay_db" if args.replay_db else "replay")
     now = datetime.datetime.now()
     end_minute = end_exclusive - datetime.timedelta(seconds=60)
     run_name = f"view{args.view_id}_{start:%Y%m%d-%H%M}_{end_minute:%H%M}_{mode}_{now:%Y%m%d-%H%M%S-%f}"
@@ -785,10 +865,11 @@ def main(argv=None) -> int:
     logger.info(f"run dir: {store.run_dir} (view {args.view_id}, cats {cat_ids})")
     if args.live:
         return run_live(run, args.port)
+    if args.replay_db:
+        return run_replay_db(run)
     run_replay(run, args.replay)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
