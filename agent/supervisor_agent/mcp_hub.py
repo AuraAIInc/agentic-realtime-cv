@@ -8,7 +8,6 @@ warning; the agent still runs with the others.
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -156,18 +155,13 @@ def _dump(model) -> dict | None:
 
 
 def _log_tool(t: HubTool) -> None:
-    lines = [f"Tool {t.qualified_name}" + (f" ({t.title})" if t.title else "")]
-    lines.append("  description: " + (t.description.strip().replace("\n", "\n    ") or "(none)"))
-    lines.append("  input_schema: " + json.dumps(t.input_schema, indent=2).replace("\n", "\n  "))
-    if t.output_schema:
-        lines.append("  output_schema: " + json.dumps(t.output_schema, indent=2).replace("\n", "\n  "))
-    if t.annotations:
-        lines.append("  annotations: " + json.dumps(t.annotations))
-    if t.execution:
-        lines.append("  execution: " + json.dumps(t.execution))
-    if t.meta:
-        lines.append("  _meta: " + json.dumps(t.meta, default=str))
-    logger.info("\n".join(lines))
+    schema = t.input_schema or {}
+    required = set(schema.get("required") or [])
+    params = ", ".join(f"{name}{'' if name in required else '?'}" for name in (schema.get("properties") or {}))
+    desc = " ".join((t.description or "(none)").split())
+    if len(desc) > 120:
+        desc = desc[:117] + "..."
+    logger.info("Tool %s(%s): %s", t.qualified_name, params, desc)
 
 
 def _short_error(e: BaseException) -> str:

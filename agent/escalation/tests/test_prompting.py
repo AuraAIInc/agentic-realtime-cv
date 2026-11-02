@@ -453,11 +453,11 @@ def test_unknown_code_falls_back():
     assert "Validate:" in prompt
 
 
-def test_emit_logs_prompt_after_escalation(caplog, capsys):
+def test_emit_logs_prompt_after_escalation(caplog):
     with caplog.at_level(logging.INFO, logger="agent.escalation.escalation"):
         emit([], _esc("T2", cat_id=25, metrics={"original_cat_id": 26, "rule": "distance"}))
-    assert json.loads(capsys.readouterr().out.strip())["code"] == "T2"
     texts = [r.getMessage() for r in caplog.records]
+    assert any(t.startswith("Escalation E6-T2:") and '"code": "T2"' in t for t in texts)
     prompt_logs = [t for t in texts if "Escalation prompt E6-T2" in t]
     assert len(prompt_logs) == 1
     assert "Validate:" in prompt_logs[0]

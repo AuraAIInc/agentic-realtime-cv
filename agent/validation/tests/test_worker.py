@@ -74,6 +74,45 @@ def test_ensure_supervisor_importable_puts_agent_on_path(monkeypatch):
     assert sys.path.count(agent_dir) == 1
 
 
+def test_backend_receives_full_prompt_and_schema():
+    from agent.escalation import build_prompt, review_schema_json
+
+    seen = {}
+
+    async def backend(query, schema, code):
+        seen["query"], seen["schema"], seen["code"] = query, schema, code
+        return _review_json()
+
+    worker = ValidationWorker(backend=backend)
+    worker.start()
+    esc = _esc()
+    worker.enqueue(esc)
+    worker.stop(timeout=30)
+    expected, _ = build_validation_query(esc)
+    assert seen["query"] == expected
+    assert "Validate:" in seen["query"] and "Resources" in seen["query"]
+    assert seen["schema"] == json.loads(review_schema_json("T2"))
+    assert seen["code"] == "T2"
+    assert build_prompt(esc) in seen["query"]  # full escalation prompt, nothing truncated
+
+
+def test_agent_event_log_covers_all_kinds(caplog):
+    import logging
+    from types import SimpleNamespace
+
+    from agent.validation.worker import _agent_event_log
+
+    with caplog.at_level(logging.INFO, logger="agent.validation.worker"):
+        _agent_event_log("tool_calls", [("images__get_image", '{"a": 1}')])
+        _agent_event_log("tool_result", SimpleNamespace(tool="images__get_image", is_error=False, round_trip_ms=12.3, error=""))
+        _agent_event_log("tool_result", SimpleNamespace(tool="t", is_error=True, round_trip_ms=1.0, error="boom"))
+        _agent_event_log("llm_text", (2, "looking at frames"))
+    assert "tool call: images__get_image" in caplog.text
+    assert "tool result: images__get_image: ok (round trip 12.3 ms)" in caplog.text
+    assert "tool error: boom" in caplog.text
+    assert "turn 2 text:\nlooking at frames" in caplog.text
+
+
 def test_worker_failure_journals_error_op_and_continues():
     async def backend(query, schema, code):
         if code == "T2":

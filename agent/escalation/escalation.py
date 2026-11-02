@@ -2,8 +2,8 @@
 
 TrackCorrector (frame scope) flags the exact image where it faced a difficult
 choice while building a track; PeriodCorrector (period scope) flags whole
-periods whose verdict is shaky. Each point is one JSON line on stdout
-(machine-readable for the human/AI review trigger) and one record in the
+periods whose verdict is shaky. Each point is logged (record, reviewer prompt,
+expected output schema) for the human/AI review trigger, and appended to the
 corrector's ``escalations`` list (drawn by run_tracking_viz.py).
 
 Frame codes (TrackCorrector):
@@ -36,7 +36,6 @@ from __future__ import annotations
 import datetime
 import json
 import math
-import sys
 import logging
 from dataclasses import dataclass, field
 
@@ -88,13 +87,12 @@ def esc_label(esc) -> str:
 
 
 def emit(escalations: list, esc: Escalation) -> Escalation:
-    """Record the point for the visualizer and write one JSON line to stdout for review."""
+    """Record the point for the visualizer and log it (record, prompt, schema) for review."""
     from agent.escalation.prompting import build_prompt
     from agent.escalation.review_schema import review_schema_json
 
     escalations.append(esc)
-    sys.stdout.write(esc.to_json() + "\n")
-    sys.stdout.flush()
+    logger.info("Escalation %s: %s", esc.name or esc.code, esc.to_json())
     logger.info("Escalation prompt %s:\n%s", esc.name or esc.code, build_prompt(esc))
     logger.info("Escalation output schema %s:\n%s", esc.name or esc.code, review_schema_json(esc.code))
     return esc

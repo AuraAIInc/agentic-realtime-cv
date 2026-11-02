@@ -58,6 +58,19 @@ def test_instructions_folded_into_message_list_query():
     assert query == snapshot  # caller-owned list untouched
 
 
+def test_llm_text_event_fires_every_turn():
+    events = []
+    hub = MCPHub([])
+    hub.add_local(FakeServer("echo", {"ping": lambda **a: {"ok": True}}))
+    cfg = AgentConfig(model="fake", save_dir=None)
+    agent = MCPAgent(cfg, hub, client=ScriptedModel([[("echo__ping", {})], "done"]), on_event=lambda k, d: events.append((k, d)))
+    import asyncio
+    asyncio.run(agent.run("is any cat visible?", options=RunOptions(tool_names=["echo__ping"])))
+    texts = [d for k, d in events if k == "llm_text"]
+    assert texts == [(1, ""), (2, "done")]
+    assert [k for k, _ in events] == ["llm_request", "llm_text", "tool_calls", "tool_result", "llm_request", "llm_text"]
+
+
 def test_empty_instructions_means_none_for_chained_retries():
     agent, _ = make_agent(["done"])
     import asyncio

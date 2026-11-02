@@ -173,6 +173,7 @@ class MCPAgent:
                 usage=turn_usage,
                 calls=[{"name": c.name, "arguments": c.arguments, "call_id": c.call_id} for c in calls],
             ))
+            self.on_event("llm_text", (turn, output_text))
             if not calls:
                 result.answer = output_text
                 break

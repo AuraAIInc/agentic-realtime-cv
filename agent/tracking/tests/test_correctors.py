@@ -102,33 +102,42 @@ def test_match_rule_classification():
     assert tc2.match_buffer_history_rule(0, {0: new_box + [0, 0.7]}, 0) is None
 
 
-def test_track_duplicate_tie_escalates_with_json_log():
+def test_track_duplicate_tie_escalates_with_json_log(caplog):
+    import logging
+
     tc = TrackCorrector(cat_ids=[0, 1])
     box = [10, 10, 100, 100]
     img = {0: box + [0, 0.60], 1: box + [1, 0.62]}
-    buf = io.StringIO()
-    with redirect_stdout(buf):
+    with caplog.at_level(logging.INFO, logger="agent.escalation.escalation"):
         list(tc.process_images(T0, img, 0, 0, 0, 0))
     codes = [e.code for e in tc.escalations]
     assert "T3" in codes
-    lines = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
+    lines = [
+        json.loads(t.split(": ", 1)[1])
+        for t in (r.getMessage() for r in caplog.records)
+        if t.startswith("Escalation E") and ": {" in t
+    ]
     assert any(o.get("code") == "T3" and o["escalation"] is True for o in lines)
 
 
-def test_shared_counter_numbers_frame_and_period_continuously():
+def test_shared_counter_numbers_frame_and_period_continuously(caplog):
     import itertools
+    import logging
 
     seq = itertools.count(1)
     tc = TrackCorrector(cat_ids=[0, 1], escalation_seq=seq)
     pc = PeriodCorrector(cat_ids=[0, 1], escalation_seq=seq)
-    buf = io.StringIO()
-    with redirect_stdout(buf):
+    with caplog.at_level(logging.INFO, logger="agent.escalation.escalation"):
         tc._escalate("T5", "frame one", T0)
         pc._escalate("P1", "period one", T0, T0)
         tc._escalate("T3", "frame two", T0)
     assert [e.name for e in tc.escalations] == ["E1-T5", "E3-T3"]
     assert [e.name for e in pc.escalations] == ["E2-P1"]
-    lines = [json.loads(line) for line in buf.getvalue().splitlines()]
+    lines = [
+        json.loads(t.split(": ", 1)[1])
+        for t in (r.getMessage() for r in caplog.records)
+        if t.startswith("Escalation E") and ": {" in t
+    ]
     assert [o["name"] for o in lines] == ["E1-T5", "E2-P1", "E3-T3"]
 
 

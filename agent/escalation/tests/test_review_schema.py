@@ -43,14 +43,16 @@ def test_unknown_code_falls_back_to_base_model():
     assert set(json.loads(review_schema_json("T9"))["properties"]) == {"verdict"}
 
 
-def test_emit_logs_schema_after_prompt(caplog, capsys):
+def test_emit_logs_schema_after_prompt(caplog):
     import datetime
 
     esc = Escalation(time=datetime.datetime(2026, 10, 28, 16, 35, 21), scope="frame", code="T2", reason="r", seq=6)
     with caplog.at_level(logging.INFO, logger="agent.escalation.escalation"):
         emit([], esc)
-    assert json.loads(capsys.readouterr().out.strip())["name"] == "E6-T2"
     texts = [r.getMessage() for r in caplog.records]
+    records = [t for t in texts if t.startswith("Escalation E6-T2:")]
+    assert len(records) == 1
+    assert json.loads(records[0].split(": ", 1)[1])["name"] == "E6-T2"
     assert any(t.startswith("Escalation prompt E6-T2:") for t in texts)
     schemas = [t for t in texts if t.startswith("Escalation output schema E6-T2:")]
     assert len(schemas) == 1

@@ -45,6 +45,26 @@ VALIDATION_TOOLS = ["images__get_image", "images__list_images", "tracking__get_p
 _SENTINEL = object()
 
 
+def _agent_event_log(kind: str, data) -> None:
+    """Terminal log for one supervisor-agent event during validation."""
+    if kind == "tool_calls":
+        for name, args in data:
+            logger.info("validation agent tool call: %s(%s)", name, args)
+    elif kind == "tool_result":
+        status = "ERROR" if data.is_error else "ok"
+        logger.info(
+            "validation agent tool result: %s: %s (round trip %.1f ms)",
+            data.tool,
+            status,
+            data.round_trip_ms,
+        )
+        if data.error:
+            logger.info("validation agent tool error: %s", data.error)
+    elif kind == "llm_text":
+        turn, text = data
+        logger.info("validation agent turn %d text:\n%s", turn, text)
+
+
 def _strip_fences(text: str) -> str:
     text = (text or "").strip()
     if text.startswith("```"):
@@ -141,15 +161,17 @@ class ValidationWorker:
         cfg = AgentConfig.from_env()
         try:
             async with MCPHub(cfg.servers) as hub:
-                agent = MCPAgent(cfg, hub)
+                agent = MCPAgent(cfg, hub, on_event=_agent_event_log)
                 logger.info("validation worker connected to supervisor backends")
 
                 async def run_agent(query: str, schema: dict, code: str) -> str:
+                    logger.info("validation agent full prompt for %s:\n%s", code, query)
                     fmt = {"type": "json_schema", "name": f"{code}_review", "schema": _strict(schema)}
                     result = await agent.run(
                         query,
                         options=RunOptions(text_format=fmt, tool_names=list(VALIDATION_TOOLS), tag="validation"),
                     )
+                    logger.info("validation agent final answer:\n%s", result.answer)
                     return result.answer
 
                 await self._consume(run_agent)

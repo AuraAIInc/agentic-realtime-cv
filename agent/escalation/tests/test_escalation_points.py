@@ -10,10 +10,8 @@ Run from repo root:
 from __future__ import annotations
 
 import datetime
-import io
 import json
 import os
-from contextlib import redirect_stdout
 
 import numpy as np
 
@@ -30,13 +28,6 @@ from agent.escalation import (
 )
 
 T0 = datetime.datetime(2025, 12, 18, 15, 3, 0)
-
-
-def _capture(fn, *args, **kwargs):
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        out = fn(*args, **kwargs)
-    return out, buf.getvalue()
 
 
 # ---------------------------------------------------------------- pure helpers
@@ -98,11 +89,22 @@ def test_window_static():
     assert max_displacement([[0, 0, 10, 10], [3, 4, 13, 14]]) == 5.0
 
 
-def test_emit_appends_and_prints_json():
+def test_emit_appends_and_logs_json(caplog):
+    import logging
+
     col = []
-    esc, printed = _capture(emit, col, Escalation(time=T0, scope="period", code="P1", reason="close"))
+    with caplog.at_level(logging.INFO, logger="agent.escalation.escalation"):
+        esc = emit(col, Escalation(time=T0, scope="period", code="P1", reason="close"))
     assert col == [esc]
-    assert json.loads(printed.strip())["code"] == "P1"
+    recs = [
+        r.getMessage()
+        for r in caplog.records
+        if r.getMessage().startswith("Escalation ")
+        and not r.getMessage().startswith("Escalation prompt ")
+        and not r.getMessage().startswith("Escalation output schema ")
+    ]
+    assert len(recs) == 1
+    assert json.loads(recs[0].split(": ", 1)[1])["code"] == "P1"
 
 
 def _with_env(vars):
