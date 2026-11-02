@@ -146,6 +146,34 @@ def test_stats_only_rollup_still_drives_upper_levels(tmp_path):
         m.shutdown()
 
 
+def test_nonforce_temporal_promote_maps_children_to_parents(tmp_path):
+    # Non-force promote: summarized hour buckets must drive their DAY parent,
+    # not be mistaken for day ids (used to crash in bucket_start with
+    # "unconverted data remains: T16:00").
+    from agent.memory import MemoryEvent
+    import datetime
+
+    cfg = MemoryConfig.from_yaml()
+    m = LongTermMemory(
+        config=cfg, store_path=tmp_path / "mem.yaml", llm_client=StubLLMClient()
+    )
+    try:
+        for minute in (2, 7, 33):
+            m.store(MemoryEvent(
+                time=datetime.datetime(2026, 10, 31, 14, minute), view_id=3,
+                box=(500.0, 300.0, 600.0, 400.0), cat_id=1, text="Qb naps.",
+            ))
+        m.drain()
+        m.promote()  # non-force: dirty-subtree walk across slot -> hour -> day
+        m.drain()
+        hour = m.mem_store.get_temporal("hour", "2026-10-31T14:00")
+        assert hour is not None and hour.stats["visits"] == 3
+        day = m.mem_store.get_temporal("day", "2026-10-31")
+        assert day is not None and day.stats["visits"] == 3
+    finally:
+        m.shutdown()
+
+
 def test_promote_budget_defers_and_resumes(tmp_path):
     cfg = MemoryConfig.from_yaml()
     cfg.max_units_per_call = 1  # one LLM call per promotion

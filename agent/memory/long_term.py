@@ -858,7 +858,16 @@ class LongTermMemory:
                         continue
                     bids.add(self.temporal.bucket_id(level, start))
             else:
-                bids = {bid for (lv, bid) in changed if lv == child_level}
+                # changed holds child-level ids: map each up to its parent.
+                bids = set()
+                for lv, cid in changed:
+                    if lv != child_level:
+                        continue
+                    try:
+                        start = self.temporal.bucket_start(child_level, cid)
+                    except ValueError:
+                        continue
+                    bids.add(self.temporal.bucket_id(level, start))
             for bid in sorted(bids):
                 kids = []
                 for cid in self.temporal.child_ids(level, bid):
