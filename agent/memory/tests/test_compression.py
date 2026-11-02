@@ -146,6 +146,42 @@ def test_stats_only_rollup_still_drives_upper_levels(tmp_path):
         m.shutdown()
 
 
+def test_temporal_stats_rollup_drives_day_and_week(tmp_path):
+    # Non-force promote: slot stats roll into hour, then hour into day, then
+    # day into week. Regression test: the day/week passes used to feed
+    # child-level ids straight into child_ids(), crashing with
+    # "ValueError: unconverted data remains: T16:00" and dropping the job.
+    from agent.memory import MemoryEvent
+    import datetime
+
+    cfg = MemoryConfig.from_yaml()
+    m = LongTermMemory(
+        config=cfg, store_path=tmp_path / "mem.yaml", llm_client=StubLLMClient()
+    )
+    try:
+        when = datetime.datetime(2026, 10, 31, 14, 2)
+        m.store(MemoryEvent(
+            time=when, view_id=3,
+            box=(500.0, 300.0, 600.0, 400.0), cat_id=1, text="Qb naps once.",
+        ))
+        m.drain()
+        receipt = m.promote()  # non-force: dirty-subtree walk
+        m.drain()
+        assert receipt.error is None
+        hour = m.mem_store.get_temporal("hour", "2026-10-31T14:00")
+        assert hour is not None and hour.stats["visits"] == 1
+        day = m.mem_store.get_temporal("day", "2026-10-31")
+        assert day is not None and day.stats["visits"] == 1
+        week_id = m.temporal.week_id(when)
+        week = m.mem_store.get_temporal("week", week_id)
+        assert week is not None and week.stats["visits"] == 1
+        # parents are stored under parent-level ids, never child-level ids
+        assert "T" not in "".join(m.mem_store.temporal.get("day", {}))
+        assert set(m.mem_store.temporal.get("week", {})) == {week_id}
+    finally:
+        m.shutdown()
+
+
 def test_promote_budget_defers_and_resumes(tmp_path):
     cfg = MemoryConfig.from_yaml()
     cfg.max_units_per_call = 1  # one LLM call per promotion

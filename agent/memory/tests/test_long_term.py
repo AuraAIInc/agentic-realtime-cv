@@ -103,6 +103,7 @@ def test_promote_and_tick(mem):
     r2 = mem.promote()
     mem.drain()
     assert r1.done and r2.done  # coalesced or sequential: both complete
+    assert r1.error is None and r2.error is None
     assert mem.tick(mem.last_store + datetime.timedelta(seconds=60)) is None
     receipt = mem.tick(mem.last_store + datetime.timedelta(seconds=301))
     assert receipt is not None and receipt.kind == "promote"
