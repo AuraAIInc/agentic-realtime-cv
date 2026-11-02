@@ -73,6 +73,7 @@ class RunStore:
     PERIODS_FILE = "periods.jsonl"
     IMAGES_FILE = "images.jsonl"
     ESCALATIONS_FILE = "escalations.jsonl"
+    VALIDATIONS_FILE = "validations.jsonl"
     RUN_FILE = "run.json"
 
     def __init__(self, run_name: str, base_dir: str | Path | None = None):
@@ -86,6 +87,7 @@ class RunStore:
             "images": 0,
             "escalations": 0,
             "deleted": 0,
+            "validations": 0,
         }
         self._handles = {}
         for key, fname in (
@@ -94,6 +96,7 @@ class RunStore:
             ("periods", self.PERIODS_FILE),
             ("images", self.IMAGES_FILE),
             ("escalations", self.ESCALATIONS_FILE),
+            ("validations", self.VALIDATIONS_FILE),
         ):
             self._handles[key] = open(self.run_dir / fname, "a", encoding="utf-8")
 
@@ -121,6 +124,10 @@ class RunStore:
         """Append one escalation via ``esc.to_json()`` to ``escalations.jsonl``."""
         self._handles["escalations"].write(esc.to_json() + "\n")
         self.counters["escalations"] += 1
+
+    def append_validation(self, op: dict) -> None:
+        """Append one validation op (escalation snapshot + parsed verdict) to ``validations.jsonl``."""
+        self._append("validations", op)
 
     def append_deleted_revised(self, row: dict) -> None:
         """Append a ``deleted: true`` tombstone for a retracted revised row."""

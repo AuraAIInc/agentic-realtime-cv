@@ -34,7 +34,7 @@ def test_runstore_creates_run_dir_and_jsonl(tmp_path):
     for fname in ("stream.jsonl", "revised.jsonl", "periods.jsonl", "escalations.jsonl", "run.json"):
         assert (run_dir / fname).is_file(), fname
     assert json.loads(meta_path.read_text())["view_id"] == 3
-    assert store.counters == {"stream": 1, "revised": 1, "periods": 1, "images": 1, "escalations": 1, "deleted": 0}
+    assert store.counters == {"stream": 1, "revised": 1, "periods": 1, "images": 1, "escalations": 1, "deleted": 0, "validations": 0}
     esc_line = json.loads((run_dir / "escalations.jsonl").read_text().splitlines()[0])
     assert esc_line["code"] == "T5" and esc_line["escalation"] is True
     assert (esc_line["seq"], esc_line["name"]) == (4, "E4-T5")

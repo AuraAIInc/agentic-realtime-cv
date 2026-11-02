@@ -18,6 +18,8 @@ Run directory (<out>/<run_name>/):
   revised.jsonl     committed revised rows (+ deleted:true tombstones)
   periods.jsonl     period verdicts; images.jsonl: per-frame capture log
   escalations.jsonl one Escalation JSON object per line
+  validations.jsonl (only with --validate) one validation op per escalation
+  validated.jsonl + validated.db (only with --validate) verdict-corrected rows
   original.png / revised.png  timeline strip charts (unless --no-plot)
   process_frames/*.jpg + process.mp4  (only with --process-viz)
   run.json          args, view, cat mapping, counts incl. escalations by code
@@ -89,6 +91,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         default=None,
         help="image file used once to bootstrap memory vision descriptions (optional)",
+    )
+    parser.add_argument(
+        "--validate",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="validate every escalation live with the supervisor agent and write validated_detection "
+        "outputs (default --no-validate: escalations are only logged)",
     )
     return parser
 
@@ -372,6 +381,8 @@ class TrackingRun:
         memory_store_path=None,
         memory_llm_client=None,
         bootstrap_frame: str | None = None,
+        validate: bool = False,
+        validator=None,  # inject a ValidationWorker (tests); otherwise built when validate=True
     ):
         self.view_id = int(view_id)
         self.start = start
@@ -415,6 +426,20 @@ class TrackingRun:
                 self.memory.bootstrap(Path(bootstrap_frame).read_bytes())
             except Exception:
                 logger.exception("memory bootstrap failed; continuing in text-only mode")
+        self.validator = validator
+        if self.validator is None and validate:
+            from agent.validation import ValidationWorker
+
+            self.validator = ValidationWorker(journal=store.append_validation, memory=self.memory, box_lookup=self._esc_box)
+        if self.validator is not None:
+            self.validator.start()
+
+    def _esc_box(self, esc):
+        """Median box of the escalation's period for memory context (None when unavailable)."""
+        try:
+            return self._period_box(esc.period_id)
+        except Exception:
+            return None
 
     # -- memory (all hooks are best-effort; they never break the run) --
 
@@ -584,9 +609,13 @@ class TrackingRun:
         for esc in self._escs.drain(self.track):
             self.store.append_escalation(esc)
             self._memory_store_escalation(esc)
+            if self.validator is not None:
+                self.validator.enqueue(esc)
         for esc in self._escs.drain(self.period):
             self.store.append_escalation(esc)
             self._memory_store_escalation(esc)
+            if self.validator is not None:
+                self.validator.enqueue(esc)
 
     def _render_frame(self) -> None:
         path = self.frame_dir / f"frame_{self._viz_n:06d}.jpg"
@@ -613,6 +642,17 @@ class TrackingRun:
 
         run_dir = self.store.run_dir
         artifacts = ["stream.jsonl", "revised.jsonl", "periods.jsonl", "images.jsonl", "escalations.jsonl"]
+        ops = []
+        if self.validator is not None:
+            ops = self.validator.stop()
+            try:
+                from agent.validation import materialize
+
+                revised_rows = read_revised_rows(run_dir / RunStore.REVISED_FILE)
+                jsonl_path, db_path, _ = materialize(run_dir, revised_rows, ops)
+                artifacts += [jsonl_path.name, db_path.name, RunStore.VALIDATIONS_FILE]
+            except Exception:
+                logger.exception("validated outputs failed; run keeps revised rows only")
         if self.plot:
             try:
                 original_rows = read_canonical_stream_rows(run_dir / RunStore.STREAM_FILE)
@@ -647,6 +687,10 @@ class TrackingRun:
         counts.update(self.counts)
         counts["escalations_total"] = len(self._escs.all)
         counts["escalations_by_code"] = dict(sorted(by_code.items()))
+        if self.validator is not None:
+            by_verdict: Counter = Counter((op.get("review") or {}).get("verdict", "?") for op in ops)
+            counts["validations_total"] = len(ops)
+            counts["validations_by_verdict"] = dict(sorted(by_verdict.items()))
         end_minute = self.end_exclusive - datetime.timedelta(seconds=60)
         meta = {
             "run_name": run_dir.name,
@@ -861,6 +905,7 @@ def main(argv=None) -> int:
         record_raw=args.live,
         memory=args.memory,
         bootstrap_frame=args.bootstrap_frame,
+        validate=args.validate,
     )
     logger.info(f"run dir: {store.run_dir} (view {args.view_id}, cats {cat_ids})")
     if args.live:
