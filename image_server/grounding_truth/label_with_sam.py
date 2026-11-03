@@ -837,7 +837,7 @@ def main():
         est_sam = total * len(SAM_CONCEPTS)
         est_cost = estimate_cost_usd(est_sam, total * per_call.get("input", 0),
                                      total * per_call.get("output", 0), spark_pricing)
-        est_wall = pilot["seconds"] * total / max(args.workers, 1)
+        est_wall = pilot["seconds"] * (1 + (total - 1) / max(args.workers, 1))
         print(f"ESTIMATE for {total} images (pilot: {pilot['seconds']:.1f}s, "
               f"{per_call.get('input', 0)}/{per_call.get('output', 0)} in/out tokens, "
               f"{per_call_src}): ~{est_sam} SAM + up to {total} Spark calls, "

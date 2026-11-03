@@ -387,7 +387,7 @@ def main():
         per_call_src = "pilot" if pilot["usage"] else "typical"
         est_cost = estimate_cost_usd(total, total * per_call.get("input", 0),
                                      total * per_call.get("output", 0), pricing)
-        est_wall = pilot["seconds"] * total / max(args.workers, 1)
+        est_wall = pilot["seconds"] * (1 + (total - 1) / max(args.workers, 1))
         print(f"ESTIMATE for {total} images (pilot: {pilot['seconds']:.1f}s, "
               f"{per_call.get('input', 0)}/{per_call.get('output', 0)} in/out tokens, "
               f"{per_call_src}): ~{total} calls, ~${est_cost:.4f}, "

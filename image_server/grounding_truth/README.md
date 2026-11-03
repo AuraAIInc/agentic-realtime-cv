@@ -1,9 +1,24 @@
-# SAM grounding truth
+# Grounding truth labelers
 
-Label images under `image_server/retrieved_images/<hour>/` with Muse SAM 3.1
-to build grounding-truth detections for training and evaluation.
+Two scripts label images under `image_server/retrieved_images/<hour>/` to
+build grounding-truth detections for training and evaluation:
 
-## How it works
+| Script | Pipeline | Output | Approx. cost/image |
+| --- | --- | --- | --- |
+| `label_with_sam.py` | SAM 3.1 proposes regions, Muse Spark (Standard) classifies | `muse_labels/` | ~$0.01 |
+| `label_with_spark.py` | Muse Spark 1.3 **Contributor**, one call per image with pydantic-structured output | `spark_labels/` | ~$0.001 |
+
+Both scripts share the same interface (`hour` / `--start` / `--end`,
+`--workers` default 10, `--limit`, `--dry-run`, `--overwrite`), print the
+full first prompt(s), run a one-image pilot to print a cost + time estimate
+before the threaded pool starts, and write a Markdown + JSON session report
+to `grounding_truth/reports/` after every run.
+
+> Contributor warning: `label_with_spark.py` uses the Contributor tier,
+> which grants Meta permission to train on your images and replies. The
+> script prints this warning on every run.
+
+## How it works (`label_with_sam.py`)
 
 Two stages per image (this division was verified by live probing: SAM grounds
 short concepts reliably but returns nothing for descriptive prose, so prose
@@ -174,29 +189,116 @@ grounding_truth/reports/
   session-YYYYMMDD-HHMMSS.json  # same data + per-image records (machine-readable)
 ```
 
+## `label_with_spark.py` (Contributor, single-stage)
+
+One Muse Spark 1.3 Contributor call per image detects and identifies every
+cat. The reply is constrained by a strict JSON schema generated from the
+`SparkBoxes` pydantic class (`extra="forbid"` on every object, as strict
+mode requires), and validated with `model_validate_json` on return — one
+retry, then the image is marked failed so a rerun retries it. Boxes use
+0–1000 coordinates and are converted to YOLO lines in `spark_labels/`.
+
+```bash
+python image_server/grounding_truth/label_with_spark.py \
+  --start 2026-10-28-16-33 --end 2026-10-28-16-33 --limit 5 --dry-run
+python image_server/grounding_truth/label_with_spark.py \
+  --start 2026-10-28-16-33 --end 2026-10-28-16-40
+```
+
+At $0.10/$0.20 per 1M tokens and ~700/3,500 tokens per call, the demo
+window costs roughly $1.
+
+## Prompts (full examples)
+
+Each script run prints the full first prompt(s) and stores them in the
+session report. The three prompts below are copied verbatim from real runs
+on `2026-10-28-16/5502_...304643.jpg` (800×600, sleeping cat, no
+old-detector label on this frame).
+
+### Mode 1a — SAM propose (`label_with_sam.py`, 2 calls/image)
+
+SAM only grounds bare concepts, so each call sends a single word plus the
+image — no descriptions, no reference boxes. The two calls' boxes are
+unioned and deduplicated at IoU 0.5:
+
+```text
+concept 0: animal
+concept 1: a cat
+```
+
+Why these words: live probing showed `animal` has the best recall and
+`a cat` agrees on clear cats, while bare `cat`, `cats`, `kitten`, and any
+descriptive paragraph return zero matches.
+
+### Mode 1b — Spark classify (`label_with_sam.py`, ≤1 call/image)
+
+One Standard-tier call per image that has proposed boxes. It carries both
+cats' full descriptions, the proposed boxes in pixels, and the old
+detector's boxes marked as possibly-wrong context. The model replies with
+plain JSON (`{"boxes": [{"box": 0, "id": 1}]}`), retried once if
+unparseable:
+
+```text
+Identify each boxed region in this 800x600 home-camera frame. Reply with ONLY a JSON object, no other text.
+Cats:
+- id 0 Qb: Short-haired white cat with faint silver shading, round face and blue-green eyes. Cues: Cool white to light silver colour, no warm cream or brown tones; Smooth, sharp body outline (short fur, no fluffy halo); Thin tail with grey rings or a grey tip, often carried upright when walking.
+- id 1 Qbo: Long-haired cream and golden-beige cat with darker brown paws, face and plume tail. Cues: Warm cream / beige colour, clearly warmer than Qb; Fuzzy, soft body outline with a fluffy halo; Big bushy plume tail, wider than the leg, grey-brown.
+Boxes (pixels, x1 y1 x2 y2):
+- box 0: [190,505,299,599]
+Old-detector reference: none (it found nothing; context only, it may have missed a cat).
+Rules: assign each box the id of the cat it shows, or -1 when it shows no cat or you are unsure. Format: {"boxes": [{"box": 0, "id": 1}]}
+```
+
+On a frame where the old detector fired, the reference line instead reads
+e.g. `Old-detector reference (may be wrong; context only, judge from the
+image): class 1 at [209,505,311,599].` Boxes answered `-1` are never
+written.
+
+### Mode 2 — Spark detect (`label_with_spark.py`, 1 call/image)
+
+One Contributor-tier call per image detects and identifies every cat at
+once. Same descriptions and reference-only context as mode 1b, but the
+model also draws the boxes (0–1000 integers), constrained by the strict
+`SparkBoxes` pydantic schema:
+
+```text
+Detect every cat in this 800x600 home-camera frame.
+Cats:
+- id 0 Qb: Short-haired white cat with faint silver shading, round face and blue-green eyes. Cues: Cool white to light silver colour, no warm cream or brown tones; Smooth, sharp body outline (short fur, no fluffy halo); Thin tail with grey rings or a grey tip, often carried upright when walking.
+- id 1 Qbo: Long-haired cream and golden-beige cat with darker brown paws, face and plume tail. Cues: Warm cream / beige colour, clearly warmer than Qb; Fuzzy, soft body outline with a fluffy halo; Big bushy plume tail, wider than the leg, grey-brown.
+Old-detector reference: none (it found nothing; context only, it may have missed a cat).
+Report each box as integers in 0-1000 scale (1000 = full width/height). Skip anything you are unsure about.
+```
+
 ## Cost
 
 SAM 3.1 is billed per image, not per token: **$2.50 per 1,000 images**;
-Muse Spark is billed per token: **$1.25/$4.25 per 1M input/output tokens**
-(Standard mode, verified 2026-11-03 at
+Muse Spark Standard is **$1.25/$4.25 per 1M input/output tokens** and
+Contributor is **$0.10/$0.20** (verified 2026-11-03 at
 <https://dev.meta.ai/docs/pricing-rate-limits>).
-A typical image with cats costs 2 SAM requests ($0.005) + 1 Spark call
-(~$0.005, ~800 in / ~1,000 out tokens):
+A typical image with cats costs 2 SAM requests ($0.005) + 1 Standard
+Spark call (~$0.005, ~800 in / ~1,000 out tokens), or ~$0.001 via the
+Contributor script:
 
-| Job | Images | SAM + Spark calls | Approx. cost |
+| Job | Images | SAM script | Spark script |
 | --- | ---: | ---: | ---: |
-| Smoke test (`--limit 5`) | 5 | 10 + ≤5 | ~$0.05 |
-| One minute (~165 images) | ~165 | ~330 + ≤165 | ~$1.65 |
-| Demo window (16:33–16:40) | 1,319 | 2,638 + ≤1,319 | ~$13 |
-| Full hour | ~4,472 | ~8,944 + ≤4,472 | ~$45 |
+| Smoke test (`--limit 5`) | 5 | ~$0.05 | ~$0.005 |
+| One minute (~165 images) | ~165 | ~$1.65 | ~$0.17 |
+| Demo window (16:33–16:40) | 1,319 | ~$13 | ~$1.30 |
+| Full hour | ~4,472 | ~$45 | ~$4.50 |
 
 Every session report records the exact call counts and estimated cost.
+Real runs also print a pilot-calibrated cost + time estimate before the
+threaded pool starts (dry runs print the cost bound; time needs API calls).
 
 ## Tests
 
 ```bash
-python -m pytest image_server/grounding_truth/test_label_with_sam.py -q
+python -m pytest image_server/grounding_truth/ -q
 ```
 
-Fully offline: SAM output parsing (against the documented grammar), prompt
-construction, time-range discovery, cost math, and report rendering.
+Fully offline. SAM script: output parsing (against the documented grammar),
+prompt construction, IoU dedupe, Spark-JSON parsing, time-range discovery,
+cost math, and report rendering. Spark script: pydantic schema shape
+(`additionalProperties: false`), reply validation, prompt construction,
+0–1000 filtering and conversion, cost math, and report rendering.

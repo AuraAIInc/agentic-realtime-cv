@@ -229,6 +229,7 @@ agent/agent_data/logs/
 agent/agent_data/label_suggestions/
 agent/agent_data/references/**/video/
 image_server/retrieved_images/
+image_server/grounding_truth/reports/
 agent/camera_sim/models/*.pt
 agent/camera_sim/sim_output*.jsonl
 agent/camera_sim/runs/
