@@ -92,7 +92,9 @@ One preamble + one section per member, each section byte-identical to today's
 ```text
 You are reviewing 3 related escalation cases from the same camera window.
 They may share frames and context — fetch each image once and use it for
-every case it belongs to. Judge each case on its own evidence.
+every case it belongs to. Leverage evidence across the whole time window
+for all of the cases, and resolve every case with the minimum total tool
+calls and reasoning steps. Judge each case on its own evidence.
 
 === Case 1 of 3: E6-T2 ===
 <E6 build_prompt output>
