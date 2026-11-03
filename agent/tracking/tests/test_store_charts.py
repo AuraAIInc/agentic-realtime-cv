@@ -132,6 +132,45 @@ def test_charts_render_two_nonempty_pngs(tmp_path):
     assert orig.stat().st_size > 0 and rev.stat().st_size > 0
 
 
+def test_charts_y_axis_zero_to_n_with_lane_separators(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    real_subplots = plt.subplots
+    axes = []
+
+    def spy_subplots(*a, **k):
+        fig, ax = real_subplots(*a, **k)
+        axes.append(ax)
+        return fig, ax
+
+    monkeypatch.setattr(plt, "subplots", spy_subplots)
+    cat_ids = [25, 26]
+    out = tmp_path / "charts"
+    plot_detection_charts(
+        _synth_rows(10, cat_ids),
+        _synth_rows(10, cat_ids),
+        out,
+        cat_ids,
+        cat_names={25: "Qb", 26: "Qbo"},
+        escalations=[Escalation(time=T0 + datetime.timedelta(seconds=20), scope="frame", code="T5", reason="t", seq=1)],
+    )
+    plot_validated_chart(_synth_rows(10, cat_ids), out, cat_ids, cat_names={25: "Qb", 26: "Qbo"})
+
+    assert len(axes) == 3  # original, revised, validated share _plot_strip
+    for ax in axes:
+        assert ax.get_ylim() == (0, 2)
+        assert list(ax.get_yticks()) == [0.5, 1.5]
+        assert [t.get_text() for t in ax.get_yticklabels()] == ["Qb", "Qbo"]
+        seps = [line for line in ax.lines if line.get_linestyle() == ":"]
+        assert len(seps) == 1
+        assert seps[0].get_ydata()[0] == 1
+        assert seps[0].get_color() == "grey"
+        assert seps[0].get_linewidth() == 0.8
+    red_labels = [t for t in axes[0].texts if t.get_color() == "red"]
+    assert [t.get_text() for t in red_labels] == ["E1-T5"]
+    assert {t.get_position()[1] for t in red_labels} == {0}
+
+
 def test_process_frame_labels_escalations_below_the_line(tmp_path, monkeypatch):
     import matplotlib.pyplot as plt
 

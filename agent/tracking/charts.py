@@ -1,10 +1,11 @@
 """Timeline strip charts for tracking runs (Phase 3 of 5).
 
 One lane per cat, x = time, each detection a vertical bar spanning its
-``box_x1..box_x2`` normalized by the image width. Frame-scope escalations
-are red vertical lines; period-scope escalations are red spans clipped to
-the plotted window. Each line/span is labeled with its escalation name
-(``E<seq>-<code>``) at the bottom.
+``box_x1..box_x2`` normalized by the image width. The y axis runs 0..N
+(one unit lane per cat) with thin grey dotted separators between lanes.
+Frame-scope escalations are red vertical lines; period-scope escalations
+are red spans clipped to the plotted window. Each line/span is labeled
+with its escalation name (``E<seq>-<code>``) at the bottom.
 """
 
 from __future__ import annotations
@@ -77,13 +78,15 @@ def _plot_strip(rows, path, title, cat_ids, names, escalations, width):
                 ax.axvspan(label_x, min(end, hi), color="red", alpha=0.12)
             else:
                 ax.axvline(start, color="red", lw=1.5, alpha=0.85)
-            ax.text(label_x, -0.5, esc_label(esc), rotation=90, va="bottom", ha="center", color="red", fontsize=7)
+            ax.text(label_x, 0, esc_label(esc), rotation=90, va="bottom", ha="center", color="red", fontsize=7)
         ax.set_xlim(lo, hi)
         ax.set_title(title)
     else:
         ax.set_title(f"{title} (no data)")
-    ax.set_ylim(-0.5, len(cat_ids) - 0.5)
-    ax.set_yticks(range(len(cat_ids)))
+    ax.set_ylim(0, len(cat_ids))
+    for y in range(1, len(cat_ids)):
+        ax.axhline(y, color="grey", linewidth=0.8, linestyle=":")
+    ax.set_yticks([i + 0.5 for i in range(len(cat_ids))])
     ax.set_yticklabels([names.get(cid, str(cid)) for cid in cat_ids])
     ax.set_xlabel("time")
     ax.set_ylabel("cat")
