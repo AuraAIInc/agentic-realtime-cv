@@ -16,11 +16,14 @@ for v1 (no LLM-generated keywords anywhere); true embedding search is a
 deferred future phase.
 
 Trust policy (built): long-term memory keeps **only high-confidence
-knowledge** — original high-confidence detections and high-confidence
-supervisor-validation conclusions. Escalation occurrences and anything
+knowledge**, and it attaches to **period activity, never escalations**:
+consecutive same-cat periods with gaps under `activity_combine_gap_minutes`
+merge into one activity record, each member labeled by a vision LLM look at
+its key frames against `labels.yaml`. Escalations, raw verdicts, and anything
 untrusted belong to short-term day context, never durable knowledge. Every
 record carries its original image names, the detection snapshot, and
-plain-language text; every spatial zone describes cat appearance, activities,
+plain-language text (which cat, what span, which area, what activity, looks,
+background); every spatial zone describes cat appearance, activities,
 behavior, and background view. Short-term memory is designed and built in
 [short-term-memory-design.md](short-term-memory-design.md).
 
@@ -87,8 +90,10 @@ behavior, and background view. Short-term memory is designed and built in
 - `llm_client.py` - Meta Model API wrapper + `StubLLMClient` for tests.
 - `prompts.py` - store-update, promote-summary, environment-bootstrap prompts.
 - `long_term.py` - `LongTermMemory`: store/invoke/promote/reset/tick/semantic_search.
+- `activity.py` - `PeriodActivityAggregator`: combine + label + narrate records.
 - `short_term.py` - `DailyShortTermMemory`: day log + day-end merge (see the
   short-term design doc).
+- `../validation/labeler.py` - `PeriodLabeler`: key frames → activity labels.
 - `tests/` - offline unit tests + replay integration test.
 
 ### Memory config defaults (`memory_config.yaml`)
@@ -112,6 +117,7 @@ promotion: {idle_seconds: 300, min_pattern_support: 3, stable_weight_cap: 50,
             flip_threshold: 3, recent_kept: 5}
 worker: {queue_warn_depth: 100, promote_coalesce: true}
 store_dir: "agent/memory/data"          # per-view file view_<id>_long_term.yaml (durable; git-ignored)
+activity_combine_gap_minutes: 5.0      # same-cat periods with smaller gaps merge into one memory record
 llm: {model_role: memory, max_units_per_call: 8}
 quality: {min_store_confidence: 0.7, short_term_keyframes: 3}  # trust gate + short-term key frames
 ```
@@ -146,7 +152,8 @@ spatial:
       contradictions: 0          # consecutive contradicting batches vs stable text
       recent: ["2026-10-31T14:00 Qb settled on the left cushion."]
       images: ["2026-10-31-14-00-00-000000.jpg"]   # originals, newest 5
-      detections: [{box: [500, 300, 600, 400], cat_id: 25, conf: 0.9}]  # newest 3
+      detections: [{box: [500, 300, 600, 400], cat_id: 25, conf: 0.9,   # newest 3
+                    period_id: 12, period_ids: [12, 13], activity: "resting"}]
       stats: {visits: 24, by_cat: {qb: 21, qbo: 3}}
       updated: "2026-10-31T14:05:00"
       sources: ["period 12", "period 15"]
@@ -183,9 +190,9 @@ children plus rolled-up counts (computed programmatically, e.g. visit counts).
 - Failure isolation: a job exception is logged and the job is dropped; an LLM
   error degrades that unit to pending-observation mode (raw text kept in
   `recent`); the worker never dies and never raises into the ingest loop.
-- Queue depth is small in practice (stores fire per period close / escalation,
-  not per frame). Past `queue_warn_depth` the worker logs a warning; v1 does not
-  drop stores.
+- Queue depth is small in practice (stores fire per completed activity
+  record, not per frame or per escalation). Past `queue_warn_depth` the worker
+  logs a warning; v1 does not drop stores.
 - Lifecycle: `drain(timeout)` blocks until the queue is empty (tests, run
   finish); `shutdown()` drains then stops the thread. `TrackingRun.finish()`
   calls `shutdown()` so nothing is lost at exit. `reset()` drains, clears the
@@ -205,8 +212,9 @@ class MemoryEvent:
     code: str | None     # T1..T7 / P1..P7 when from escalation
     confidence: float | None     # 0..1; None = untrusted (trust gate)
     image_names: list[str]       # original image names (evidence)
-    detection: dict              # {box, cat_id, conf, ...} snapshot
-    appearance: str              # profile appearance line for the event's cat
+    detection: dict              # {box, cat_id, conf, period_id, period_ids, activity, ...}
+    appearance: str              # what the cat looks like in this record
+    background: str              # what the scene behind the cat looks like
 
 @dataclass
 class MemoryQuery:
@@ -254,11 +262,14 @@ class LongTermMemory:
   output, parsed answer, and timing/token/cost stats — same layout as the
   supervisor agent traces, single-turn scale. Trace writes are best-effort
   and never break memory; the offline stub writes no traces.
-- Trust gate (`_store_qualifies`, built): `store()` keeps only `period` /
-  `label` events at or above `min_store_confidence` (default 0.7) plus
-  `summary` events (curated day merges, always qualify). Escalation
-  occurrences, error verdicts (confidence 0.0), and untrusted (`None`) events
-  are skipped with a log line — they belong to short-term day context.
+- Trust gate (`_store_qualifies`, built): `store()` keeps only `period`
+  (labeled activity records) / `label` events at or above
+  `min_store_confidence` (default 0.7) plus `summary` events (curated day
+  merges, always qualify). A record's confidence is the min of the detector
+  confidence and every member label confidence — all must agree at strength.
+  Escalation occurrences, raw verdicts, degraded/unknown labels (0.0), and
+  untrusted (`None`) events are skipped with a log line — they belong to
+  short-term day context.
 - Curated rollup (built): `summary`-sourced units always qualify for text
   rollup regardless of visit support, and a summarized parent inherits its
   children's `sources`, so day narratives roll all the way up instead of
@@ -298,26 +309,53 @@ class LongTermMemory:
   reuse `base_url` / `api_key_env`. The worker uses a sync client (callers and
   the worker are sync). `StubLLMClient` implements the same interface for
   offline tests.
-- Four prompts: store-update (merge observation into `recent`, report
+- Five prompts: store-update (merge observation into `recent`, report
   `contradicts_stable`), promote-summary (compress children into parent
   stable text under the word cap, dominant patterns only), bootstrap-vision
-  (full-view + per-zone environment/background/contrast JSON), plus shared
-  plain-language style instructions.
+  (full-view + per-zone environment/background/contrast JSON), activity
+  verdict (one period's `{activity, activity_confidence, appearance,
+  background}` from its key frames against the `labels.yaml` set), plus
+  shared plain-language style instructions.
 - Schema stability: the LLM returns strict JSON with fixed fields; `store.py`
   renders it into YAML. Plain language is in the values, not the keys.
 - Cost guards: at most `max_units_per_call` units per LLM call, dirty subtrees
   only, promote coalescing, and a per-promotion call budget with graceful
   deferral.
 
+### Period activity path (built)
+
+`agent/memory/activity.py` + `agent/validation/labeler.py` + `TrackingRun`
+hooks (`agent/main.py`):
+
+1. Each closed period feeds `PeriodActivityAggregator.add()` as a
+   `PeriodMember` (span, cat, sightings, mean conf, median box, key frames).
+   Same-cat periods with gaps under `activity_combine_gap_minutes` grow one
+   open `ActivityRecord`; a far-enough next period closes it.
+2. Members with sightings are submitted to `PeriodLabeler` (own thread, own
+   images-MCP connection, shared memory LLM client). It resolves each
+   synthesized keyframe name to the nearest real frame in its minute bucket,
+   fetches them, and makes one `predict_activity` vision call per period:
+   the `labels.yaml` activity, confidence, appearance, and background, with
+   the tracked box per frame disambiguating multi-cat views. Any failure
+   degrades that member to unknown — never raises, never blocks tracking.
+3. Labels come back through `set_label()`; a closed, fully-labeled record
+   emits immediately. `finish()` drains the labeler first, then `flush()`es
+   leftovers (unlabeled members degrade to unknown so nothing is lost).
+4. Each emitted record lands in both memories: a `kind="period"` event with
+   the shared narrative (which cat, what span, which area box, what
+   activity, looks, background) for long-term, and one combined short-term
+   entry with the same fields. Confidence = min(detector, member labels).
+
 ### Short-term memory (built)
 
 `DailyShortTermMemory` (`agent/memory/short_term.py`) remembers every period
-activity across one day — all confidences — plus tracker episodes and their
-validation verdicts, in a plain-language `view_<id>_short_term_<day>.md`
-re-rendered on every change. New sessions open a new section; midnight (event
-time) merges the day into long-term memory as curated `summary` events that
-promote into the top spatial levels and the day bucket; session end merges the
-same way, marked so nothing merges twice. Full design:
+activity across one day — all confidences, as combined activity records —
+plus tracker episodes and their validation verdicts (+ rationales), in a
+plain-language `view_<id>_short_term_<day>.md` re-rendered on every change.
+New sessions open a new section; midnight (event time) merges the day into
+long-term memory as curated `summary` events that promote into the top
+spatial levels and the day bucket; session end merges the session the same
+way, marked so nothing merges twice. Full design:
 [short-term-memory-design.md](short-term-memory-design.md).
 
 ### Future phases
@@ -357,10 +395,11 @@ phase 5, embeddings as phase 6.
    `invoke_for_escalation` + code-family mapping, idle `tick`. LLM errors
    degrade to pending-observation mode, never raise.
 4. Integration, replay test, docs.
-   Surfaces: `TrackingRun` hooks (trusted `store` on period close, short-term
-   record on period close + `emit`, `tick` per message, short-term merge +
-   `shutdown` in `finish()`, optional `--bootstrap-frame`), replay integration
-   test over an existing `output/tracking_runs/` run,
+   Surfaces: `TrackingRun` hooks (aggregator feed on period close, labeler
+   thread, completed-record store to both memories, short-term record on
+   `emit`, `tick` per message, labeler drain + activity flush + short-term
+   merge + `shutdown` in `finish()`, optional `--bootstrap-frame`), replay
+   integration test over an existing `output/tracking_runs/` run,
    `agent/memory/README.md` rewrite.
 
 ## Validation Plan
@@ -402,6 +441,6 @@ phase 5, embeddings as phase 6.
 - No embeddings endpoint in `models.json` today: token-overlap text search is
   the v1 approach (no stored keywords); embeddings are a future phase, only
   if an endpoint is confirmed.
-- Open question: none blocking. Store sources are high-confidence period
-  verdicts + decisive supervisor-validation labels + curated day summaries;
-  escalation occurrences stay in short-term day context by design.
+- Open question: none blocking. Store sources are high-confidence labeled
+  period activity + curated day summaries; escalations and raw verdicts stay
+  in short-term day context by design.

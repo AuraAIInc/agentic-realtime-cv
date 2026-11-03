@@ -43,6 +43,22 @@ SPATIAL_SUMMARY_SCHEMA = {
     "additionalProperties": False,
 }
 
+def activity_schema(candidates: list[str]) -> dict:
+    """Strict schema for one period's activity verdict (dynamic enum)."""
+    names = [str(c) for c in candidates] or ["unknown"]
+    return {
+        "type": "object",
+        "properties": {
+            "activity": {"type": "string", "enum": names},
+            "activity_confidence": {"type": "number"},
+            "appearance": {"type": "string"},
+            "background": {"type": "string"},
+        },
+        "required": ["activity", "activity_confidence", "appearance", "background"],
+        "additionalProperties": False,
+    }
+
+
 BOOTSTRAP_VISION_SCHEMA = {
     "type": "object",
     "properties": {
@@ -170,3 +186,44 @@ def bootstrap_vision_instructions(zone_ids: list[str]) -> str:
 
 def bootstrap_vision_input() -> str:
     return "Describe this first camera frame as the bootstrap JSON object."
+
+
+def activity_instructions(candidates: list[dict]) -> str:
+    """Judge one period's cat activity from its key frames (strict JSON)."""
+    lines = [
+        "You label what one cat did during one tracked visit, from the attached key frames.",
+        STYLE_GUIDE,
+        "Pick exactly one activity from this set:",
+    ]
+    for cand in candidates:
+        lines.append(f"- {cand.get('name')}: {cand.get('description') or ''}".rstrip())
+    lines += [
+        "Respond with JSON: {\"activity\": <one name above>, "
+        "\"activity_confidence\": 0..1, "
+        "\"appearance\": \"what this cat looks like in these frames\", "
+        "\"background\": \"what the area behind the cat looks like\"}.",
+        "Judge from the pixels and the given boxes, not from the detector's opinion. "
+        "When several cats share a frame, describe only the boxed one. "
+        "When nothing fits, use \"unknown\" with low confidence.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def activity_input(
+    *,
+    cat_name: str | None,
+    cat_id: int | None,
+    span: str,
+    boxes: list,
+    keyframe_names: list[str],
+) -> str:
+    """Text half of the activity verdict input (images attach separately)."""
+    who = f"{cat_name} (cat {cat_id})" if cat_id is not None else "an unassigned cat"
+    lines = [f"CAT: {who}", f"SPAN: {span}", "FRAMES (box = this cat's tracked position):"]
+    for name, box in zip(keyframe_names, boxes):
+        lines.append(f"- {name}: {box if box else '(no box)'}")
+    if len(keyframe_names) > len(boxes):
+        for name in keyframe_names[len(boxes):]:
+            lines.append(f"- {name}: (no box)")
+    lines.append("Label this cat's activity across these frames as the verdict JSON object.")
+    return "\n".join(lines)

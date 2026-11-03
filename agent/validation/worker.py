@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import datetime
 import json
 import logging
 import sys
@@ -142,10 +141,11 @@ def merged_review_schema(escalations: list) -> dict:
                     "properties": {
                         "name": {"type": "string"},
                         "verdict": verdict_schema,
+                        "rationale": {"type": "string"},
                         "chosen_cat_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
                         "cut_time": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                     },
-                    "required": ["name", "verdict", "chosen_cat_id", "cut_time"],
+                    "required": ["name", "verdict", "rationale", "chosen_cat_id", "cut_time"],
                     "additionalProperties": False,
                 },
             }
@@ -351,6 +351,8 @@ class ValidationWorker:
             reviews = parse_merged_review(members, answer)
             for name in names:
                 logger.info("escalation %s verdict: %s", name, reviews[name].get("verdict"))
+                if reviews[name].get("rationale"):
+                    logger.info("escalation %s rationale: %s", name, reviews[name]["rationale"])
         except Exception as exc:
             logger.warning("batch [%s] validation failed: %s", label, exc)
             reviews = {name: {"verdict": "error", "error": str(exc)} for name in names}
@@ -370,6 +372,8 @@ class ValidationWorker:
             answer = await run_agent(query, schema, esc.code)
             review = parse_review(esc.code, answer)
             logger.info("escalation %s verdict: %s", name, review.get("verdict"))
+            if review.get("rationale"):
+                logger.info("escalation %s rationale: %s", name, review["rationale"])
         except Exception as exc:
             logger.warning("escalation %s validation failed: %s", name, exc)
             review = {"verdict": "error", "error": str(exc)}
@@ -391,65 +395,19 @@ class ValidationWorker:
             return None
 
     def _memory_verdict(self, esc, review: dict) -> None:
+        # Verdicts attach to the day's short-term episodes only. Long-term
+        # memory never stores escalations or verdicts directly — it learns
+        # from labeled period activity, which the verdicts confirm or correct
+        # through the validated rows.
         name = getattr(esc, "name", None) or getattr(esc, "code", "?")
-        if self._short_term is not None:
-            try:
-                self._short_term.record_verdict(name, str(review.get("verdict")))
-            except Exception:
-                logger.exception("short-term verdict store failed; dropping event")
-        if self._memory is None:
+        if self._short_term is None:
             return
         try:
-            from agent.memory import MemoryEvent
-
-            when = getattr(esc, "time", None) or datetime.datetime.now()
-            end = getattr(esc, "end_time", None) or when
-            box = None
-            if self._box_lookup is not None:
-                try:
-                    box = self._box_lookup(esc)
-                except Exception:
-                    box = None
-            try:
-                from agent.tracking.cat_config import appearance_for_tracking_id
-
-                appearance = appearance_for_tracking_id(
-                    int(getattr(self._memory.config, "view_id", 0) or 0),
-                    getattr(esc, "cat_id", None),
-                ) or ""
-            except Exception:
-                appearance = ""
-            verdict = review.get("verdict")
-            self._memory.store(
-                MemoryEvent(
-                    time=when,
-                    end_time=getattr(esc, "end_time", None),
-                    view_id=int(getattr(self._memory.config, "view_id", 0) or 0),
-                    box=tuple(box) if box else None,
-                    cat_id=getattr(esc, "cat_id", None),
-                    period_id=getattr(esc, "period_id", None),
-                    kind="label",
-                    text=f"[{name}] {verdict}"
-                    + (f": {review.get('error')}" if verdict == "error" else ""),
-                    code=esc.code,
-                    # Decisive pixel-judged verdicts are high-confidence
-                    # conclusions; errors carry no knowledge and are dropped
-                    # by the trust gate.
-                    confidence=0.0 if verdict == "error" else 0.9,
-                    image_names=[
-                        when.strftime("%Y-%m-%d-%H-%M-%S-%f") + ".jpg",
-                        end.strftime("%Y-%m-%d-%H-%M-%S-%f") + ".jpg",
-                    ],
-                    detection={
-                        "box": list(box) if box else None,
-                        "cat_id": getattr(esc, "cat_id", None),
-                        "period_id": getattr(esc, "period_id", None),
-                    },
-                    appearance=appearance if verdict != "error" else "",
-                )
+            self._short_term.record_verdict(
+                name, str(review.get("verdict")), rationale=review.get("rationale")
             )
         except Exception:
-            logger.exception("memory verdict store failed; dropping event")
+            logger.exception("short-term verdict store failed; dropping event")
 
 
 async def _failing_backend(query: str, schema: dict, code: str) -> str:

@@ -1,8 +1,8 @@
 """Expected LLM review output for each escalation code, as pydantic models.
 
-Kept minimal on purpose: only the fields the validation parser reads
-(``verdict``, plus ``chosen_cat_id`` / ``cut_time`` where a verdict names
-one). ``review_schema_json(code)`` renders the model's JSON schema so it can
+Kept minimal on purpose: the ``verdict``, a short ``rationale`` for it, plus
+``chosen_cat_id`` / ``cut_time`` where a verdict names one.
+``review_schema_json(code)`` renders the model's JSON schema so it can
 be pasted into the review request; ``emit()`` logs it right after the prompt.
 """
 
@@ -20,6 +20,7 @@ class EscalationReview(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     verdict: str = Field(description="The decision (allowed values depend on the escalation code).")
+    rationale: str = Field(description="One or two sentences explaining the evidence behind the verdict.")
 
 
 class T1Review(EscalationReview):

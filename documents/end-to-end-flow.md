@@ -15,7 +15,7 @@ detections ──► ingest ──► TrackCorrector ──► PeriodCorrector �
                                        │                    ▲
                                        ▼                    │ past context
                               LongTermMemory ◄──────────────┘
-                              (periods + escalations + verdicts)
+                       (combined + labeled period activity)
 ```
 
 ## 0. Detection sources (4 modes, one message shape)
@@ -137,25 +137,32 @@ one `verdict` enum plus at most one qualifier field (e.g. `cut_time`,
 ## 5. Validation: queue → supervisor agent → verdicts
 
 `ValidationWorker` ([agent/validation/worker.py](../agent/validation/worker.py),
-`--validate`) is a background thread consuming the escalation queue
-**sequentially**: one escalation, one supervisor-agent run, one parsed op.
+`--validate`) is a background thread consuming the escalation queue in
+**merge batches**: escalations within a 1-minute window merge into one joint
+supervisor-agent call sharing evidence across cases (see
+[escalation-merge-design.md](escalation-merge-design.md)); lone escalations
+validate alone.
 
-Per escalation (`_validate_one`):
+Per batch (`_validate_batch`) or single (`_validate_one`):
 
 1. Optional memory context: `memory.invoke_for_escalation()` returns a brief
    (≤600 chars) appended to the prompt as possibly-stale past context.
-2. `build_validation_query()` = full escalation prompt + memory brief +
-   "return ONLY a JSON object" instruction; the code's JSON schema is passed
-   as the LLM's structured-output format.
+2. `build_validation_query()` (or `build_merged_query()` for a batch) =
+   full escalation prompt(s) + memory brief(s) + "return ONLY a JSON object"
+   instruction; the review JSON schema is passed as the LLM's
+   structured-output format.
 3. `MCPAgent.run()` with tools restricted to `images__get_image`,
    `images__list_images`, `tracking__get_period_detail`, tagged `validation`.
    The agent inspects key frames and period rows, then answers with the review
    JSON. Every run dumps `output/agent_runs/<stamp>-validation/trace.md`
    (message table, system prompt, LLM I/O, tool I/O, tokens/cost/time).
 4. `parse_review()` validates the answer against the pydantic model;
-   failures become `{"verdict": "error"}` — never an exception.
-5. The verdict is stored back to memory as a `label` event, and the op
-   `{escalation, review}` is journaled to `validations.jsonl`.
+   failures become `{"verdict": "error"}` — never an exception. Every review
+   carries a short `rationale` for the decision, logged and kept with the op.
+5. The verdict (+ rationale) is attached to the short-term day's episode, and
+   the op `{escalation, review}` is journaled to `validations.jsonl`.
+   Verdicts never store to long-term memory directly — they reach durable
+   memory through the labeled period activity they confirm or correct.
 
 If the supervisor backends are unreachable, the worker logs once and every
 queued escalation validates to `error` (tracked, not lost).
@@ -184,25 +191,36 @@ copy is wanted, `MYSQL_VALIDATED_DDL` in `apply.py` is the table to create.
 Memory (`--memory`) runs on its own worker thread; every hook is best-effort
 and never breaks the run. Design: [spatial-temporal-memory-design.md](spatial-temporal-memory-design.md).
 
-**Long-term** (`LongTermMemory`) keeps only high-confidence knowledge:
-original high-confidence detections (period confidence ≥ 0.7) and decisive
-supervisor-validation conclusions (`error` verdicts are dropped). Every record
-carries its original image names, the detection snapshot, and plain-language
-text; every zone describes cat appearance, activities, behavior, and
-background view. `tick(now)` per frame; idle ticks and explicit `promote()`
-roll stats bottom-up and rewrite parent summaries via the LLM (StubLLM
-offline fallback when no model key).
+**Long-term** (`LongTermMemory`) keeps only high-confidence knowledge, and
+it attaches to **period activity, never escalations**: closed periods of the
+same cat with gaps under `activity_combine_gap_minutes` (default 5.0,
+`agent/memory/memory_config.yaml`) merge into one `ActivityRecord`; each
+member period's key frames are judged by one vision LLM call
+(`PeriodLabeler`, own background thread with an images-MCP connection)
+against the activity set in `agent/agent_data/config/labels.yaml`, with the
+tracked box per frame disambiguating multi-cat views. A record stores only
+when the detector and every member label are all strong (min confidence ≥
+0.7) — anything weaker stays in short-term day context. Every record carries
+its original image names, the detection snapshot (box, cat, activity,
+periods), and plain-language text (which cat, what span, which area box,
+what activity, looks, background); every zone describes cat appearance,
+activities, behavior, and background view. `tick(now)` per frame; idle ticks
+and explicit `promote()` roll stats bottom-up and rewrite parent summaries
+via the LLM (StubLLM offline fallback when no model key).
 
 **Short-term** (`DailyShortTermMemory`) remembers every period activity across
-one day (all confidences): each closed period with detections + key frames,
-plus tracker episodes and their verdicts, in a plain-language
-`view_<id>_short_term_<day>.md` re-rendered on every change. New sessions open
-a new section; midnight (event time) merges the day into long-term memory
-(curated summaries promoting into the top spatial levels and the day bucket);
-session end merges the session the same way, marked so nothing merges twice.
+one day (all confidences): each **combined** activity record (member periods,
+span, area box, LLM-judged activity, looks, background) with detections + key
+frames, plus tracker episodes and their verdicts (+ rationales), in a
+plain-language `view_<id>_short_term_<day>.md` re-rendered on every change.
+New sessions open a new section; midnight (event time) merges the day into
+long-term memory (curated summaries promoting into the top spatial levels and
+the day bucket); session end merges the session the same way, marked so
+nothing merges twice.
 
-Validation verdicts are stored as high-confidence `label` events, closing the
-loop: tracking → escalation → verdict → memory → future validation context.
+The loop closes through activity: tracking → escalation → verdict (corrects
+the validated rows) → labeled period activity → memory → future validation
+context.
 
 ## 8. Run artifacts (`output/tracking_runs/<run>/`)
 
@@ -297,22 +315,31 @@ whole pipeline per message.
 
 **Memory — `LongTermMemory` hooks**
 
-- Initialized in [main.py:417](../agent/main.py) when `--memory` is passed
-  (falls back to an offline stub if the Meta model key is missing; init
-  failure just disables memory).
-- Per frame: [main.py:463](../agent/main.py) advances time; each closed period
-  row is stored via [main.py:489](../agent/main.py) and each escalation via
-  [main.py:504](../agent/main.py). All hooks are best-effort — they log and
-  continue on error. The validator also receives the memory handle. Memory
-  shuts down at the end of `finish()`.
+- Initialized in [main.py](../agent/main.py) `TrackingRun.__init__` when
+  `--memory` is passed (falls back to an offline stub if the Meta model key
+  is missing; init failure just disables memory), together with the
+  `DailyShortTermMemory`, the `PeriodActivityAggregator` (gap knob
+  `activity_combine_gap_minutes`), and the `PeriodLabeler` background thread.
+- Per frame: `_memory_tick` advances time; each closed period row feeds the
+  aggregator via `_memory_store_period_row`, which submits members to the
+  labeler; labels come back through `_on_period_label`, and completed
+  `ActivityRecord`s land in both memories via `_store_activity_record`.
+  Each escalation is recorded as a short-term episode via
+  `_memory_store_escalation`. All hooks are best-effort — they log and
+  continue on error. The validator also receives the memory handle (briefs)
+  and the short-term handle (verdicts). Memory shuts down at the end of
+  `finish()`.
 
 **Finalize — `finish()`**
 
-[main.py:629](../agent/main.py) flushes both correctors (`finish_up`), stops
-the validator and materializes validated outputs, draws
-`original.png`/`revised.png` (with `--plot`), then writes `run.json` with
-counts including `escalations_by_code` and `validations_by_verdict`.
+`finish()` flushes both correctors (`finish_up`), drains the labeler and
+flushes leftover activity records (`_finish_activity_labels`), stops the
+validator and materializes validated outputs, draws
+`original.png`/`revised.png`/`validated.png` (with `--plot`), then writes
+`run.json` with counts including `escalations_by_code` and
+`validations_by_verdict`.
 
 Data flow for a full-loop run: MySQL → `process_message` → TrackCorrector →
 PeriodCorrector → escalations → (async) supervisor agent → validated outputs,
-with memory observing periods + escalations on the side.
+with memory observing combined period activity + short-term episodes on the
+side.

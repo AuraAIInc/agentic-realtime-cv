@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from agent.memory import LLMClientError, MetaModelClient, load_model_settings
+from agent.memory import LLMClientError, MetaModelClient, StubLLMClient, load_model_settings
 
 
 class _FakeResponses:
@@ -105,3 +105,52 @@ def test_bootstrap_vision_payload():
     assert parts[1]["type"] == "input_image"
     assert parts[1]["image_url"].startswith("data:image/png;base64,")
     assert "r0c0" in call["instructions"]  # zone ids enumerated
+
+
+def _activity_kwargs(**kw):
+    args = {
+        "images": [b"\xff\xd8fake-1", b"\xff\xd8fake-2"],
+        "cat_name": "Qb",
+        "cat_id": 25,
+        "span": "16:34 to 16:40",
+        "boxes": [[1, 2, 3, 4], [1, 2, 3, 4]],
+        "keyframe_names": ["a.jpg", "b.jpg"],
+        "candidates": [{"name": "resting", "description": "lying still"}, {"name": "walking", "description": "moving"}],
+    }
+    args.update(kw)
+    return args
+
+
+def test_predict_activity_shape_enum_and_clamp():
+    c = _client('{"activity": "resting", "activity_confidence": 1.7, "appearance": "white", "background": "rug"}')
+    out = c.predict_activity(**_activity_kwargs(), label="period 2")
+    assert out == {"activity": "resting", "activity_confidence": 1.0, "appearance": "white", "background": "rug"}
+    call = c._client.responses.calls[0]
+    assert call["text"]["format"]["name"] == "memory_activity"
+    assert call["text"]["format"]["schema"]["properties"]["activity"]["enum"] == ["resting", "walking"]
+    content = call["input"][0]["content"]
+    assert content[0]["type"] == "input_text" and "Qb (cat 25)" in content[0]["text"]
+    assert "16:34 to 16:40" in content[0]["text"] and "[1, 2, 3, 4]" in content[0]["text"]
+    assert [p["type"] for p in content[1:]] == ["input_image", "input_image"]
+    assert "resting: lying still" in call["instructions"]
+
+
+def test_predict_activity_unknown_when_missing_or_bad_confidence():
+    c = _client('{"activity": "", "activity_confidence": "high", "appearance": "", "background": ""}')
+    out = c.predict_activity(**_activity_kwargs())
+    assert out["activity"] == "unknown" and out["activity_confidence"] == 0.0
+
+
+def test_predict_activity_traces_with_kind_and_images(tmp_path):
+    c = _client('{"activity": "walking", "activity_confidence": 0.8, "appearance": "a", "background": "b"}')
+    c.trace_dir = tmp_path
+    c.predict_activity(**_activity_kwargs(), label="period 2")
+    (md,) = tmp_path.glob("*.md")
+    assert "-activity-period-2.md" in md.name
+    assert "memory_activity" in md.read_text()
+    assert sorted(p.suffix for p in tmp_path.glob("*.jpg")) == [".jpg", ".jpg"]
+
+
+def test_stub_predict_activity_is_unknown():
+    out = StubLLMClient().predict_activity(**_activity_kwargs())
+    assert out == {"activity": "unknown", "activity_confidence": 0.0, "appearance": "", "background": ""}

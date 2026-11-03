@@ -28,27 +28,31 @@ the `agent/escalation` module. Full design:
 
 ## Trust policy
 
-Long-term memory keeps **only high-confidence knowledge**: original
-high-confidence detections (`kind="period"`, confidence ≥
-`min_store_confidence`, default 0.7) and high-confidence supervisor-validation
-conclusions (`kind="label"`, decisive verdicts at 0.9; `error` verdicts at 0.0
-are dropped). Escalation occurrences are tracker uncertainty — they go to
-short-term day context only. Every kept record carries its original image
-names, the detection snapshot, and plain-language text, and every
-`MemoryHit.extra` surfaces that evidence (`{"images": [...], "detections":
-[...]}`). Each spatial zone describes cat appearance, activities, behavior,
-and background view in plain language.
+Long-term memory keeps **only high-confidence knowledge**, attached to
+**period activity, never escalations**: same-cat periods with gaps under
+`activity_combine_gap_minutes` (default 5.0) merge into one record, each
+member labeled by a vision LLM look at its key frames against `labels.yaml`.
+A record stores (`kind="period"`) only when the detector and every member
+label are all strong (min confidence ≥ `min_store_confidence`, default 0.7).
+Escalations, raw verdicts, and anything weaker go to short-term day context
+only. Every kept record carries its original image names, the detection
+snapshot, and plain-language text (which cat, what span, which area, what
+activity, looks, background), and every `MemoryHit.extra` surfaces that
+evidence (`{"images": [...], "detections": [...]}`). Each spatial zone
+describes cat appearance, activities, behavior, and background view in plain
+language.
 
 ## Short-term memory
 
 `DailyShortTermMemory` remembers **every** period activity across one day
-(all confidences): each closed period with its detections and a few key
-frames, plus tracker episodes and their validation verdicts. A new session
-starts a new `## Session` section (live state resets); event time crossing
-midnight merges the old day into long-term memory (curated `summary` events
-that promote into the top spatial levels and the day bucket) and starts a new
-day. Session end merges the session the same way; merged sessions are marked
-so nothing merges twice. The day file (`view_<id>_short_term_<day>.md`) is
+(all confidences): each combined activity record with its detections, key
+frames, judged activity, appearance, and background, plus tracker episodes
+and their validation verdicts (+ rationales). A new session starts a new
+`## Session` section (live state resets); event time crossing midnight merges
+the old day into long-term memory (curated `summary` events that promote
+into the top spatial levels and the day bucket) and starts a new day.
+Session end merges the session the same way; merged sessions are marked so
+nothing merges twice. The day file (`view_<id>_short_term_<day>.md`) is
 re-rendered in plain language on every change.
 
 ## Usage

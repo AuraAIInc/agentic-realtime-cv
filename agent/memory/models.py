@@ -26,6 +26,7 @@ class MemoryEvent:
     image_names: list[str] = field(default_factory=list)
     detection: dict = field(default_factory=dict)  # {box, cat_id, conf, ...}
     appearance: str = ""  # profile appearance line, e.g. "Qbo: long-haired cream ..."
+    background: str = ""  # what the scene behind the cat looks like (plain language)
 
 
 @dataclass

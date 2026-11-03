@@ -94,6 +94,7 @@ class MemoryConfig:
     promote_coalesce: bool = True
     store_dir: str = "agent/memory/data"
     trace_dir: str = "output/memory_runs"  # one markdown LLM trace per store/promote call
+    activity_combine_gap_minutes: float = 5.0  # same-cat periods with smaller gaps merge into one memory record
     llm_model_role: str = "memory"
     max_units_per_call: int = 8
     # Trust gate: long-term memory keeps only period/label/summary events at
@@ -152,6 +153,8 @@ class MemoryConfig:
             cfg.store_dir = str(raw["store_dir"])
         if "trace_dir" in raw:
             cfg.trace_dir = str(raw["trace_dir"])
+        if "activity_combine_gap_minutes" in raw:
+            cfg.activity_combine_gap_minutes = float(raw["activity_combine_gap_minutes"])
         llm = raw.get("llm") or {}
         if "model_role" in llm:
             cfg.llm_model_role = str(llm["model_role"])
@@ -184,6 +187,7 @@ class MemoryConfig:
         self.promote_coalesce = _bool("MEMORY_PROMOTE_COALESCE", self.promote_coalesce)
         self.store_dir = _str("MEMORY_STORE_DIR", self.store_dir)
         self.trace_dir = _str("MEMORY_TRACE_DIR", self.trace_dir)
+        self.activity_combine_gap_minutes = _float("MEMORY_ACTIVITY_COMBINE_GAP_MINUTES", self.activity_combine_gap_minutes)
         self.llm_model_role = _str("MEMORY_LLM_MODEL_ROLE", self.llm_model_role)
         self.max_units_per_call = _int("MEMORY_MAX_UNITS_PER_CALL", self.max_units_per_call)
         self.min_store_confidence = _float("MEMORY_MIN_STORE_CONFIDENCE", self.min_store_confidence)

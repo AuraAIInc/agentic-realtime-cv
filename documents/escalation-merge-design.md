@@ -147,9 +147,11 @@ The worker still emits **one op per escalation**, in `seq` order within the
 batch, each journaled individually — so `materialize` sees the same op
 stream shape as today and apply-order semantics (E6→E7→E9→E12) are preserved.
 Per member, unchanged: `escalation <name> verdict: <verdict>` log line,
-`_memory_verdict` (label event @ 0.9 / error @ 0.0), short-term
-`record_verdict`. `validations_by_verdict` counts and `validations.jsonl`
-are unaffected in shape.
+`escalation <name> rationale: <rationale>` log line, short-term
+`record_verdict` (verdict + rationale). Verdicts never reach long-term
+memory directly — it learns from labeled period activity instead.
+`validations_by_verdict` counts and `validations.jsonl` are unaffected in
+shape.
 
 ## 8. Logging and traces
 

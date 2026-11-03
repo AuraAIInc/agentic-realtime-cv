@@ -17,8 +17,9 @@ def test_every_code_has_minimal_schema():
         schema = json.loads(review_schema_json(code))
         assert "verdict" in schema["properties"], code
         assert schema["properties"]["verdict"].get("enum"), code
-        assert schema["required"] == ["verdict"], code
-        allowed = {"verdict"}
+        assert schema["required"] == ["verdict", "rationale"], code
+        assert "rationale" in schema["properties"], code
+        allowed = {"verdict", "rationale"}
         if code in ("T1", "T2", "P1", "P4", "P5"):
             allowed.add("chosen_cat_id")
         if code == "T7":
@@ -27,20 +28,32 @@ def test_every_code_has_minimal_schema():
 
 
 def test_reviews_validate_and_reject_bad_verdicts():
-    assert review_model_for("T2").model_validate({"verdict": "confirm"}).verdict == "confirm"
-    assert review_model_for("T2").model_validate({"verdict": "reassign_other", "chosen_cat_id": 26}).chosen_cat_id == 26
-    assert review_model_for("T7").model_validate({"verdict": "shorten_gap", "cut_time": "2026-10-28T16:34:00"}).cut_time
+    assert (
+        review_model_for("T2").model_validate({"verdict": "confirm", "rationale": "coat matches"}).verdict
+        == "confirm"
+    )
+    assert (
+        review_model_for("T2")
+        .model_validate({"verdict": "reassign_other", "chosen_cat_id": 26, "rationale": "nearby cat"})
+        .chosen_cat_id
+        == 26
+    )
+    assert review_model_for("T7").model_validate(
+        {"verdict": "shorten_gap", "cut_time": "2026-10-28T16:34:00", "rationale": "cat left early"}
+    ).cut_time
     with pytest.raises(ValidationError):
-        review_model_for("T2").model_validate({"verdict": "maybe"})
+        review_model_for("T2").model_validate({"verdict": "maybe", "rationale": "x"})
     with pytest.raises(ValidationError):
         review_model_for("T2").model_validate({"verdict": "confirm", "confidence": 0.9})
+    with pytest.raises(ValidationError):
+        review_model_for("T2").model_validate({"verdict": "confirm"})  # rationale required
     with pytest.raises(ValidationError):
         review_model_for("P6").model_validate({})
 
 
 def test_unknown_code_falls_back_to_base_model():
     assert review_model_for("T9").__name__ == "EscalationReview"
-    assert set(json.loads(review_schema_json("T9"))["properties"]) == {"verdict"}
+    assert set(json.loads(review_schema_json("T9"))["properties"]) == {"verdict", "rationale"}
 
 
 def test_emit_logs_schema_after_prompt(caplog):

@@ -28,6 +28,13 @@ from agent.memory.models import (
 from agent.memory.short_term import DailyShortTermMemory
 from agent.memory.spatial import SpatialIndex
 from agent.memory.store import MemoryStore, SpatialUnit, TemporalUnit
+from agent.memory.activity import (
+    ActivityLabel,
+    ActivityRecord,
+    PeriodActivityAggregator,
+    PeriodMember,
+    load_activity_labels,
+)
 from agent.memory.temporal import TemporalIndex
 from agent.memory.trace import render_memory_trace, write_memory_trace
 from agent.memory.worker import MemoryWorker
@@ -61,4 +68,9 @@ __all__ = [
     "DailyShortTermMemory",
     "render_memory_trace",
     "write_memory_trace",
+    "ActivityLabel",
+    "ActivityRecord",
+    "PeriodActivityAggregator",
+    "PeriodMember",
+    "load_activity_labels",
 ]

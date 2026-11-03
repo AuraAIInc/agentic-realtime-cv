@@ -23,6 +23,9 @@ from agent.memory.prompts import (
     PROMOTE_SUMMARY_SCHEMA,
     SPATIAL_SUMMARY_SCHEMA,
     STORE_UPDATE_SCHEMA,
+    activity_input,
+    activity_instructions,
+    activity_schema,
     bootstrap_vision_input,
     bootstrap_vision_instructions,
     promote_summary_input,
@@ -154,6 +157,7 @@ _TRACE_KIND = {
     "memory_store_update": "store",
     "memory_promote_summary": "promote",
     "memory_bootstrap_vision": "bootstrap",
+    "memory_activity": "activity",
 }
 
 
@@ -183,6 +187,26 @@ class LLMClient(ABC):
     @abstractmethod
     def bootstrap(self, image: bytes, label: str | None = None) -> dict:
         """Return ``{full_view, zones}`` environment descriptions for one frame."""
+
+    @abstractmethod
+    def predict_activity(
+        self,
+        *,
+        images: list[bytes],
+        cat_name: str | None,
+        cat_id: int | None,
+        span: str,
+        boxes: list,
+        keyframe_names: list[str],
+        candidates: list[dict],
+        label: str | None = None,
+    ) -> dict:
+        """Return ``{activity, activity_confidence, appearance, background}``.
+
+        ``candidates`` are ``{name, description}`` activity options (one is
+        picked); ``boxes`` parallels ``images`` (this cat's tracked position
+        per frame, used to disambiguate multi-cat frames).
+        """
 
 
 def _usage_of(resp) -> dict:
@@ -330,6 +354,60 @@ class MetaModelClient(LLMClient):
                 "cat_contrast": str(full_view.get("cat_contrast", "") or ""),
             },
             "zones": zones,
+        }
+
+    def predict_activity(
+        self,
+        *,
+        images: list[bytes],
+        cat_name: str | None,
+        cat_id: int | None,
+        span: str,
+        boxes: list,
+        keyframe_names: list[str],
+        candidates: list[dict],
+        label: str | None = None,
+    ) -> dict:
+        names = [str(c.get("name")) for c in candidates if c.get("name")] or ["unknown"]
+        content: list[dict] = [
+            {
+                "type": "input_text",
+                "text": activity_input(
+                    cat_name=cat_name, cat_id=cat_id, span=span,
+                    boxes=boxes, keyframe_names=keyframe_names,
+                ),
+            }
+        ]
+        trace_images: list[tuple[str, bytes]] = []
+        for i, raw in enumerate(images):
+            payload = bytes(raw)
+            b64 = base64.b64encode(payload).decode("ascii")
+            content.append(
+                {
+                    "type": "input_image",
+                    "image_url": f"data:{_image_mime(payload)};base64,{b64}",
+                    "detail": "auto",
+                }
+            )
+            ext = ".jpg" if _image_mime(payload) == "image/jpeg" else ".png"
+            trace_images.append((f"-{i}{ext}", payload))
+        data = self._json_call(
+            activity_instructions(candidates),
+            [{"role": "user", "content": content}],
+            "memory_activity",
+            activity_schema(names),
+            label=label or (f"period {keyframe_names[0]}" if keyframe_names else "activity"),
+            trace_images=trace_images,
+        )
+        try:
+            confidence = float(data.get("activity_confidence", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        return {
+            "activity": str(data.get("activity", "unknown") or "unknown"),
+            "activity_confidence": min(max(confidence, 0.0), 1.0),
+            "appearance": str(data.get("appearance", "") or ""),
+            "background": str(data.get("background", "") or ""),
         }
 
     def _json_call(
@@ -481,4 +559,24 @@ class StubLLMClient(LLMClient):
                 "cat_contrast": "Stub contrast.",
             },
             "zones": [],
+        }
+
+    def predict_activity(
+        self,
+        *,
+        images: list[bytes],
+        cat_name: str | None,
+        cat_id: int | None,
+        span: str,
+        boxes: list,
+        keyframe_names: list[str],
+        candidates: list[dict],
+        label: str | None = None,
+    ) -> dict:
+        # Offline: no vision; report unknown with zero confidence.
+        return {
+            "activity": "unknown",
+            "activity_confidence": 0.0,
+            "appearance": "",
+            "background": "",
         }

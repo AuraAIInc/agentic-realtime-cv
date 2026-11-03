@@ -88,3 +88,18 @@ def test_spatial_promote_writes_appearance_and_behavior(mem):
     assert l1 is not None and not l1.is_empty
     assert "short-haired white" in l1.appearance
     assert l1.behavior  # stub compresses child activity into behavior
+
+
+def test_background_merges_and_snapshot_keeps_activity(mem):
+    mem.store(_event(
+        "Qb from 16:34 to 16:40 at the sofa: doing resting.", confidence=0.9,
+        appearance="fluffy white cat", background="rug by the sofa",
+        detection={"box": [500, 300, 600, 400], "cat_id": 1, "conf": 0.9,
+                   "period_id": 2, "period_ids": [2, 3], "activity": "resting"},
+    ))
+    mem.drain()
+    unit = mem.mem_store.get_spatial("L0", "r3c5")
+    assert "rug by the sofa" in unit.background
+    assert "fluffy white cat" in unit.appearance
+    snap = unit.detections[0]
+    assert snap["activity"] == "resting" and snap["period_ids"] == [2, 3]

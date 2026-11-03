@@ -25,7 +25,7 @@ def _esc(code="T2", **kw):
 
 
 def _review_json(**kw):
-    payload = {"verdict": "confirm"}
+    payload = {"verdict": "confirm", "rationale": "coat matches cat 25"}
     payload.update(kw)
     return json.dumps(payload)
 
@@ -160,7 +160,7 @@ class _StubMemory:
         self.stored.append(event)
 
 
-def test_worker_uses_memory_for_context_and_verdict():
+def test_worker_uses_memory_for_context_only():
     queries = []
 
     async def backend(query, schema, code):
@@ -173,22 +173,19 @@ def test_worker_uses_memory_for_context_and_verdict():
     worker.enqueue(_esc())
     worker.stop(timeout=30)
     assert "cat 25 naps here daily" in queries[0]
-    assert len(memory.stored) == 1
-    assert memory.stored[0].kind == "label"
-    assert memory.stored[0].code == "T2"
-    assert "confirm" in memory.stored[0].text
+    assert memory.stored == []  # verdicts never reach long-term memory directly
 
 
 class _StubShortTerm:
     def __init__(self):
         self.verdicts = []
 
-    def record_verdict(self, name, verdict):
-        self.verdicts.append((name, verdict))
+    def record_verdict(self, name, verdict, rationale=None):
+        self.verdicts.append((name, verdict, rationale))
         return True
 
 
-def test_worker_verdict_carries_confidence_evidence_and_short_term():
+def test_worker_verdict_goes_to_short_term_only():
     async def backend(query, schema, code):
         return _review_json()
 
@@ -201,18 +198,17 @@ def test_worker_verdict_carries_confidence_evidence_and_short_term():
     worker.start()
     worker.enqueue(_esc())
     worker.stop(timeout=30)
-    event = memory.stored[0]
-    assert event.confidence == 0.9
-    assert event.image_names == ["2026-10-28-16-35-21-976102.jpg"] * 2
-    assert event.detection["cat_id"] == 25
-    assert short_term.verdicts == [("E6-T2", "confirm")]
+    assert memory.stored == []
+    assert short_term.verdicts == [("E6-T2", "confirm", "coat matches cat 25")]
 
     memory2 = _StubMemory()
-    worker2 = ValidationWorker(backend=failing, memory=memory2)
+    short_term2 = _StubShortTerm()
+    worker2 = ValidationWorker(backend=failing, memory=memory2, short_term=short_term2)
     worker2.start()
     worker2.enqueue(_esc())
     worker2.stop(timeout=30)
-    assert memory2.stored[0].confidence == 0.0  # errors carry no knowledge
+    assert memory2.stored == []  # errors carry no knowledge anywhere durable
+    assert short_term2.verdicts == [("E6-T2", "error", None)]
 
 
 def _merged_pair():
@@ -224,8 +220,8 @@ def _merged_pair():
 def _merged_answer(**overrides):
     payload = {
         "reviews": [
-            {"name": "E6-T2", "verdict": "confirm", "chosen_cat_id": None, "cut_time": None},
-            {"name": "E7-T3", "verdict": "confirm_survivor", "chosen_cat_id": None, "cut_time": None},
+            {"name": "E6-T2", "verdict": "confirm", "rationale": "coat matches", "chosen_cat_id": None, "cut_time": None},
+            {"name": "E7-T3", "verdict": "confirm_survivor", "rationale": "survivor box fits", "chosen_cat_id": None, "cut_time": None},
         ]
     }
     payload.update(overrides)
@@ -264,7 +260,7 @@ def test_merged_schema_survives_strict_walk():
 
     strict = _strict(merged_review_schema(_merged_pair()))
     item = strict["properties"]["reviews"]["items"]
-    assert item["required"] == ["name", "verdict", "chosen_cat_id", "cut_time"]
+    assert item["required"] == ["name", "verdict", "rationale", "chosen_cat_id", "cut_time"]
     assert item["additionalProperties"] is False
 
 
@@ -272,8 +268,8 @@ def test_parse_merged_review_happy_path_filters_to_code_fields():
     reviews = parse_merged_review(_merged_pair(), _merged_answer())
     # Envelope extras (name/cut_time) are stripped: each review fits its own model.
     assert reviews == {
-        "E6-T2": {"verdict": "confirm", "chosen_cat_id": None},
-        "E7-T3": {"verdict": "confirm_survivor"},
+        "E6-T2": {"verdict": "confirm", "rationale": "coat matches", "chosen_cat_id": None},
+        "E7-T3": {"verdict": "confirm_survivor", "rationale": "survivor box fits"},
     }
 
 
@@ -282,22 +278,22 @@ def test_parse_merged_review_isolates_item_failures():
     answer = json.dumps(
         {
             "reviews": [
-                {"name": "E6-T2", "verdict": "not_a_verdict", "chosen_cat_id": None, "cut_time": None},
-                {"name": "E7-T3", "verdict": "confirm_survivor", "chosen_cat_id": None, "cut_time": None},
-                {"name": "E stranger", "verdict": "confirm", "chosen_cat_id": None, "cut_time": None},
+                {"name": "E6-T2", "verdict": "not_a_verdict", "rationale": "x", "chosen_cat_id": None, "cut_time": None},
+                {"name": "E7-T3", "verdict": "confirm_survivor", "rationale": "fits", "chosen_cat_id": None, "cut_time": None},
+                {"name": "E stranger", "verdict": "confirm", "rationale": "x", "chosen_cat_id": None, "cut_time": None},
             ]
         }
     )
     reviews = parse_merged_review(members, answer)
     assert reviews["E6-T2"]["verdict"] == "error"
     assert "fails T2 review schema" in reviews["E6-T2"]["error"]
-    assert reviews["E7-T3"] == {"verdict": "confirm_survivor"}
+    assert reviews["E7-T3"] == {"verdict": "confirm_survivor", "rationale": "fits"}
     assert set(reviews) == {"E6-T2", "E7-T3"}  # unknown names ignored
 
 
 def test_parse_merged_review_missing_member_errors_only_it():
     members = _merged_pair()
-    answer = json.dumps({"reviews": [{"name": "E6-T2", "verdict": "confirm", "chosen_cat_id": None, "cut_time": None}]})
+    answer = json.dumps({"reviews": [{"name": "E6-T2", "verdict": "confirm", "rationale": "coat matches", "chosen_cat_id": None, "cut_time": None}]})
     reviews = parse_merged_review(members, answer)
     assert reviews["E6-T2"]["verdict"] == "confirm"
     assert reviews["E7-T3"]["verdict"] == "error"
@@ -336,8 +332,8 @@ def test_worker_merges_close_escalations_into_one_call():
     assert [op["review"]["verdict"] for op in ops] == ["confirm", "confirm_survivor"]
     assert [op["escalation"]["name"] for op in ops] == ["E6-T2", "E7-T3"]
     assert journaled == ops
-    assert [(e.code, e.text) for e in memory.stored] == [("T2", "[E6-T2] confirm"), ("T3", "[E7-T3] confirm_survivor")]
-    assert short_term.verdicts == [("E6-T2", "confirm"), ("E7-T3", "confirm_survivor")]
+    assert memory.stored == []  # merged verdicts stay out of long-term memory too
+    assert short_term.verdicts == [("E6-T2", "confirm", "coat matches"), ("E7-T3", "confirm_survivor", "survivor box fits")]
 
 
 def test_worker_merged_batch_failure_errors_every_member_and_continues():

@@ -419,11 +419,13 @@ class LongTermMemory:
     def _store_qualifies(self, event: MemoryEvent) -> tuple[bool, str]:
         """Trust gate: long-term memory keeps only high-confidence records.
 
-        Original high-confidence detections (kind ``period``) and
-        high-confidence supervisor-validation conclusions (kind ``label``)
-        qualify at or above ``min_store_confidence``; curated day summaries
-        (kind ``summary``) always qualify. Escalation occurrences and anything
-        untrusted belong to short-term day context, not durable knowledge.
+        Labeled period activity (kind ``period``) and high-confidence
+        conclusions (kind ``label``) qualify at or above
+        ``min_store_confidence``; curated day summaries (kind ``summary``)
+        always qualify. Raw escalations and their verdicts never store
+        directly — verdicts reach durable memory only through the labeled
+        period activity they confirm. Anything else untrusted belongs to
+        short-term day context, not durable knowledge.
         """
         if event.kind == "summary":
             return True, "curated day summary"
@@ -444,7 +446,7 @@ class LongTermMemory:
                 unit.images.append(name)
         del unit.images[: -_EVIDENCE_IMAGES:]
         if event.detection:
-            snap = {k: event.detection[k] for k in event.detection if k in ("box", "cat_id", "conf", "period_id", "time")}
+            snap = {k: event.detection[k] for k in event.detection if k in ("box", "cat_id", "conf", "period_id", "period_ids", "activity", "time")}
             if snap and snap not in unit.detections:
                 unit.detections.append(snap)
         del unit.detections[: -_EVIDENCE_DETECTIONS:]
@@ -702,6 +704,8 @@ class LongTermMemory:
         self._attach_evidence(unit, event)
         if event.appearance and event.appearance not in unit.appearance:
             unit.appearance = f"{unit.appearance}; {event.appearance}".strip("; ")
+        if event.background and event.background not in unit.background:
+            unit.background = f"{unit.background}; {event.background}".strip("; ")
         note, contradicts = self._store_llm_update(
             unit.activity, unit.weight, event
         )

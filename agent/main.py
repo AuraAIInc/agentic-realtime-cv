@@ -84,7 +84,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--memory",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="feed high-confidence periods + validation verdicts to long-term memory and "
+        help="feed labeled period activity to long-term memory and "
         "every period + episode to short-term day memory (default --no-memory)",
     )
     parser.add_argument(
@@ -476,6 +476,31 @@ class TrackingRun:
             except Exception:
                 logger.exception("short-term memory init failed; continuing without it")
                 self.short_term = None
+        # Period activity path: closed periods combine across small gaps, each
+        # member is labeled from its key frames, and completed records land in
+        # both memories. Without it, periods store directly (legacy path).
+        self._activity_agg = None
+        self._labeler = None
+        self._resolved: dict = {}  # period_id -> real keyframe names from the labeler
+        if self.memory is not None:
+            try:
+                from agent.memory import PeriodActivityAggregator
+
+                self._activity_agg = PeriodActivityAggregator(
+                    gap_minutes=self.memory.config.activity_combine_gap_minutes
+                )
+            except Exception:
+                logger.exception("activity aggregator init failed; periods store unlabeled")
+                self._activity_agg = None
+        if self._activity_agg is not None:
+            try:
+                from agent.validation import PeriodLabeler
+
+                self._labeler = PeriodLabeler(sink=self._on_period_label, llm_client=self.memory.llm)
+                self._labeler.start()
+            except Exception:
+                logger.exception("period labeler init failed; activity stays unknown")
+                self._labeler = None
         self.validator = validator
         if self.validator is None and validate:
             from agent.validation import ValidationWorker
@@ -558,21 +583,166 @@ class TrackingRun:
                 id_to_name=self.id_to_name,
                 box=box,
             )
-            self.memory.store(event)  # kept only when high-confidence (trust gate)
-            if self.short_term is not None:
-                self.short_term.record_period(
-                    period_id=pid,
-                    cat_id=event.cat_id,
-                    cat_name=self.id_to_name.get(event.cat_id) if event.cat_id is not None else None,
-                    start=event.time,
-                    end=event.end_time or event.time,
-                    detections=int(row[3] or 0),
-                    mean_conf=event.confidence,
-                    box=box,
-                    keyframes=event.image_names,
+            if self._activity_agg is None:
+                self._legacy_memory_store(event, row, pid, box)
+                return
+            from agent.memory import PeriodMember
+
+            member = PeriodMember(
+                period_id=pid,
+                cat_id=event.cat_id,
+                cat_name=self.id_to_name.get(event.cat_id) if event.cat_id is not None else None,
+                start=event.time,
+                end=event.end_time or event.time,
+                detections=int(row[3] or 0),
+                mean_conf=event.confidence,
+                box=box,
+                keyframes=list(event.image_names),
+            )
+            emitted = self._activity_agg.add(member)
+            if member.label is None and self._labeler is not None and member.keyframes:
+                self._labeler.label_period(
+                    pid,
+                    cat_id=member.cat_id,
+                    cat_name=member.cat_name,
+                    span=f"{member.start.strftime('%H:%M')} to {member.end.strftime('%H:%M')}",
+                    keyframes=list(member.keyframes),
+                    boxes=[box for _ in member.keyframes],
                 )
+            for record in emitted:
+                self._store_activity_record(record)
         except Exception:
             logger.exception("memory period store failed; dropping event")
+
+    def _legacy_memory_store(self, event, row, pid, box) -> None:
+        """Direct period store when the activity path is unavailable."""
+        self.memory.store(event)  # kept only when high-confidence (trust gate)
+        if self.short_term is not None:
+            self.short_term.record_period(
+                period_id=pid,
+                cat_id=event.cat_id,
+                cat_name=self.id_to_name.get(event.cat_id) if event.cat_id is not None else None,
+                start=event.time,
+                end=event.end_time or event.time,
+                detections=int(row[3] or 0),
+                mean_conf=event.confidence,
+                box=box,
+                keyframes=event.image_names,
+            )
+
+    def _on_period_label(self, period_id, label, resolved_keyframes) -> None:
+        """Labeler sink (labeler thread): attach the label, store completions."""
+        try:
+            if resolved_keyframes:
+                self._resolved[period_id] = list(resolved_keyframes)
+            if self._activity_agg is None:
+                return
+            for record in self._activity_agg.set_label(period_id, label):
+                self._store_activity_record(record)
+        except Exception:
+            logger.exception("period label store failed; dropping label")
+
+    def _store_activity_record(self, record) -> None:
+        """One completed activity record lands in both memories (best-effort)."""
+        from agent.memory import MemoryEvent
+
+        members = list(record.members)
+        labels = [m.label for m in members]
+        # Real keyframe names where the labeler resolved them, else synthesized.
+        names: list[str] = []
+        for m in members:
+            for k in self._resolved.get(m.period_id, m.keyframes):
+                if k not in names:
+                    names.append(str(k))
+        acts = [l.activity for l in labels if l is not None and l.activity]
+        distinct = list(dict.fromkeys(acts))
+        if len(distinct) == 1:
+            activity: str | None = distinct[0]
+            confs = [l.confidence for l in labels if l is not None and l.confidence is not None]
+            activity_conf = min(confs) if confs else None
+        elif distinct:
+            activity = ", then ".join(
+                f"{m.label.activity or 'unknown'} "
+                f"{m.start.strftime('%H:%M')}–{m.end.strftime('%H:%M')}"
+                for m in members
+                if m.label is not None
+            ) or None
+            activity_conf = None
+        else:
+            activity, activity_conf = None, None
+        looks = "; ".join(dict.fromkeys(l.appearance for l in labels if l is not None and l.appearance))
+        scene = "; ".join(dict.fromkeys(l.background for l in labels if l is not None and l.background))
+        mean_conf = record.mean_conf
+        # Long-term memory only keeps high-confidence records: the detector
+        # and every member label must all agree at strength, else the trust
+        # gate drops it (short-term still keeps the full-fidelity entry).
+        label_confs = [l.confidence for l in labels if l is not None]
+        trusted = (
+            bool(members)
+            and all(l is not None and not l.degraded and l.activity for l in labels)
+            and all(isinstance(c, (int, float)) for c in label_confs)
+            and isinstance(mean_conf, (int, float))
+        )
+        confidence = min(label_confs + [mean_conf]) if trusted else 0.0
+        first_pid = members[0].period_id if members else None
+        box = record.box
+        event = MemoryEvent(
+            time=record.start,
+            end_time=record.end,
+            view_id=self.view_id,
+            box=box,
+            cat_id=record.cat_id,
+            period_id=first_pid,
+            kind="period",
+            text=record.narrative(),
+            confidence=float(confidence),
+            image_names=names,
+            detection={
+                "box": list(box) if box else None,
+                "cat_id": record.cat_id,
+                "conf": mean_conf,
+                "period_id": first_pid,
+                "period_ids": record.period_ids,
+                "activity": activity,
+            },
+            appearance=looks or _appearance_for(self.view_id, record.cat_id),
+            background=scene,
+        )
+        self.memory.store(event)
+        if self.short_term is not None:
+            self.short_term.record_period(
+                period_id=first_pid,
+                cat_id=record.cat_id,
+                cat_name=record.cat_name,
+                start=record.start,
+                end=record.end,
+                detections=record.detections,
+                mean_conf=mean_conf,
+                box=box,
+                keyframes=names,
+                period_ids=record.period_ids,
+                activity=activity,
+                activity_confidence=activity_conf,
+                appearance=looks,
+                background=scene,
+            )
+
+    def _finish_activity_labels(self) -> None:
+        """Drain the labeler, then flush combined records (finish() only)."""
+        if self._labeler is not None:
+            try:
+                self._labeler.stop()  # queued jobs land via set_label first
+            except Exception:
+                logger.exception("period labeler stop failed; leftovers degrade to unknown")
+            finally:
+                self._labeler = None
+        if self._activity_agg is None:
+            return
+        try:
+            for record in self._activity_agg.flush():
+                self._store_activity_record(record)
+        except Exception:
+            logger.exception("activity flush failed; dropping leftover periods")
 
     def _memory_store_escalation(self, esc) -> None:
         # Escalation occurrences are tracker uncertainty: short-term day
@@ -726,6 +896,7 @@ class TrackingRun:
             self._log_period_row(row)
             self._memory_store_period_row(row)
         self._persist_new_escalations()
+        self._finish_activity_labels()
         if self._raw_fh is not None:
             self._raw_fh.close()
             self._raw_fh = None

@@ -2,6 +2,7 @@
 
 from agent.validation.apply import apply_ops, materialize, write_validated
 from agent.validation.batcher import EscalationBatch, EscalationBatcher
+from agent.validation.labeler import PeriodLabeler
 from agent.validation.worker import (
     VALIDATION_TOOLS,
     ValidationWorker,
@@ -16,6 +17,7 @@ __all__ = [
     "VALIDATION_TOOLS",
     "EscalationBatch",
     "EscalationBatcher",
+    "PeriodLabeler",
     "ValidationWorker",
     "apply_ops",
     "build_merged_query",

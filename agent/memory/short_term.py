@@ -27,6 +27,7 @@ import datetime
 import json
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -48,6 +49,14 @@ class PeriodEntry:
     mean_conf: float | None
     box: tuple[float, float, float, float] | None = None
     keyframes: list[str] = field(default_factory=list)
+    # Combined activity record: which member periods merged here, what the cat
+    # was doing (labels.yaml activity judged from the key frames), what it
+    # looked like, and what the background looked like.
+    period_ids: list[int] = field(default_factory=list)
+    activity: str | None = None
+    activity_confidence: float | None = None
+    appearance: str = ""
+    background: str = ""
 
     @property
     def key(self) -> str:
@@ -57,9 +66,18 @@ class PeriodEntry:
         span = _fmt_span(self.start, self.end)
         who = f"{self.cat_name} (cat {self.cat_id})" if self.cat_id is not None else "no cat assigned"
         conf = f", mean confidence {self.mean_conf:.2f}" if self.mean_conf is not None else ""
+        area = f" at {list(self.box)}" if self.box else ""
+        if self.activity:
+            act_conf = f" (confidence {self.activity_confidence:.2f})" if self.activity_confidence is not None else ""
+            doing = f" Activity: {self.activity}{act_conf}."
+        else:
+            doing = ""
+        looks = f" Looks: {self.appearance}." if self.appearance else ""
+        scene = f" Background: {self.background}." if self.background else ""
         frames = f" Key frames: {', '.join(self.keyframes)}." if self.keyframes else ""
         return (
-            f"{span}: {who} — {self.detections} sightings{conf}."
+            f"{span}: {who}{area} — {self.detections} sightings{conf}."
+            f"{doing}{looks}{scene}"
             f"{frames}"
         )
 
@@ -74,11 +92,19 @@ class PeriodEntry:
             "mean_conf": self.mean_conf,
             "box": list(self.box) if self.box else None,
             "keyframes": list(self.keyframes),
+            "period_ids": list(self.period_ids),
+            "activity": self.activity,
+            "activity_confidence": self.activity_confidence,
+            "appearance": self.appearance,
+            "background": self.background,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "PeriodEntry":
         box = data.get("box")
+        pids = data.get("period_ids") or []
+        if not pids and data.get("period_id") is not None:
+            pids = [data["period_id"]]
         return cls(
             period_id=data.get("period_id"),
             cat_id=data.get("cat_id"),
@@ -89,6 +115,11 @@ class PeriodEntry:
             mean_conf=data.get("mean_conf"),
             box=tuple(box) if box else None,
             keyframes=[str(k) for k in data.get("keyframes", []) or []],
+            period_ids=[int(p) for p in pids],
+            activity=data.get("activity"),
+            activity_confidence=data.get("activity_confidence"),
+            appearance=str(data.get("appearance") or ""),
+            background=str(data.get("background") or ""),
         )
 
 
@@ -102,11 +133,14 @@ class EpisodeEntry:
     period_id: int | None = None
     image_names: list[str] = field(default_factory=list)
     verdict: str | None = None
+    rationale: str | None = None
 
     def narrative(self) -> str:
         base = f"{self.time.strftime('%H:%M:%S')} [{self.name}]: {self.reason}"
         if self.verdict:
             base += f" Validation verdict: {self.verdict}."
+            if self.rationale:
+                base += f" {self.rationale}"
         return base
 
     def to_dict(self) -> dict:
@@ -119,6 +153,7 @@ class EpisodeEntry:
             "period_id": self.period_id,
             "image_names": list(self.image_names),
             "verdict": self.verdict,
+            "rationale": self.rationale,
         }
 
     @classmethod
@@ -132,6 +167,7 @@ class EpisodeEntry:
             period_id=data.get("period_id"),
             image_names=[str(k) for k in data.get("image_names", []) or []],
             verdict=data.get("verdict"),
+            rationale=data.get("rationale"),
         )
 
 
@@ -148,40 +184,45 @@ class DailyShortTermMemory:
         # day state (persisted to the .json sidecar, rendered to .md)
         self.sessions: dict[str, dict] = {}
         self.merged_sessions: set[str] = set()
+        # Periods arrive from the labeler thread while episodes/verdicts arrive
+        # from the tracking/validation threads; every mutation + render holds this.
+        self._mu = threading.RLock()
 
     # -- session lifecycle --
 
     def start_session(self, now: datetime.datetime, session_name: str) -> None:
         """Begin a session: roll the day over at midnight, else open a section."""
-        if self.day is not None and now.date() != self.day and self.long_term is not None:
-            self.rollover(now)
-        if self.day != now.date():
-            self.day = now.date()
-            self.sessions = {}
-            self.merged_sessions = set()
-            self._load_day()
-        self.session_name = session_name
-        self.session_started = now
-        self.sessions.setdefault(session_name, {"started": now.isoformat(timespec="seconds"), "periods": [], "episodes": []})
-        self._save()
+        with self._mu:
+            if self.day is not None and now.date() != self.day and self.long_term is not None:
+                self.rollover(now)
+            if self.day != now.date():
+                self.day = now.date()
+                self.sessions = {}
+                self.merged_sessions = set()
+                self._load_day()
+            self.session_name = session_name
+            self.session_started = now
+            self.sessions.setdefault(session_name, {"started": now.isoformat(timespec="seconds"), "periods": [], "episodes": []})
+            self._save()
 
     def rollover(self, now: datetime.datetime) -> datetime.date | None:
         """Merge the open day into long-term memory when midnight passed.
 
         Returns the merged day, or None when no rollover happened.
         """
-        if self.day is None or now.date() == self.day:
-            return None
-        merged = self.day
-        if self.long_term is not None:
-            self.merge_into(self.long_term)
-        self.day = now.date()
-        self.sessions = {}
-        self.merged_sessions = set()
-        self._load_day()
-        self._save()
-        logger.info("short-term memory rolled over: merged %s, starting %s", merged, self.day)
-        return merged
+        with self._mu:
+            if self.day is None or now.date() == self.day:
+                return None
+            merged = self.day
+            if self.long_term is not None:
+                self.merge_into(self.long_term)
+            self.day = now.date()
+            self.sessions = {}
+            self.merged_sessions = set()
+            self._load_day()
+            self._save()
+            logger.info("short-term memory rolled over: merged %s, starting %s", merged, self.day)
+            return merged
 
     # -- ingest (period detections + key frames; episodes; verdicts) --
 
@@ -197,21 +238,30 @@ class DailyShortTermMemory:
         mean_conf: float | None,
         box=None,
         keyframes: list[str] | None = None,
+        period_ids: list[int] | None = None,
+        activity: str | None = None,
+        activity_confidence: float | None = None,
+        appearance: str = "",
+        background: str = "",
     ) -> PeriodEntry | None:
-        """Record one closed period. Duplicate (period, start) entries are skipped."""
-        self._ensure_session(start)
-        entry = PeriodEntry(
-            period_id=period_id, cat_id=cat_id, cat_name=cat_name,
-            start=start, end=end, detections=detections, mean_conf=mean_conf,
-            box=tuple(box) if box else None, keyframes=list(keyframes or []),
-        )
-        periods = self.sessions[self.session_name]["periods"]
-        if any(p["period_id"] == entry.period_id and p["start"] == entry.to_dict()["start"] for p in periods):
-            return None
-        periods.append(entry.to_dict())
-        self._save()
-        logger.info("short-term memory recorded period %s: %s", period_id, entry.narrative())
-        return entry
+        """Record one closed (possibly combined) period. Duplicates are skipped."""
+        with self._mu:
+            self._ensure_session(start)
+            entry = PeriodEntry(
+                period_id=period_id, cat_id=cat_id, cat_name=cat_name,
+                start=start, end=end, detections=detections, mean_conf=mean_conf,
+                box=tuple(box) if box else None, keyframes=list(keyframes or []),
+                period_ids=list(period_ids) if period_ids else ([period_id] if period_id is not None else []),
+                activity=activity, activity_confidence=activity_confidence,
+                appearance=appearance or "", background=background or "",
+            )
+            periods = self.sessions[self.session_name]["periods"]
+            if any(p["period_id"] == entry.period_id and p["start"] == entry.to_dict()["start"] for p in periods):
+                return None
+            periods.append(entry.to_dict())
+            self._save()
+            logger.info("short-term memory recorded period %s: %s", period_id, entry.narrative())
+            return entry
 
     def record_episode(
         self,
@@ -225,27 +275,31 @@ class DailyShortTermMemory:
         image_names: list[str] | None = None,
     ) -> EpisodeEntry | None:
         """Record one tracker episode (escalation occurrence)."""
-        self._ensure_session(time)
-        episodes = self.sessions[self.session_name]["episodes"]
-        if any(e["name"] == name for e in episodes):
-            return None
-        entry = EpisodeEntry(
-            name=name, code=code, time=time, reason=reason,
-            cat_id=cat_id, period_id=period_id, image_names=list(image_names or []),
-        )
-        episodes.append(entry.to_dict())
-        self._save()
-        return entry
+        with self._mu:
+            self._ensure_session(time)
+            episodes = self.sessions[self.session_name]["episodes"]
+            if any(e["name"] == name for e in episodes):
+                return None
+            entry = EpisodeEntry(
+                name=name, code=code, time=time, reason=reason,
+                cat_id=cat_id, period_id=period_id, image_names=list(image_names or []),
+            )
+            episodes.append(entry.to_dict())
+            self._save()
+            return entry
 
-    def record_verdict(self, name: str, verdict: str) -> bool:
-        """Attach a validation verdict to a recorded episode. False if unknown."""
-        for session in self.sessions.values():
-            for raw in session["episodes"]:
-                if raw["name"] == name:
-                    raw["verdict"] = verdict
-                    self._save()
-                    return True
-        return False
+    def record_verdict(self, name: str, verdict: str, rationale: str | None = None) -> bool:
+        """Attach a validation verdict (+ optional rationale) to an episode. False if unknown."""
+        with self._mu:
+            for session in self.sessions.values():
+                for raw in session["episodes"]:
+                    if raw["name"] == name:
+                        raw["verdict"] = verdict
+                        if rationale:
+                            raw["rationale"] = rationale
+                        self._save()
+                        return True
+            return False
 
     # -- day-end merge into long-term memory --
 
@@ -256,6 +310,12 @@ class DailyShortTermMemory:
         plus one summary per active zone (spatial path: promotes into the top
         spatial levels). Returns the store receipts.
         """
+        from agent.memory.models import MemoryEvent
+
+        with self._mu:
+            return self._merge_into_locked(long_term)
+
+    def _merge_into_locked(self, long_term) -> list:
         from agent.memory.models import MemoryEvent
 
         receipts = []
@@ -328,6 +388,10 @@ class DailyShortTermMemory:
 
     def render(self) -> str:
         """The full day narrative as plain-language Markdown."""
+        with self._mu:
+            return self._render_locked()
+
+    def _render_locked(self) -> str:
         if self.day is None:
             return "# Short-term memory — no day open\n"
         lines = [
@@ -410,9 +474,11 @@ class DailyShortTermMemory:
             for cat, ps in sorted(by_cat.items()):
                 first, last = ps[0].start, ps[-1].end
                 total = sum(p.detections for p in ps)
+                acts = sorted({p.activity for p in ps if p.activity})
+                doing = f", seen {', '.join(acts)}" if acts else ""
                 segs.append(
                     f"{cat} visited {len(ps)} time(s) from {first.strftime('%H:%M')} "
-                    f"to {last.strftime('%H:%M')} ({total} sightings)"
+                    f"to {last.strftime('%H:%M')} ({total} sightings{doing})"
                 )
             parts.append("; ".join(segs) + ". ")
         else:
@@ -431,9 +497,11 @@ class DailyShortTermMemory:
         first, last = periods[0].start, periods[-1].end
         cats = sorted({p.cat_name or "unassigned" for p in periods})
         total = sum(p.detections for p in periods)
+        acts = sorted({p.activity for p in periods if p.activity})
+        doing = f" Cats here were seen {', '.join(acts)}." if acts else ""
         return (
             f"Zone active {_fmt_span(first, last)}: {', '.join(cats)} seen here "
-            f"in {len(periods)} visit(s), {total} sightings in total."
+            f"in {len(periods)} visit(s), {total} sightings in total.{doing}"
         )
 
     def _group_by_zone(self, long_term, periods: list[PeriodEntry]) -> dict:
