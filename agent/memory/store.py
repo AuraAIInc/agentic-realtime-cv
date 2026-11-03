@@ -29,7 +29,6 @@ class SpatialUnit:
     activity: str = ""
     appearance: str = ""  # what the cats seen here look like (plain language)
     behavior: str = ""  # what the cats seen here typically do (plain language)
-    keywords: list[str] = field(default_factory=list)
     weight: int = 0
     contradictions: int = 0
     recent: list[str] = field(default_factory=list)
@@ -62,7 +61,6 @@ class SpatialUnit:
             "activity": self.activity,
             "appearance": self.appearance,
             "behavior": self.behavior,
-            "keywords": list(self.keywords),
             "weight": int(self.weight),
             "contradictions": int(self.contradictions),
             "recent": list(self.recent),
@@ -84,7 +82,7 @@ class SpatialUnit:
             activity=str(data.get("activity") or ""),
             appearance=str(data.get("appearance") or ""),
             behavior=str(data.get("behavior") or ""),
-            keywords=[str(k) for k in data.get("keywords", []) or []],
+            # NOTE: legacy "keywords" keys in old YAML are ignored on load.
             weight=int(data.get("weight", 0)),
             contradictions=int(data.get("contradictions", 0)),
             recent=[str(r) for r in data.get("recent", []) or []],
@@ -100,7 +98,6 @@ class SpatialUnit:
 class TemporalUnit:
     id: str
     summary: str = ""
-    keywords: list[str] = field(default_factory=list)
     weight: int = 0
     contradictions: int = 0
     recent: list[str] = field(default_factory=list)
@@ -122,7 +119,6 @@ class TemporalUnit:
         return {
             "id": self.id,
             "summary": self.summary,
-            "keywords": list(self.keywords),
             "weight": int(self.weight),
             "contradictions": int(self.contradictions),
             "recent": list(self.recent),
@@ -138,7 +134,7 @@ class TemporalUnit:
         return cls(
             id=str(data["id"]),
             summary=str(data.get("summary") or ""),
-            keywords=[str(k) for k in data.get("keywords", []) or []],
+            # NOTE: legacy "keywords" keys in old YAML are ignored on load.
             weight=int(data.get("weight", 0)),
             contradictions=int(data.get("contradictions", 0)),
             recent=[str(r) for r in data.get("recent", []) or []],
@@ -280,7 +276,6 @@ class MemoryStore:
                         "background": ancestor.background,
                         "cat_contrast": ancestor.cat_contrast,
                         "activity": "",
-                        "keywords": list(ancestor.keywords),
                         "unobserved": True,
                     },
                     True,
@@ -293,7 +288,6 @@ class MemoryStore:
                 "background": "",
                 "cat_contrast": "",
                 "activity": "",
-                "keywords": [],
                 "unobserved": True,
             },
             True,

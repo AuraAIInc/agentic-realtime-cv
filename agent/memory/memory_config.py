@@ -93,6 +93,7 @@ class MemoryConfig:
     queue_warn_depth: int = 100
     promote_coalesce: bool = True
     store_dir: str = "agent/memory/data"
+    trace_dir: str = "output/memory_runs"  # one markdown LLM trace per store/promote call
     llm_model_role: str = "memory"
     max_units_per_call: int = 8
     # Trust gate: long-term memory keeps only period/label/summary events at
@@ -149,6 +150,8 @@ class MemoryConfig:
             cfg.promote_coalesce = bool(worker["promote_coalesce"])
         if "store_dir" in raw:
             cfg.store_dir = str(raw["store_dir"])
+        if "trace_dir" in raw:
+            cfg.trace_dir = str(raw["trace_dir"])
         llm = raw.get("llm") or {}
         if "model_role" in llm:
             cfg.llm_model_role = str(llm["model_role"])
@@ -180,6 +183,7 @@ class MemoryConfig:
         self.queue_warn_depth = _int("MEMORY_QUEUE_WARN_DEPTH", self.queue_warn_depth)
         self.promote_coalesce = _bool("MEMORY_PROMOTE_COALESCE", self.promote_coalesce)
         self.store_dir = _str("MEMORY_STORE_DIR", self.store_dir)
+        self.trace_dir = _str("MEMORY_TRACE_DIR", self.trace_dir)
         self.llm_model_role = _str("MEMORY_LLM_MODEL_ROLE", self.llm_model_role)
         self.max_units_per_call = _int("MEMORY_MAX_UNITS_PER_CALL", self.max_units_per_call)
         self.min_store_confidence = _float("MEMORY_MIN_STORE_CONFIDENCE", self.min_store_confidence)

@@ -64,7 +64,7 @@ def test_unit_counters(mem):
     assert unit.stats["visits"] == 3
     assert unit.stats["by_cat"] == {"1": 2, "2": 1}
     assert len(unit.recent) == 3
-    assert "sofa" in unit.keywords
+    assert "sofa" in unit.activity
 
 
 def test_history_windows(mem):

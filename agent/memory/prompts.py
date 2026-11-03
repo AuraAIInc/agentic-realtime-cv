@@ -16,11 +16,10 @@ Output the required JSON object only: no markdown, no code fences, no preamble."
 STORE_UPDATE_SCHEMA = {
     "type": "object",
     "properties": {
-        "keywords": {"type": "array", "items": {"type": "string"}},
         "contradicts_stable": {"type": "boolean"},
         "note": {"type": "string"},
     },
-    "required": ["keywords", "contradicts_stable", "note"],
+    "required": ["contradicts_stable", "note"],
     "additionalProperties": False,
 }
 
@@ -28,9 +27,8 @@ PROMOTE_SUMMARY_SCHEMA = {
     "type": "object",
     "properties": {
         "text": {"type": "string"},
-        "keywords": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["text", "keywords"],
+    "required": ["text"],
     "additionalProperties": False,
 }
 
@@ -40,9 +38,8 @@ SPATIAL_SUMMARY_SCHEMA = {
         "activity": {"type": "string"},
         "appearance": {"type": "string"},
         "behavior": {"type": "string"},
-        "keywords": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["activity", "appearance", "behavior", "keywords"],
+    "required": ["activity", "appearance", "behavior"],
     "additionalProperties": False,
 }
 
@@ -85,8 +82,7 @@ def store_update_instructions() -> str:
         "You maintain one unit of a cat-tracking spatial-temporal memory.\n"
         f"{STYLE_GUIDE}\n"
         "Compare OBSERVATION against the unit's STABLE text and respond with JSON:\n"
-        '{"keywords": [lowercase search terms from the observation],\n'
-        ' "contradicts_stable": bool,\n'
+        '{"contradicts_stable": bool,\n'
         ' "note": "one plain sentence, at most 40 words, restating the observation"}.\n'
         "The established stable pattern outranks any single new input: set "
         "contradicts_stable true only when the observation is genuinely "
@@ -113,8 +109,7 @@ def promote_summary_instructions(level: str, word_cap: int) -> str:
             f"{STYLE_GUIDE}\n"
             "Respond with JSON: {\"activity\": what happens in this zone, "
             "\"appearance\": what the cats seen here look like, "
-            "\"behavior\": what those cats typically do here, "
-            "\"keywords\": [terms]}.\n"
+            "\"behavior\": what those cats typically do here}.\n"
             "Dominant patterns only: every child below the support gate was "
             "already removed, so describe what repeats across the remaining "
             "children and their rolled-up visit counts. Appearance comes only "
@@ -128,7 +123,7 @@ def promote_summary_instructions(level: str, word_cap: int) -> str:
     return (
         f"You compress {level} child summaries into one parent memory unit.\n"
         f"{STYLE_GUIDE}\n"
-        "Respond with JSON: {\"text\": parent summary, \"keywords\": [terms]}.\n"
+        "Respond with JSON: {\"text\": parent summary}.\n"
         "Dominant patterns only: every child below the support gate was already "
         "removed, so summarize what repeats across the remaining children and "
         "their rolled-up visit counts. Never let a one-off detail into the "

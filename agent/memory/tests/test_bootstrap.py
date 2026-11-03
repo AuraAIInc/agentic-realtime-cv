@@ -19,7 +19,7 @@ SOFA_BOX = (500.0, 300.0, 600.0, 400.0)  # L0 r3c5, L1 r1c2
 
 
 class ZoneStub(StubLLMClient):
-    def bootstrap(self, image: bytes) -> dict:
+    def bootstrap(self, image: bytes, label: str | None = None) -> dict:
         out = super().bootstrap(image)
         out["zones"] = [
             {
@@ -34,7 +34,7 @@ class ZoneStub(StubLLMClient):
 
 
 class FailingVisionStub(StubLLMClient):
-    def bootstrap(self, image: bytes) -> dict:
+    def bootstrap(self, image: bytes, label: str | None = None) -> dict:
         raise ConnectionError("vision endpoint down")
 
 

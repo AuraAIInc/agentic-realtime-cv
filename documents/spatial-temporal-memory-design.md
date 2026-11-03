@@ -11,8 +11,9 @@ queue: callers enqueue and continue, the worker executes jobs one by one.
 Promotion compresses each parent to dominant patterns only, weighting old stable
 patterns over fresh input so the latest observation cannot overfit memory. The
 store bootstraps from the first received image. The direct consumer of `invoke`
-is the validation worker's escalation briefs. Keyword semantic search for v1;
-true embedding search is a deferred future phase.
+is the validation worker's escalation briefs. Plain-text token-overlap search
+for v1 (no LLM-generated keywords anywhere); true embedding search is a
+deferred future phase.
 
 Trust policy (built): long-term memory keeps **only high-confidence
 knowledge** — original high-confidence detections and high-confidence
@@ -59,7 +60,8 @@ behavior, and background view. Short-term memory is designed and built in
   api_key)` from `supervisor_agent/models.json` (`roles.agent.model =
   muse-spark-1.3`, Meta Model API); installed `openai` is 3.39.0.
 - `models.json` lists no embeddings endpoint (responses / images / asr only), so
-  v1 semantic search is keyword-based; embeddings wait for a confirmed endpoint.
+  v1 semantic search scores token overlap over each unit's own text plus a
+  phrase bonus; embeddings wait for a confirmed endpoint.
 - View 3 is 800x600 (`agent_data/config/zones.yaml`); `PeriodCorrector` already
   uses a 50x50 px grid precedent (`period_area_count`).
 - `output/` (repo root) is git-ignored temp data (`.gitignore`); tracking runs persist
@@ -140,7 +142,6 @@ spatial:
       activity: "Qb naps here most afternoons; Qbo rarely visits."
       appearance: "Qb: short-haired white cat with faint silver shading."
       behavior: "Qb settles on the left cushion and sleeps for hours."
-      keywords: [sofa, nap, qb]
       weight: 24                 # effective observations, capped at stable_weight_cap
       contradictions: 0          # consecutive contradicting batches vs stable text
       recent: ["2026-10-31T14:00 Qb settled on the left cushion."]
@@ -155,7 +156,6 @@ temporal:
   slot_5min:
     - id: "2026-10-31T14:00"
       summary: "Qb walked from the doorway to the sofa and settled."
-      keywords: [qb, sofa, walking]
       images: [...]              # same bounded evidence as spatial units
       detections: [...]
   hour: [...]  # activity mix: who was active/resting, where
@@ -248,6 +248,12 @@ class LongTermMemory:
   thresholds are programmatic, so behavior is testable with the stub.
 - Persist after each promotion (atomic tmp+rename); clear dirty flags only for
   units actually summarized.
+- LLM observability (built): every real store/promote/bootstrap LLM call
+  dumps one markdown trace (`output/memory_runs/<ts>-<seq>-<kind>-<label>.md`,
+  `MEMORY_TRACE_DIR` override) with the full system prompt, input, raw
+  output, parsed answer, and timing/token/cost stats — same layout as the
+  supervisor agent traces, single-turn scale. Trace writes are best-effort
+  and never break memory; the offline stub writes no traces.
 - Trust gate (`_store_qualifies`, built): `store()` keeps only `period` /
   `label` events at or above `min_store_confidence` (default 0.7) plus
   `summary` events (curated day merges, always qualify). Escalation
@@ -257,7 +263,7 @@ class LongTermMemory:
   rollup regardless of visit support, and a summarized parent inherits its
   children's `sources`, so day narratives roll all the way up instead of
   stopping at stats-only parents. Spatial summaries return
-  `{activity, appearance, behavior, keywords}`; appearance/behavior come only
+  `{activity, appearance, behavior}`; appearance/behavior come only
   from children's lines, never invented.
 
 ### Bootstrap from the first image
@@ -292,8 +298,8 @@ class LongTermMemory:
   reuse `base_url` / `api_key_env`. The worker uses a sync client (callers and
   the worker are sync). `StubLLMClient` implements the same interface for
   offline tests.
-- Four prompts: store-update (merge observation into `recent`, refresh keywords,
-  report `contradicts_stable`), promote-summary (compress children into parent
+- Four prompts: store-update (merge observation into `recent`, report
+  `contradicts_stable`), promote-summary (compress children into parent
   stable text under the word cap, dominant patterns only), bootstrap-vision
   (full-view + per-zone environment/background/contrast JSON), plus shared
   plain-language style instructions.
@@ -325,8 +331,8 @@ same way, marked so nothing merges twice. Full design:
 ## Approach
 
 Build bottom-up in four phases: (1) config + tree + YAML store + reset + worker
-skeleton, no LLM; (2) text-path store/invoke through the worker + keyword
-semantic search + compression data structures; (3) LLM-backed store/promote with
+skeleton, no LLM; (2) text-path store/invoke through the worker + text
+search + compression data structures; (3) LLM-backed store/promote with
 weighting prompts + bootstrap vision + escalation-facing invoke + idle tick;
 (4) TrackingRun hooks + replay integration + docs. Short-term memory follows as
 phase 5, embeddings as phase 6.
@@ -341,7 +347,7 @@ phase 5, embeddings as phase 6.
    receipts, coalesced promotes, `drain()`/`shutdown()`, reader lock.
 2. Text-path store/invoke through the worker, semantic search, stub short-term.
    Surfaces: `long_term.py` (text merge without LLM), `short_term.py` interface,
-   `MemoryContext` brief rendering, keyword scorer, unit counters (`weight`,
+   `MemoryContext` brief rendering, text scorer, unit counters (`weight`,
    `contradictions`, `recent`, `stats`). Neighbor-radius, history-window, and
    dominance-support behavior pinned by tests with `StubLLMClient`.
 3. LLM-backed store/promote, weighting, bootstrap, escalation adapter, tick.
@@ -362,7 +368,7 @@ phase 5, embeddings as phase 6.
 - `pytest agent/memory/tests -q` from the repo root, offline: grid mapping
   (corners, edges, parent coverage), bucket boundaries (slot/hour/day/week),
   YAML round-trip + retention, neighbor-radius counts, history-window contents,
-  keyword ranking on a fixture tree, worker ordering + promote coalescing +
+  text ranking on a fixture tree, worker ordering + promote coalescing +
   `drain`/`shutdown` flush, concurrent invoke-during-store smoke test,
   compression (dominant pattern kept, one-off dropped, word caps held),
   weighting (one contradiction keeps routine, three flip it), bootstrap marked
@@ -393,8 +399,9 @@ phase 5, embeddings as phase 6.
   unknown rather than guessing.
 - `openai==3.39.0` API parity for the responses-style calls `agent.py` uses:
   verify at build time and match the exact working call shape.
-- No embeddings endpoint in `models.json` today: keyword semantic search is the
-  v1 approach; embeddings are phase 6, only if an endpoint is confirmed.
+- No embeddings endpoint in `models.json` today: token-overlap text search is
+  the v1 approach (no stored keywords); embeddings are a future phase, only
+  if an endpoint is confirmed.
 - Open question: none blocking. Store sources are high-confidence period
   verdicts + decisive supervisor-validation labels + curated day summaries;
   escalation occurrences stay in short-term day context by design.

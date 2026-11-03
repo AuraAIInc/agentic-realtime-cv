@@ -507,7 +507,7 @@ class TrackingRun:
             try:
                 from agent.memory import MetaModelClient
 
-                llm_client = MetaModelClient(role=cfg.llm_model_role)
+                llm_client = MetaModelClient(role=cfg.llm_model_role, trace_dir=cfg.trace_dir)
             except Exception:
                 logger.warning("memory LLM unavailable; using offline stub", exc_info=True)
                 from agent.memory import StubLLMClient

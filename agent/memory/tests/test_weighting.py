@@ -25,14 +25,14 @@ class SignallingStub(StubLLMClient):
     def __init__(self, marker: str = "CHAIR"):
         self.marker = marker
 
-    def store_update(self, unit: dict, observation: str) -> dict:
+    def store_update(self, unit: dict, observation: str, label: str | None = None) -> dict:
         out = super().store_update(unit, observation)
         out["contradicts_stable"] = self.marker in observation
         return out
 
 
 class FailingStub(StubLLMClient):
-    def store_update(self, unit: dict, observation: str) -> dict:
+    def store_update(self, unit: dict, observation: str, label: str | None = None) -> dict:
         raise ConnectionError("model endpoint down")
 
 

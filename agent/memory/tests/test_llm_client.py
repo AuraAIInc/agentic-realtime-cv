@@ -48,21 +48,21 @@ def test_settings_come_from_memory_role():
 
 
 def test_store_update_shape_and_parsing():
-    c = _client('{"keywords": ["sofa"], "contradicts_stable": true, "note": "x"}')
+    c = _client('{"contradicts_stable": true, "note": "x"}')
     out = c.store_update({"stable": "old", "weight": 5}, "new obs")
-    assert out == {"keywords": ["sofa"], "contradicts_stable": True, "note": "x"}
+    assert out == {"contradicts_stable": True, "note": "x"}
     call = c._client.responses.calls[0]
     assert call["model"] == "muse-spark-1.3"
     assert "OBSERVATION: new obs" in call["input"]
     fmt = call["text"]["format"]
     assert fmt["type"] == "json_schema" and fmt["strict"] is True
     assert set(fmt["schema"]["required"]) == {
-        "keywords", "contradicts_stable", "note",
+        "contradicts_stable", "note",
     }
 
 
 def test_json_fences_stripped_and_bad_output_maps_to_error():
-    c = _client('```json\n{"keywords": [], "contradicts_stable": false, "note": "n"}\n```')
+    c = _client('```json\n{"contradicts_stable": false, "note": "n"}\n```')
     assert c.store_update({}, "o")["note"] == "n"
     with pytest.raises(LLMClientError, match="non-JSON"):
         _client("not json at all").store_update({}, "o")
@@ -71,9 +71,21 @@ def test_json_fences_stripped_and_bad_output_maps_to_error():
 
 
 def test_summarize_carries_word_cap():
-    c = _client('{"text": "t", "keywords": ["k"]}')
-    c.summarize("L1", [{"id": "r0c0", "text": "hi", "visits": 3}], {"visits": 3})
+    c = _client('{"activity": "a", "appearance": "p", "behavior": "b"}')
+    out = c.summarize("L1", [{"id": "r0c0", "text": "hi", "visits": 3}], {"visits": 3})
+    assert out == {"text": "a", "appearance": "p", "behavior": "b"}
     assert "100 words" in c._client.responses.calls[0]["instructions"]
+
+
+def test_no_keywords_anywhere_in_requests_or_results():
+    c = _client(
+        '{"contradicts_stable": false, "note": "n"}',
+        '{"activity": "t", "appearance": "a", "behavior": "b"}',
+    )
+    assert c.store_update({}, "o") == {"contradicts_stable": False, "note": "n"}
+    assert c.summarize("L1", [], {}) == {"text": "t", "appearance": "a", "behavior": "b"}
+    blob = json.dumps([call for call in c._client.responses.calls])
+    assert "keyword" not in blob.lower()
 
 
 def test_bootstrap_vision_payload():

@@ -20,7 +20,6 @@ def test_yaml_round_trip(tmp_path):
             bounds=[500, 300, 600, 400],
             environment="sofa",
             activity="Qb naps here.",
-            keywords=["sofa", "qb"],
             weight=3,
             recent=["a", "b"],
             stats={"visits": 3, "by_cat": {"1": 3}},
@@ -83,3 +82,19 @@ def test_effective_l0_inheritance(tmp_path):
 
     view, unobserved = store.effective_l0("r0c0", index)  # nothing stored anywhere
     assert unobserved is True and view["environment"] == ""
+
+
+def test_legacy_keywords_yaml_loads_and_saves_clean(tmp_path):
+    path = tmp_path / "legacy.yaml"
+    path.write_text(
+        "version: 1\nview_id: 3\nbootstrapped: false\n"
+        "spatial:\n  L0:\n  - id: r3c5\n    activity: Qb naps.\n"
+        "    keywords: [sofa, qb]\n    weight: 1\n"
+        "temporal:\n  day:\n  - id: 2026-10-31\n    summary: quiet\n"
+        "    keywords: [nap]\n    weight: 1\n"
+    )
+    store = MemoryStore(_config(), path=path).load()
+    assert store.get_spatial("L0", "r3c5").activity == "Qb naps."
+    assert store.get_temporal("day", "2026-10-31").summary == "quiet"
+    store.save()
+    assert "keywords" not in path.read_text()

@@ -329,7 +329,7 @@ class LongTermMemory:
         return hits
 
     def semantic_search(self, text: str, top_k: int | None = None) -> list[MemoryHit]:
-        """Keyword search over stored units: keyword-overlap score plus a
+        """Text search over stored units: token-overlap score plus a
         full-phrase bonus, spatial levels before temporal on ties."""
         if top_k is None:
             top_k = self.config.semantic_top_k
@@ -352,7 +352,7 @@ class LongTermMemory:
                     scored.append(
                         self._score_unit(
                             label, uid, unit.activity or unit.environment,
-                            hay, unit.keywords, tokens, needle,
+                            hay, tokens, needle,
                             self._hit_extra(unit),
                         )
                     )
@@ -363,7 +363,7 @@ class LongTermMemory:
                     scored.append(
                         self._score_unit(
                             lname, uid, unit.summary, unit.summary,
-                            unit.keywords, tokens, needle,
+                            tokens, needle,
                             self._hit_extra(unit),
                         )
                     )
@@ -377,12 +377,11 @@ class LongTermMemory:
         uid: str,
         display: str,
         haystack: str,
-        keywords: list[str],
         tokens: set[str],
         needle: str,
         extra: dict | None = None,
     ) -> MemoryHit:
-        unit_tokens = set(extract_keywords(haystack)) | {k.lower() for k in keywords}
+        unit_tokens = set(extract_keywords(haystack))
         score = float(len(tokens & unit_tokens))
         if needle and needle in haystack.lower():
             score += 0.5
@@ -529,7 +528,7 @@ class LongTermMemory:
             try:
                 if image is None:
                     raise ValueError("no image for vision bootstrap")
-                res = self.llm.bootstrap(bytes(image))
+                res = self.llm.bootstrap(bytes(image), label="first-frame")
                 if not isinstance(res, dict):
                     raise ValueError("bootstrap LLM returned a non-dict")
             except Exception as exc:  # noqa: BLE001 - degrade, never raise
@@ -667,9 +666,9 @@ class LongTermMemory:
 
     def _store_llm_update(
         self, stable: str, weight: int, event: MemoryEvent
-    ) -> tuple[str, list[str], bool | None]:
-        """Return ``(note, keywords, contradicts)``; ``None`` means the LLM
-        failed and the caller must use pending-observation mode."""
+    ) -> tuple[str, bool | None]:
+        """Return ``(note, contradicts)``; ``None`` means the LLM failed and
+        the caller must use pending-observation mode."""
         logger.info(
             "memory store LLM input (%s): stable=%r weight=%d text=%r",
             self._source_label(event),
@@ -679,23 +678,23 @@ class LongTermMemory:
         )
         try:
             res = self.llm.store_update(
-                {"stable": stable, "weight": weight}, event.text
+                {"stable": stable, "weight": weight},
+                event.text,
+                label=self._source_label(event),
             )
             if not isinstance(res, dict):
                 raise ValueError("store LLM returned a non-dict")
             note = str(res.get("note", "") or "") or event.text
-            keywords = [str(k) for k in res.get("keywords", []) or []]
             logger.info(
-                "memory store LLM output (%s): contradicts=%s keywords=%s note=%r",
+                "memory store LLM output (%s): contradicts=%s note=%r",
                 self._source_label(event),
                 bool(res.get("contradicts_stable", False)),
-                keywords,
                 _log_snip(note),
             )
-            return note, keywords, bool(res.get("contradicts_stable", False))
+            return note, bool(res.get("contradicts_stable", False))
         except Exception as exc:  # noqa: BLE001 - degrade, never raise
             logger.warning("memory store LLM failed (%s); keeping raw text", exc)
-            return event.text, extract_keywords(event.text), None
+            return event.text, None
 
     def _merge_spatial_text(self, unit: SpatialUnit, event: MemoryEvent) -> None:
         stamp = event.time.isoformat(timespec="minutes")
@@ -703,7 +702,7 @@ class LongTermMemory:
         self._attach_evidence(unit, event)
         if event.appearance and event.appearance not in unit.appearance:
             unit.appearance = f"{unit.appearance}; {event.appearance}".strip("; ")
-        note, keywords, contradicts = self._store_llm_update(
+        note, contradicts = self._store_llm_update(
             unit.activity, unit.weight, event
         )
         if contradicts is None:
@@ -719,15 +718,13 @@ class LongTermMemory:
         else:
             unit.contradictions = 0
         self._append_recent(unit, f"{stamp} {note}")
-        if keywords:
-            unit.keywords = sorted(set(unit.keywords) | set(keywords))
         self._touch(unit, event)
 
     def _merge_temporal_text(self, unit: TemporalUnit, event: MemoryEvent) -> None:
         stamp = event.time.isoformat(timespec="minutes")
         self._bump_counters(unit, event)
         self._attach_evidence(unit, event)
-        note, keywords, contradicts = self._store_llm_update(
+        note, contradicts = self._store_llm_update(
             unit.summary, unit.weight, event
         )
         if contradicts is None:
@@ -743,8 +740,6 @@ class LongTermMemory:
         else:
             unit.contradictions = 0
         self._append_recent(unit, f"{stamp} {note}")
-        if keywords:
-            unit.keywords = sorted(set(unit.keywords) | set(keywords))
         self._touch(unit, event)
 
     # ---- bottom-up promotion with compression ----
@@ -755,7 +750,6 @@ class LongTermMemory:
             "text": child.activity or child.environment,
             "appearance": child.appearance,
             "behavior": child.behavior,
-            "keywords": list(child.keywords),
             "visits": int(child.stats.get("visits", 0)),
             "weight": int(child.weight),
         }
@@ -764,7 +758,6 @@ class LongTermMemory:
         return {
             "id": child.id,
             "text": child.summary,
-            "keywords": list(child.keywords),
             "visits": int(child.stats.get("visits", 0)),
             "weight": int(child.weight),
         }
@@ -830,7 +823,7 @@ class LongTermMemory:
                 _log_snip(str(child.get("text", ""))),
             )
         try:
-            out = self.llm.summarize(label, child_dicts, stats)
+            out = self.llm.summarize(label, child_dicts, stats, label=f"{label}:{pid}")
             if not isinstance(out, dict):
                 raise ValueError("summarize LLM returned a non-dict")
         except Exception as exc:  # noqa: BLE001 - degrade, never raise
@@ -843,11 +836,10 @@ class LongTermMemory:
             return None
         state["calls"] += 1
         logger.info(
-            "memory promote LLM output (%s:%s): text=%r keywords=%s",
+            "memory promote LLM output (%s:%s): text=%r",
             label,
             pid,
             _log_snip(str(out.get("text", "") or "")),
-            [str(k) for k in out.get("keywords", []) or []],
         )
         return out
 
@@ -958,9 +950,6 @@ class LongTermMemory:
                 )
                 if behavior:
                     parent.behavior = behavior
-                kws = [str(k) for k in out.get("keywords", []) or []]
-                if kws:
-                    parent.keywords = sorted(set(parent.keywords) | set(kws))
                 changed.add(pid)
                 for kid in kids:
                     self._dirty.discard(("spatial", child_label, kid.id))
@@ -1066,9 +1055,6 @@ class LongTermMemory:
                     parent.summary = text
                     promoted += 1
                     self._inherit_sources(parent, qualified)
-                kws = [str(k) for k in out.get("keywords", []) or []]
-                if kws:
-                    parent.keywords = sorted(set(parent.keywords) | set(kws))
                 changed.add((level, bid))
                 for kid in kids:
                     self._dirty.discard(("temporal", child_level, kid.id))

@@ -20,9 +20,9 @@ LONG_WORDS = [f"sofa{i}" for i in range(200)]
 class VerbatimStub(StubLLMClient):
     """Summarize without truncating, so the test pins long_term's own cap."""
 
-    def summarize(self, level: str, children: list[dict], stats: dict) -> dict:
+    def summarize(self, level: str, children: list[dict], stats: dict, label: str | None = None) -> dict:
         texts = [str(c.get("text", "")) for c in children if c.get("text")]
-        return {"text": " ".join(texts), "keywords": ["sofa"]}
+        return {"text": " ".join(texts)}
 
 
 @pytest.fixture()
@@ -40,7 +40,6 @@ def _spatial(uid, text, visits):
         id=uid,
         bounds=[0.0, 0.0, 100.0, 100.0],
         activity=text,
-        keywords=["sofa"],
         weight=min(visits, 50),
         stats={"visits": visits, "by_cat": {"1": visits}},
         updated="2026-10-31T14:00:00",
@@ -51,7 +50,6 @@ def _temporal(uid, text, visits):
     return TemporalUnit(
         id=uid,
         summary=text,
-        keywords=["nap"],
         weight=min(visits, 50),
         stats={"visits": visits, "by_cat": {"1": visits}},
         updated="2026-10-31T14:00:00",
