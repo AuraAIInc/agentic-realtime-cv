@@ -1,0 +1,138 @@
+{
+  "session_id": "20261103-002121",
+  "started": "2026-11-03 00:21:21",
+  "finished": "2026-11-03 00:21:33",
+  "wall_seconds": 12.5,
+  "dry_run": false,
+  "start_key": "2026-10-28-16-33",
+  "end_key": "2026-10-28-16-34",
+  "hours": [
+    "2026-10-28-16"
+  ],
+  "sam_model": "sam-3.1",
+  "spark_model": "muse-spark-1.3",
+  "spark_pricing": {
+    "input": 1.25,
+    "output": 4.25
+  },
+  "concepts": [
+    "animal",
+    "a cat"
+  ],
+  "workers": 3,
+  "limit": 3,
+  "images_in_range": 3,
+  "processed": 3,
+  "skipped": 0,
+  "failed": 0,
+  "sam_calls": 6,
+  "spark_calls": 3,
+  "proposed": 3,
+  "boxes_total": 3,
+  "boxes_by_class": {
+    "Qb": 3
+  },
+  "dropped": 0,
+  "rejected": 0,
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0
+  },
+  "cost_usd": 0.015,
+  "sam_cost_usd": 0.015,
+  "spark_cost_usd": 0.0,
+  "pricing_usd_per_1000_images": 2.5,
+  "pricing_url": "https://dev.meta.ai/docs/pricing-rate-limits",
+  "queries": [
+    {
+      "class_id": 0,
+      "name": "Qb",
+      "concept": "Qb: Short-haired white cat with faint silver shading, round face and blue-green eyes"
+    },
+    {
+      "class_id": 1,
+      "name": "Qbo",
+      "concept": "Qbo: Long-haired cream and golden-beige cat with darker brown paws, face and plume tail"
+    }
+  ],
+  "first_sam_image": "2026-10-28-16/5502_2026-10-28-16-33-00-304643.jpg",
+  "first_sam_prompt": "concept 0: animal\nconcept 1: a cat",
+  "first_spark_image": "2026-10-28-16/5502_2026-10-28-16-33-00-304643.jpg",
+  "first_spark_prompt": "Identify each boxed region in this 800x600 home-camera frame. Reply with ONLY a JSON object, no other text.\nCats:\n- id 0 Qb: Short-haired white cat with faint silver shading, round face and blue-green eyes. Cues: Cool white to light silver colour, no warm cream or brown tones; Smooth, sharp body outline (short fur, no fluffy halo); Thin tail with grey rings or a grey tip, often carried upright when walking.\n- id 1 Qbo: Long-haired cream and golden-beige cat with darker brown paws, face and plume tail. Cues: Warm cream / beige colour, clearly warmer than Qb; Fuzzy, soft body outline with a fluffy halo; Big bushy plume tail, wider than the leg, grey-brown.\nBoxes (pixels, x1 y1 x2 y2):\n- box 0: [190,505,299,599]\nOld-detector reference: none (it found nothing; context only, it may have missed a cat).\nRules: assign each box the id of the cat it shows, or -1 when it shows no cat or you are unsure. Format: {\"boxes\": [{\"box\": 0, \"id\": 1}]}",
+  "per_hour": {
+    "2026-10-28-16": {
+      "in_range": 3,
+      "processed": 3,
+      "skipped": 0,
+      "failed": 0,
+      "boxes": 3
+    }
+  },
+  "failures": [],
+  "results": [
+    {
+      "hour": "2026-10-28-16",
+      "image": "5502_2026-10-28-16-33-00-304643.jpg",
+      "stamp": "2026-10-28-16-33-00-304643",
+      "status": "ok",
+      "sam_calls": 2,
+      "spark_calls": 1,
+      "proposed": 1,
+      "boxes": {
+        "Qb": 1
+      },
+      "dropped": 0,
+      "rejected": 0,
+      "seconds": 10.268723124987446,
+      "usage": {
+        "input_tokens": 853,
+        "output_tokens": 899,
+        "total_tokens": 1752
+      },
+      "error": null
+    },
+    {
+      "hour": "2026-10-28-16",
+      "image": "5503_2026-10-28-16-33-00-664538.jpg",
+      "stamp": "2026-10-28-16-33-00-664538",
+      "status": "ok",
+      "sam_calls": 2,
+      "spark_calls": 1,
+      "proposed": 1,
+      "boxes": {
+        "Qb": 1
+      },
+      "dropped": 0,
+      "rejected": 0,
+      "seconds": 11.124515583040193,
+      "usage": {
+        "input_tokens": 853,
+        "output_tokens": 1030,
+        "total_tokens": 1883
+      },
+      "error": null
+    },
+    {
+      "hour": "2026-10-28-16",
+      "image": "5504_2026-10-28-16-33-01-024071.jpg",
+      "stamp": "2026-10-28-16-33-01-024071",
+      "status": "ok",
+      "sam_calls": 2,
+      "spark_calls": 1,
+      "proposed": 1,
+      "boxes": {
+        "Qb": 1
+      },
+      "dropped": 0,
+      "rejected": 0,
+      "seconds": 12.50504874996841,
+      "usage": {
+        "input_tokens": 853,
+        "output_tokens": 799,
+        "total_tokens": 1652
+      },
+      "error": null
+    }
+  ]
+}
