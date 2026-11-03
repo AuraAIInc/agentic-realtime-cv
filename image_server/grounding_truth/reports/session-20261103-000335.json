@@ -1,0 +1,57 @@
+{
+  "session_id": "20261103-000335",
+  "started": "2026-11-03 00:03:35",
+  "finished": "2026-11-03 00:03:35",
+  "wall_seconds": 0.0,
+  "dry_run": true,
+  "start_key": "2026-10-28-16-33",
+  "end_key": "2026-10-28-16-41",
+  "hours": [
+    "2026-10-28-16"
+  ],
+  "model": "sam-3.1",
+  "workers": 10,
+  "limit": null,
+  "images_in_range": 1319,
+  "processed": 0,
+  "skipped": 0,
+  "failed": 0,
+  "calls": 0,
+  "calls_per_image": 0.0,
+  "boxes_total": 0,
+  "boxes_by_class": {},
+  "dropped": 0,
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0
+  },
+  "cost_usd": 0.0,
+  "pricing_usd_per_1000_images": 2.5,
+  "pricing_url": "https://dev.meta.ai/docs/pricing-rate-limits",
+  "queries": [
+    {
+      "class_id": 0,
+      "name": "Qb",
+      "concept": "Qb: Short-haired white cat with faint silver shading, round face and blue-green eyes"
+    },
+    {
+      "class_id": 1,
+      "name": "Qbo",
+      "concept": "Qbo: Long-haired cream and golden-beige cat with darker brown paws, face and plume tail"
+    }
+  ],
+  "first_prompt_image": "2026-10-28-16/5502_2026-10-28-16-33-00-304643.jpg (query: Qb, class 0)",
+  "first_prompt": "Segment every instance of: Qb: Short-haired white cat with faint silver shading, round face and blue-green eyes.\nAppearance: A compact, cobby short-haired cat (British Shorthair type). Coat is dense, plush and short, nearly white overall with light silver-grey shading along the back and flanks. The tail is shorter and thinner than Qbo's, with faint grey rings and a darker grey tip. Round head with full cheeks, small rounded ears with pink insides. Large, round aqua / blue-green eyes with dark rims, a small pink nose and pink paw pads. Body outline is smooth and clean because the fur is short.\nLook for: Cool white to light silver colour, no warm cream or brown tones; Smooth, sharp body outline (short fur, no fluffy halo); Thin tail with grey rings or a grey tip, often carried upright when walking.\nThis query is for one identity only: Qb (label id 0). Segment only cats that match this description; ignore other cats, people, toys, blankets, and furniture.\nReference detections from an older detector: none - it found nothing in this frame (REFERENCE ONLY; it may have missed a cat, so judge from the image pixels).\nImage size: 800x600 pixels.",
+  "per_hour": {
+    "2026-10-28-16": {
+      "in_range": 1319,
+      "processed": 0,
+      "skipped": 0,
+      "failed": 0,
+      "boxes": 0
+    }
+  },
+  "failures": [],
+  "results": []
+}
