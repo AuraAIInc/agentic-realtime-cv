@@ -4,7 +4,15 @@ import datetime
 import json
 
 from agent.escalation import Escalation
-from agent.validation.worker import ValidationWorker, build_validation_query, ensure_supervisor_importable, parse_review
+from agent.validation.worker import (
+    ValidationWorker,
+    build_merged_query,
+    build_validation_query,
+    ensure_supervisor_importable,
+    merged_review_schema,
+    parse_merged_review,
+    parse_review,
+)
 
 T0 = datetime.datetime(2026, 10, 28, 16, 35, 21, 976102)
 
@@ -53,8 +61,11 @@ def test_worker_validates_in_order_and_journals():
     journaled = []
     worker = ValidationWorker(backend=backend, journal=journaled.append)
     worker.start()
+    # Far-apart times: separate batches, one backend call each, in order.
     worker.enqueue(_esc("T2"))
-    worker.enqueue(_esc("T3", cat_id=25, metrics={"killed_cat_id": 26, "iou": 0.8, "conf_margin": 0.04}))
+    worker.enqueue(
+        _esc("T3", time=T0 + datetime.timedelta(hours=2), cat_id=25, metrics={"killed_cat_id": 26, "iou": 0.8, "conf_margin": 0.04})
+    )
     ops = worker.stop(timeout=30)
     assert seen == ["T2", "T3"]
     assert [op["review"]["verdict"] for op in ops] == ["confirm", "confirm_survivor"]
@@ -121,8 +132,11 @@ def test_worker_failure_journals_error_op_and_continues():
 
     worker = ValidationWorker(backend=backend)
     worker.start()
+    # Far-apart times: separate batches, so the T2 failure cannot touch T3.
     worker.enqueue(_esc("T2"))
-    worker.enqueue(_esc("T3", cat_id=25, metrics={"killed_cat_id": 26, "iou": 0.8, "conf_margin": 0.04}, seq=7))
+    worker.enqueue(
+        _esc("T3", time=T0 + datetime.timedelta(hours=2), cat_id=25, metrics={"killed_cat_id": 26, "iou": 0.8, "conf_margin": 0.04}, seq=7)
+    )
     ops = worker.stop(timeout=30)
     assert ops[0]["review"]["verdict"] == "error"
     assert "agent down" in ops[0]["review"]["error"]
@@ -199,3 +213,164 @@ def test_worker_verdict_carries_confidence_evidence_and_short_term():
     worker2.enqueue(_esc())
     worker2.stop(timeout=30)
     assert memory2.stored[0].confidence == 0.0  # errors carry no knowledge
+
+
+def _merged_pair():
+    first = _esc("T2", seq=6)
+    second = _esc("T3", cat_id=25, metrics={"killed_cat_id": 26, "iou": 0.8, "conf_margin": 0.04}, seq=7)
+    return [first, second]
+
+
+def _merged_answer(**overrides):
+    payload = {
+        "reviews": [
+            {"name": "E6-T2", "verdict": "confirm", "chosen_cat_id": None, "cut_time": None},
+            {"name": "E7-T3", "verdict": "confirm_survivor", "chosen_cat_id": None, "cut_time": None},
+        ]
+    }
+    payload.update(overrides)
+    return json.dumps(payload)
+
+
+def test_merged_query_carries_full_sections_and_envelope_schema():
+    from agent.escalation import build_prompt
+
+    members = _merged_pair()
+    query, schema = build_merged_query(members, ["brief one", None])
+    assert "reviewing 2 related escalation cases" in query
+    assert "minimum total tool" in query and "fetch each image once" in query
+    assert "=== Case 1 of 2: E6-T2 ===" in query
+    assert "=== Case 2 of 2: E7-T3 ===" in query
+    for esc in members:
+        assert build_prompt(esc) in query  # full per-case prompt, nothing truncated
+    assert "brief one" in query
+    assert "one review per case, keyed by case name" in query
+    items = schema["properties"]["reviews"]["items"]["properties"]
+    assert set(items["verdict"]["enum"]) == {
+        "confirm",
+        "keep_original",
+        "reassign_other",
+        "drop",
+        "confirm_survivor",
+        "keep_killed",
+        "keep_both",
+    }
+    assert schema["properties"]["reviews"]["minItems"] == 2
+    assert schema["properties"]["reviews"]["maxItems"] == 2
+
+
+def test_merged_schema_survives_strict_walk():
+    from agent.validation.worker import _strict
+
+    strict = _strict(merged_review_schema(_merged_pair()))
+    item = strict["properties"]["reviews"]["items"]
+    assert item["required"] == ["name", "verdict", "chosen_cat_id", "cut_time"]
+    assert item["additionalProperties"] is False
+
+
+def test_parse_merged_review_happy_path_filters_to_code_fields():
+    reviews = parse_merged_review(_merged_pair(), _merged_answer())
+    # Envelope extras (name/cut_time) are stripped: each review fits its own model.
+    assert reviews == {
+        "E6-T2": {"verdict": "confirm", "chosen_cat_id": None},
+        "E7-T3": {"verdict": "confirm_survivor"},
+    }
+
+
+def test_parse_merged_review_isolates_item_failures():
+    members = _merged_pair()
+    answer = json.dumps(
+        {
+            "reviews": [
+                {"name": "E6-T2", "verdict": "not_a_verdict", "chosen_cat_id": None, "cut_time": None},
+                {"name": "E7-T3", "verdict": "confirm_survivor", "chosen_cat_id": None, "cut_time": None},
+                {"name": "E stranger", "verdict": "confirm", "chosen_cat_id": None, "cut_time": None},
+            ]
+        }
+    )
+    reviews = parse_merged_review(members, answer)
+    assert reviews["E6-T2"]["verdict"] == "error"
+    assert "fails T2 review schema" in reviews["E6-T2"]["error"]
+    assert reviews["E7-T3"] == {"verdict": "confirm_survivor"}
+    assert set(reviews) == {"E6-T2", "E7-T3"}  # unknown names ignored
+
+
+def test_parse_merged_review_missing_member_errors_only_it():
+    members = _merged_pair()
+    answer = json.dumps({"reviews": [{"name": "E6-T2", "verdict": "confirm", "chosen_cat_id": None, "cut_time": None}]})
+    reviews = parse_merged_review(members, answer)
+    assert reviews["E6-T2"]["verdict"] == "confirm"
+    assert reviews["E7-T3"]["verdict"] == "error"
+    assert "no review for case E7-T3" in reviews["E7-T3"]["error"]
+
+
+def test_parse_merged_review_rejects_unusable_answers():
+    members = _merged_pair()
+    for bad in ["not json", "[1, 2]", json.dumps({"reviews": "nope"}), json.dumps({})]:
+        try:
+            parse_merged_review(members, bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"should reject: {bad[:40]}")
+
+
+def test_worker_merges_close_escalations_into_one_call():
+    seen = []
+
+    async def backend(query, schema, code):
+        seen.append((code, schema["properties"]["reviews"]["maxItems"]))
+        assert "=== Case 1 of 2: E6-T2 ===" in query
+        assert "=== Case 2 of 2: E7-T3 ===" in query
+        return _merged_answer()
+
+    journaled = []
+    memory = _StubMemory()
+    short_term = _StubShortTerm()
+    worker = ValidationWorker(backend=backend, journal=journaled.append, memory=memory, short_term=short_term)
+    for esc in _merged_pair():  # same timestamp: one batch, one backend call
+        worker.enqueue(esc)
+    worker.start()  # start after enqueueing so the merge is deterministic
+    ops = worker.stop(timeout=30)
+    assert seen == [("E6-T2+E7-T3", 2)]
+    assert [op["review"]["verdict"] for op in ops] == ["confirm", "confirm_survivor"]
+    assert [op["escalation"]["name"] for op in ops] == ["E6-T2", "E7-T3"]
+    assert journaled == ops
+    assert [(e.code, e.text) for e in memory.stored] == [("T2", "[E6-T2] confirm"), ("T3", "[E7-T3] confirm_survivor")]
+    assert short_term.verdicts == [("E6-T2", "confirm"), ("E7-T3", "confirm_survivor")]
+
+
+def test_worker_merged_batch_failure_errors_every_member_and_continues():
+    calls = []
+
+    async def backend(query, schema, code):
+        calls.append(code)
+        if "+" in code:
+            raise RuntimeError("agent down")
+        return _review_json()
+
+    worker = ValidationWorker(backend=backend)
+    for esc in _merged_pair():
+        worker.enqueue(esc)
+    worker.enqueue(_esc("T2", time=T0 + datetime.timedelta(hours=2), seq=8))
+    worker.start()  # start after enqueueing so the merge is deterministic
+    ops = worker.stop(timeout=30)
+    assert calls == ["E6-T2+E7-T3", "T2"]
+    assert [op["review"]["verdict"] for op in ops] == ["error", "error", "confirm"]
+    assert "agent down" in ops[0]["review"]["error"]
+
+
+def test_worker_max_batch_one_disables_merging():
+    seen = []
+
+    async def backend(query, schema, code):
+        seen.append(code)
+        return _review_json()
+
+    worker = ValidationWorker(backend=backend, merge_max_batch=1)
+    for esc in _merged_pair():  # same timestamp, but merging is off
+        worker.enqueue(esc)
+    worker.start()
+    ops = worker.stop(timeout=30)
+    assert seen == ["T2", "T3"]
+    assert len(ops) == 2

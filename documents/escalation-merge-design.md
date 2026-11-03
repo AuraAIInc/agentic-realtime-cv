@@ -130,8 +130,10 @@ already exist):
   null-allowed (strict mode requires all properties required).
 - `text_format` name: `merged_review` (today: `{code}_review`).
 - New `parse_merged_review(escalations, answer) -> dict[name, review]`:
-  parse the envelope, match items to members by `name`, then validate each
-  item against its own code's model (`review_model_for`).
+  parse the envelope, match items to members by `name`, filter each item to
+  its code model's fields (the envelope carries `chosen_cat_id`/`cut_time`
+  for every item but each model accepts only its own subset and forbids
+  extras), then validate against `review_model_for(code)`.
 
 **Partial-failure isolation** (better than one shared fate): an item that is
 missing, names an unknown case, or fails its code's model becomes an
