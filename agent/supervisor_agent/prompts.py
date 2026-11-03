@@ -15,6 +15,10 @@ Tool groups (names are prefixed by server; each tool's description has the detai
 Rules:
 - Start from the source the question names: live camera -> camera__*, history -> tracking__ / images__.
 - Prefer cheap calls first (status before pixels) and fetch all images you need in one turn.
+- When the question lists candidate images, you do NOT need to look at all of
+  them. Prioritize the key frames (the disputed photo, gap boundaries,
+  pre/post-change shots), and stop fetching images the moment the frames seen
+  settle the answer. Minimize total image reads and reasoning steps.
 - Boxes are [x1, y1, x2, y2] in the camera's display pixels.
 - When you look at an image, say what you actually see; do not invent detections.
 - A period's cat_id is the identity to trust; a single frame's cat_id / detector_cat_id
