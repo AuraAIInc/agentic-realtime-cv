@@ -404,3 +404,38 @@ def test_worker_agent_run_is_none_when_backend_reports_nothing():
     worker.enqueue(_esc())
     ops = worker.stop(timeout=30)
     assert ops[0]["agent_run"] is None
+
+
+def test_merged_query_pins_each_case_to_its_own_verdicts():
+    escs = [_esc("T7", seq=6), _esc("P2", seq=7, scope="period")]
+    query, schema = build_merged_query(escs)
+    assert "Allowed verdicts for E6-T7: keep_synthesis | cut_at_gap_start | shorten_gap." in query
+    assert "Allowed verdicts for E7-P2: keep | drop | merge_neighbor." in query
+    # The envelope itself still carries the union (fixed-shape strict schema).
+    enum = schema["properties"]["reviews"]["items"]["properties"]["verdict"]["enum"]
+    assert "keep" in enum and "keep_synthesis" in enum
+
+
+def test_batch_item_failure_retries_solo_with_exact_verdict():
+    calls = []
+
+    async def backend(query, schema, code):
+        calls.append(code)
+        if "+" in code:  # merged batch: T7 answers a sibling-only verdict
+            return json.dumps({"reviews": [
+                {"name": "E6-T7", "verdict": "keep", "rationale": "looks fine",
+                 "chosen_cat_id": None, "cut_time": None},
+                {"name": "E7-P2", "verdict": "keep", "rationale": "real visit",
+                 "chosen_cat_id": None, "cut_time": None},
+            ]})
+        return json.dumps({"verdict": "keep_synthesis", "rationale": "cat stayed put"})
+
+    journaled = []
+    worker = ValidationWorker(backend=backend, journal=journaled.append)
+    worker.start()
+    worker.enqueue(_esc("T7", seq=6))  # same timestamp: one merged batch
+    worker.enqueue(_esc("P2", seq=7, scope="period"))
+    ops = worker.stop(timeout=30)
+    assert calls == ["E6-T7+E7-P2", "T7"]
+    assert [op["review"]["verdict"] for op in ops] == ["keep_synthesis", "keep"]
+    assert journaled == ops

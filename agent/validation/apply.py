@@ -2,11 +2,14 @@
 
 Each validation op pairs an escalation snapshot (``Escalation.to_json`` dict)
 with the reviewer's parsed verdict (a ``review_schema`` model dict). Frame
-ops match revised rows by exact timestamp (+ cat); period ops match by
-``period_id``. Rows no verdict touches pass through unchanged. Verdicts the
-applier cannot execute precisely (visit splits, merges into an unnamed
-neighbor, core trims with a free-text span) keep the rows and record a note
-instead of guessing.
+ops match revised rows by exact timestamp (+ tracked cat, + box overlap
+when the escalation names its disputed box); period ops match by tracked
+``period_id``. Matching uses pre-apply values so earlier ops cannot steal
+or hide later ops' rows. Rows no verdict touches pass through unchanged.
+Verdicts the applier cannot
+execute precisely (visit splits, merges into an unnamed neighbor, core
+trims with a free-text span) keep the rows and record a note instead of
+guessing.
 
 A decided merge also bridges the gap: one interpolated row per whole second
 between the two boundary detections, marked ``gap_filled`` (``conf`` 0 like
@@ -84,12 +87,39 @@ def _in_span(row: dict, start: datetime.datetime, end: datetime.datetime, inclus
     return (start < ts <= end) if inclusive_end else (start < ts < end)
 
 
-def _touch(row: dict, name: str, verdict: str) -> None:
+def _touch(row: dict, name: str, verdict: str, note: str | None = None) -> None:
     names = [n for n in row.get("validated_by", "pass-through").split(",") if n != "pass-through"]
     if name not in names:
         names.append(name)
     row["validated_by"] = ",".join(names)
     row["verdict"] = verdict
+    if note:
+        prev = row.get("note")
+        row["note"] = f"{prev}; {note}" if prev else note
+
+
+#: Minimum box IoU for a frame op to claim a row when the escalation names
+#: its disputed box. Timestamp+cat alone misfires when two boxes share one
+#: frame (one op's rewrite can match a later op's cat filter).
+_FRAME_BOX_IOU = 0.5
+
+
+def _iou(box_a, box_b) -> float:
+    try:
+        ax1, ay1, ax2, ay2 = (float(v) for v in box_a)
+        bx1, by1, bx2, by2 = (float(v) for v in box_b)
+    except (TypeError, ValueError):
+        return 0.0
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    union = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1) + max(0.0, bx2 - bx1) * max(0.0, by2 - by1) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _row_box(row: dict):
+    box = [row.get(k) for k in ("box_x1", "box_y1", "box_x2", "box_y2")]
+    return box if all(isinstance(v, (int, float)) for v in box) else None
 
 
 #: (code, verdict, metrics key holding the merge target) for verdicts that
@@ -245,8 +275,14 @@ def _fill_merged_gaps(rows: list[dict], orig_pids: list, ops: list[dict], merge_
 
 
 def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool = True) -> list[dict]:
-    """Return validated rows: copies of ``revised_rows`` with verdict ops applied."""
+    """Return validated rows: copies of ``revised_rows`` with verdict ops applied.
+
+    Ops match rows by their pre-apply (tracked) cat/period: verdicts were
+    raised against the tracker's labels, and earlier ops rewrite them, so
+    matching live values misfires across ops sharing a frame or period.
+    """
     rows = [{**r, "validated_by": "pass-through", "verdict": "pass"} for r in revised_rows]
+    orig_cats = [r.get("cat_id") for r in revised_rows]
     orig_pids = [r.get("period_id") for r in revised_rows]
     merge_targets = _canonical_merge_targets(ops)
     for op in ops:
@@ -263,10 +299,10 @@ def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool 
             resolved = merge_targets.get(esc["period_id"])
             if resolved is not None and resolved != esc["period_id"]:
                 esc = {**esc, "metrics": {**(esc.get("metrics") or {}), spec[1]: resolved}}
-        for row in rows:
+        for row, snap_cat, snap_pid in zip(rows, orig_cats, orig_pids):
             if row.get("deleted"):
                 continue
-            handler(row, esc, review, verdict, name, when)
+            handler(row, esc, review, verdict, name, when, snap_cat, snap_pid)
     kept = [(row, pid) for row, pid in zip(rows, orig_pids) if not row.pop("_drop", False)]
     rows = [row for row, _ in kept]
     if fill_merged_gaps:
@@ -274,71 +310,101 @@ def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool 
     return rows
 
 
-def _noop(row, esc, review, verdict, name, when) -> None:
+def _noop(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     return None
 
 
-def _frame_match(row: dict, when, cats: set) -> bool:
-    return when is not None and _at(row, when) and row.get("cat_id") in cats
+def _frame_match(row: dict, when, cats: set, box, snap_cat) -> bool:
+    if when is None or not _at(row, when) or snap_cat not in cats:
+        return False
+    if box is None:
+        return True
+    mine = _row_box(row)
+    return mine is not None and _iou(mine, box) >= _FRAME_BOX_IOU
 
 
-def _t1(row, esc, review, verdict, name, when) -> None:
+def _t1(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     m = esc.get("metrics") or {}
     cats = {m.get("original_cat_id"), esc.get("cat_id")}
-    if verdict == "reassign_candidate" and _frame_match(row, when, cats):
+    box = m.get("box")
+    if verdict == "reassign_candidate" and _frame_match(row, when, cats, box, snap_cat):
         row["cat_id"] = review.get("chosen_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    elif verdict == "reject_box" and _frame_match(row, when, cats):
+    elif verdict == "reject_box" and _frame_match(row, when, cats, box, snap_cat):
         row["_drop"] = True
-    elif verdict == "confirm_assigned" and _frame_match(row, when, {esc.get("cat_id")}):
+    elif verdict == "confirm_assigned" and _frame_match(row, when, {esc.get("cat_id")}, box, snap_cat):
         _touch(row, name, verdict)
 
 
-def _t2(row, esc, review, verdict, name, when) -> None:
+def _t2(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     m = esc.get("metrics") or {}
     orig, new = m.get("original_cat_id"), esc.get("cat_id")
-    if verdict == "keep_original" and _frame_match(row, when, {new}):
+    box = m.get("box")
+    if verdict == "keep_original" and _frame_match(row, when, {new}, box, snap_cat):
         row["cat_id"] = orig
         _touch(row, name, verdict)
-    elif verdict == "reassign_other" and _frame_match(row, when, {orig, new}):
+    elif verdict == "reassign_other" and _frame_match(row, when, {orig, new}, box, snap_cat):
         row["cat_id"] = review.get("chosen_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    elif verdict == "drop" and _frame_match(row, when, {orig, new}):
+    elif verdict == "drop" and _frame_match(row, when, {orig, new}, box, snap_cat):
         row["_drop"] = True
-    elif verdict == "confirm" and _frame_match(row, when, {new}):
+    elif verdict == "confirm" and _frame_match(row, when, {new}, box, snap_cat):
         _touch(row, name, verdict)
 
 
-def _t3(row, esc, review, verdict, name, when) -> None:
+def _t4(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     m = esc.get("metrics") or {}
-    if verdict == "keep_killed" and _frame_match(row, when, {esc.get("cat_id")}):
+    box = m.get("box")
+    if verdict == "confirm_reset" and _frame_match(row, when, {esc.get("cat_id")}, box, snap_cat):
+        _touch(row, name, verdict)
+    elif verdict == "drop_box_as_outlier" and _frame_match(row, when, {esc.get("cat_id")}, box, snap_cat):
+        row["_drop"] = True
+    elif verdict == "link_continuation":
+        old_pid, cont_pid = esc.get("period_id"), m.get("continued_period_id")
+        if (
+            isinstance(old_pid, int)
+            and isinstance(cont_pid, int)
+            and old_pid != cont_pid
+            and snap_pid == cont_pid
+        ):
+            row["period_id"] = old_pid
+            _touch(row, name, verdict)
+        elif _frame_match(row, when, {esc.get("cat_id")}, box, snap_cat):
+            _touch(row, name, verdict, note="link target unknown; rows kept as-is")
+
+
+def _t3(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
+    m = esc.get("metrics") or {}
+    box = m.get("kept_box")
+    if verdict == "keep_killed" and _frame_match(row, when, {esc.get("cat_id")}, box, snap_cat):
         row["cat_id"] = m.get("killed_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    elif verdict in ("confirm_survivor", "keep_both") and _frame_match(row, when, {esc.get("cat_id"), m.get("killed_cat_id")}):
+    elif verdict in ("confirm_survivor", "keep_both") and _frame_match(row, when, {esc.get("cat_id"), m.get("killed_cat_id")}, box, snap_cat):
         _touch(row, name, verdict)
 
 
-def _t5(row, esc, review, verdict, name, when) -> None:
-    if verdict == "close_visit" and when is not None and _after(row, when) and row.get("cat_id") == esc.get("cat_id"):
-        if esc.get("period_id") is None or row.get("period_id") == esc.get("period_id"):
+def _t5(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
+    if verdict == "close_visit" and when is not None and _after(row, when) and snap_cat == esc.get("cat_id"):
+        if esc.get("period_id") is None or snap_pid == esc.get("period_id"):
             row["_drop"] = True
 
 
-def _t6(row, esc, review, verdict, name, when) -> None:
+def _t6(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     m = esc.get("metrics") or {}
-    if verdict == "merge_visits" and row.get("period_id") == esc.get("period_id"):
+    post_box = m.get("post_box")
+    if verdict == "merge_visits" and snap_pid == esc.get("period_id"):
         row["period_id"] = m.get("old_period_id", row["period_id"])
         _touch(row, name, verdict)
-    elif verdict == "drop_box" and _frame_match(row, when, {esc.get("cat_id")}):
+    elif verdict == "drop_box" and _frame_match(row, when, {esc.get("cat_id")}, post_box, snap_cat):
         row["_drop"] = True
-    elif verdict == "confirm_split" and _frame_match(row, when, {esc.get("cat_id")}):
+    elif verdict == "confirm_split" and _frame_match(row, when, {esc.get("cat_id")}, post_box, snap_cat):
         _touch(row, name, verdict)
 
 
-def _t7(row, esc, review, verdict, name, when) -> None:
+def _t7(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     m = esc.get("metrics") or {}
     start = _parse_ts(m.get("gap_start"))
-    if start is None or when is None or row.get("cat_id") != esc.get("cat_id"):
+    if start is None or when is None or snap_cat != esc.get("cat_id"):
         return
     if verdict == "cut_at_gap_start" and _in_span(row, start, when):
         row["_drop"] = True
@@ -348,69 +414,82 @@ def _t7(row, esc, review, verdict, name, when) -> None:
             row["_drop"] = True
 
 
-def _period_match(row: dict, period_id) -> bool:
-    return period_id is not None and row.get("period_id") == period_id
+def _period_match(row: dict, period_id, snap_pid) -> bool:
+    return period_id is not None and snap_pid == period_id
 
 
-def _p1(row, esc, review, verdict, name, when) -> None:
+def _p1(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     pid = esc.get("period_id")
-    if verdict == "award_runner_up" and _period_match(row, pid):
+    if verdict == "award_runner_up" and _period_match(row, pid, snap_pid):
         row["cat_id"] = review.get("chosen_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    elif verdict == "confirm_winner" and _period_match(row, pid):
+    elif verdict == "confirm_winner" and _period_match(row, pid, snap_pid):
         _touch(row, name, verdict)
     # split_visit: boundary lives in free text; keep rows, reviewer note stays on the op.
 
 
-def _p2(row, esc, review, verdict, name, when) -> None:
+def _p2(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     pid = esc.get("period_id")
-    if verdict == "drop" and _period_match(row, pid):
+    if verdict == "drop" and _period_match(row, pid, snap_pid):
         row["_drop"] = True
-    elif verdict == "keep" and _period_match(row, pid):
+    elif verdict == "keep" and _period_match(row, pid, snap_pid):
         _touch(row, name, verdict)
     # merge_neighbor: neighbor id unknown; keep rows.
 
 
-def _p3(row, esc, review, verdict, name, when) -> None:
+def _p3(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     pid = esc.get("period_id")
     m = esc.get("metrics") or {}
-    if verdict == "restore_wanted" and _period_match(row, pid):
+    if verdict == "restore_wanted" and _period_match(row, pid, snap_pid):
         row["cat_id"] = m.get("wanted_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    elif verdict == "mark_unknown" and _period_match(row, pid):
+    elif verdict == "mark_unknown" and _period_match(row, pid, snap_pid):
         row["cat_id"] = None
         _touch(row, name, verdict)
-    elif verdict == "confirm_reassign" and _period_match(row, pid):
+    elif verdict == "confirm_reassign" and _period_match(row, pid, snap_pid):
         _touch(row, name, verdict)
 
 
-def _p4(row, esc, review, verdict, name, when) -> None:
+def _p4(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     pid = esc.get("period_id")
-    if verdict == "assign_cat" and _period_match(row, pid):
+    if verdict == "assign_cat" and _period_match(row, pid, snap_pid):
         row["cat_id"] = review.get("chosen_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    elif verdict == "confirm_unknown" and _period_match(row, pid):
+    elif verdict == "confirm_unknown" and _period_match(row, pid, snap_pid):
         row["cat_id"] = None
         _touch(row, name, verdict)
     # split_fragments: boundaries live in free text; keep rows.
 
 
-def _p5(row, esc, review, verdict, name, when) -> None:
+def _p5(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     pid = esc.get("period_id")
-    if verdict == "drop" and _period_match(row, pid):
+    if verdict == "drop" and _period_match(row, pid, snap_pid):
         row["_drop"] = True
-    elif verdict == "reassign" and _period_match(row, pid):
+    elif verdict == "reassign" and _period_match(row, pid, snap_pid):
         row["cat_id"] = review.get("chosen_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    elif verdict == "keep" and _period_match(row, pid):
+    elif verdict == "keep" and _period_match(row, pid, snap_pid):
         _touch(row, name, verdict)
     # trim_core: kept span lives in free text; keep rows.
 
 
-def _p6_p7(row, esc, review, verdict, name, when) -> None:
+def _p6_p7(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     m = esc.get("metrics") or {}
-    if verdict == "merge" and _period_match(row, esc.get("period_id")):
+    if verdict == "merge" and _period_match(row, esc.get("period_id"), snap_pid):
         row["period_id"] = m.get("prev_period_id", row["period_id"])
+        _touch(row, name, verdict)
+
+
+def _p8(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
+    pid = esc.get("period_id")
+    m = esc.get("metrics") or {}
+    if verdict == "relabel_to_vote" and _period_match(row, pid, snap_pid):
+        row["cat_id"] = m.get("voted_cat_id", row["cat_id"])
+        _touch(row, name, verdict)
+    elif verdict == "mark_unknown" and _period_match(row, pid, snap_pid):
+        row["cat_id"] = None
+        _touch(row, name, verdict)
+    elif verdict == "keep_tracked" and _period_match(row, pid, snap_pid):
         _touch(row, name, verdict)
 
 
@@ -418,7 +497,7 @@ _HANDLERS = {
     "T1": _t1,
     "T2": _t2,
     "T3": _t3,
-    "T4": _noop,  # the wipe already happened upstream; nothing left to rewrite
+    "T4": _t4,
     "T5": _t5,
     "T6": _t6,
     "T7": _t7,
@@ -429,6 +508,7 @@ _HANDLERS = {
     "P5": _p5,
     "P6": _p6_p7,
     "P7": _p6_p7,
+    "P8": _p8,
     "H1": _noop,  # spot-check audit: verdicts are advisory, rows stay as-is
 }
 

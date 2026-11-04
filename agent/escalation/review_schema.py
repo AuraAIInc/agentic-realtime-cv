@@ -159,6 +159,15 @@ class P7Review(EscalationReview):
     )
 
 
+class P8Review(EscalationReview):
+    """Tracker label disagrees with the period vote."""
+
+    verdict: Literal["relabel_to_vote", "keep_tracked", "mark_unknown"] = Field(
+        description="relabel_to_vote: the voted cat is right for the whole visit, relabel it. keep_tracked: the "
+        "tracker's cat is right, the vote was wrong. mark_unknown: cannot tell, leave unassigned."
+    )
+
+
 class H1Review(EscalationReview):
     """Quiet-window spot-check: the tracker was confident, nothing was flagged."""
 
@@ -183,6 +192,7 @@ REVIEW_SCHEMAS = {
     "P5": P5Review,
     "P6": P6Review,
     "P7": P7Review,
+    "P8": P8Review,
     "H1": H1Review,
 }
 

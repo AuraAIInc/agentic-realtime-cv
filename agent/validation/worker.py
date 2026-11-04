@@ -177,6 +177,11 @@ def build_merged_query(escalations: list, memory_briefs: list | None = None) -> 
     for i, esc in enumerate(escalations):
         name = getattr(esc, "name", None) or getattr(esc, "code", "?")
         section = f"\n=== Case {i + 1} of {len(escalations)}: {name} ===\n{build_prompt(esc)}"
+        allowed = _verdict_literals(getattr(esc, "code", "")) or ()
+        if allowed:
+            # The envelope enum is the union over members; pin each case to
+            # its own verdicts so a sibling's option can't leak in.
+            section += f"\nAllowed verdicts for {name}: {' | '.join(allowed)}."
         if briefs[i]:
             section += f"\nPast context from memory (may help, may be stale): {briefs[i]}"
         parts.append(section)
@@ -380,6 +385,7 @@ class ValidationWorker:
         briefs = [self._memory_brief(esc) for esc in members]
         query, schema = build_merged_query(members, briefs)
         agent_run = None
+        retry_ops: dict[str, dict] = {}
         try:
             answer = await run_agent(query, schema, label)
             agent_run = getattr(run_agent, "last_run_stats", None)
@@ -388,11 +394,21 @@ class ValidationWorker:
                 logger.info("escalation %s verdict: %s", name, reviews[name].get("verdict"))
                 if reviews[name].get("rationale"):
                     logger.info("escalation %s rationale: %s", name, reviews[name]["rationale"])
+            for esc, name in zip(members, names):
+                if reviews[name].get("verdict") == "error":
+                    # Salvage with one single-case retry under the exact enum
+                    # (a verdict can pass the merged union yet fail its own
+                    # code's schema); _validate_one journals memory itself.
+                    logger.info("escalation %s failed in batch, retrying solo: %s", name, reviews[name].get("error"))
+                    retry_ops[name] = await self._validate_one(esc, run_agent)
         except Exception as exc:
             logger.warning("batch [%s] validation failed: %s", label, exc)
             reviews = {name: {"verdict": "error", "error": str(exc)} for name in names}
         ops = []
         for esc, name in zip(members, names):
+            if name in retry_ops:
+                ops.append(retry_ops[name])
+                continue
             review = reviews[name]
             self._memory_verdict(esc, review)
             ops.append({"escalation": json.loads(esc.to_json()), "review": review, "agent_run": agent_run})

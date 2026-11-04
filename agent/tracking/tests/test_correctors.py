@@ -520,3 +520,55 @@ def test_period_gap_beyond_ten_minutes_does_not_static_link():
     with redirect_stdout(buf):
         _feed_static_pair(pc, 601.0)
     assert "P7" not in [e.code for e in pc.escalations]
+
+
+def test_p8_fires_when_tracker_disagrees_with_vote():
+    pc = PeriodCorrector(cat_ids=[0, 1])
+    box = [10, 10, 100, 100]
+    # Tracked as cat 1 but original labels mostly 0: vote 0 vs tracked 1.
+    last = _feed_period(pc, 101, 1, T0, 24, box, lambda i: 0 if i % 4 else 1)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        list(pc.process_detection(_close8(last + datetime.timedelta(seconds=1), 1)))
+    p8 = next(e for e in pc.escalations if e.code == "P8")
+    assert p8.scope == "period" and p8.period_id == 101
+    assert p8.metrics["tracked_cat_id"] == 1 and p8.metrics["voted_cat_id"] == 0
+    assert p8.metrics["tracked_frames"] == 24
+    assert p8.metrics["relabeled_frames"] == 18
+    assert p8.metrics["votes"]["0"]["frames"] == 18
+    assert len(p8.metrics["key_frames"]) == 6
+
+
+def test_p8_silent_when_tracker_matches_vote():
+    pc = PeriodCorrector(cat_ids=[0, 1])
+    box = [10, 10, 100, 100]
+    last = _feed_period(pc, 101, 0, T0, 24, box, lambda i: 0)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        list(pc.process_detection(_close8(last + datetime.timedelta(seconds=1), 0)))
+    assert "P8" not in [e.code for e in pc.escalations]
+
+
+def test_jump_reset_links_restart_period_on_next_mint():
+    tc = TrackCorrector(cat_ids=[25])
+    _seed_jump_reset(tc, True)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        tc.add_new_detection_to_buffer({25: [400, 400, 500, 500, 25, 0.6]})
+    t4 = next(e for e in tc.escalations if e.code == "T4")
+    assert "continued_period_id" not in t4.metrics
+    pid = tc._mint_period(0)
+    assert t4.metrics["continued_period_id"] == pid
+    assert tc._mint_period(0) != pid  # pending link consumed by the first mint
+    assert t4.metrics["continued_period_id"] == pid
+
+
+def test_jump_reset_without_open_visit_leaves_no_link():
+    tc = TrackCorrector(cat_ids=[25])
+    _seed_jump_reset(tc, False)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        tc.add_new_detection_to_buffer({25: [400, 400, 500, 500, 25, 0.6]})
+    t4 = next(e for e in tc.escalations if e.code == "T4")
+    tc._mint_period(0)
+    assert "continued_period_id" not in t4.metrics

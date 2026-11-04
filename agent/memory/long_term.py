@@ -71,6 +71,7 @@ ESCALATION_FAMILIES = {
     "P4": "occlusion",
     "P6": "merge",
     "P7": "merge",
+    "P8": "identity",
     "H1": "routine",
 }
 

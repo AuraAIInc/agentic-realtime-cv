@@ -11,7 +11,7 @@ import heapq
 import itertools
 import logging
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import numpy as np
 import pandas as pd
@@ -118,7 +118,58 @@ class PeriodCorrector:
                         },
                     )
         assert len(coordinated_cat_id_dict) == len(period_stats), {k: v for k, v in period_stats.items() if k not in coordinated_cat_id_dict}
+        for period_id, voted in coordinated_cat_id_dict.items():
+            self._check_tracker_vote_split(period_id, voted, period_stats[period_id], period_score[period_id], period_bounds[period_id])
         return coordinated_cat_id_dict, period_stats, period_score
+
+    def _check_tracker_vote_split(self, period_id, voted, stats, score, bounds):
+        """P8: the tracker's frame labels disagree with the coordinated vote.
+
+        The tracker files boxes by continuity (one early label can drag a
+        whole visit along); the vote counts the camera's original labels.
+        When they name different cats, at least one is wrong — this is the
+        period-scale signature of continuity hijacking, invisible to the
+        frame-level relabel codes.
+        """
+        if voted is None:
+            return
+        tracked = Counter(
+            int(d[7]) for d in self._period_rows(period_id) if len(d) > 7 and not pd.isna(d[7])
+        )
+        if not tracked:
+            return
+        top = tracked.most_common(2)
+        if len(top) > 1 and top[0][1] == top[1][1]:
+            return  # no dominant tracked label; nothing coherent to dispute
+        tracked_cat = top[0][0]  # d[7] is already a cat id (see row format above)
+        if tracked_cat == voted:
+            return
+        relabeled = sum(
+            1
+            for d in self._period_rows(period_id)
+            if len(d) > 7 and not pd.isna(d[5]) and not pd.isna(d[7]) and int(d[5]) != int(d[7])
+        )
+        start, end = bounds
+        self._escalate(
+            "P8",
+            f"period {period_id} tracked as cat {tracked_cat} ({top[0][1]} frames) but voted cat {voted}; "
+            f"continuity may have hijacked the visit",
+            start,
+            end,
+            cat_id=voted,
+            period_id=period_id,
+            metrics={
+                "tracked_cat_id": int(tracked_cat),
+                "voted_cat_id": int(voted),
+                "tracked_frames": int(top[0][1]),
+                "relabeled_frames": int(relabeled),
+                "votes": {
+                    str(self.idx_to_id[i]): {"score": round(float(score[i]), 1), "frames": int(stats["detect_length"][i])}
+                    for i in range(len(score))
+                },
+                "key_frames": self._sample_period_frames(period_id),
+            },
+        )
 
     def _period_rows(self, period_id) -> list:
         """Committed rows of one period, in time order."""

@@ -121,12 +121,36 @@ def test_synthetic_replay_store_tick_promote_invoke(tmp_path):
         mem.shutdown()
 
 
+def _run_has_trusted_period(path, floor: float) -> bool:
+    """True when one period would pass the store trust gate (winner conf >= floor)."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                conf = (row.get("winner") or {}).get("detect_conf")
+                if isinstance(conf, (int, float)) and conf >= floor:
+                    return True
+    except OSError:
+        return False
+    return False
+
+
 def _find_real_run():
     if not RUNS_DIR.is_dir():
         return None
+    try:
+        floor = MemoryConfig.from_yaml().min_store_confidence
+    except Exception:
+        floor = 0.7
     for run_dir in sorted(RUNS_DIR.iterdir()):
         periods = run_dir / "periods.jsonl"
-        if periods.is_file() and periods.stat().st_size:
+        if periods.is_file() and periods.stat().st_size and _run_has_trusted_period(periods, floor):
             return run_dir
     return None
 

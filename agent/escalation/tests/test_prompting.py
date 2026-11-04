@@ -263,6 +263,26 @@ CASES = {
         ["visits 3 and 4", "0.75", "120-second", "visit 3 ran", "stillness",
          "Box [10.0, 20.0, 100.0, 200.0]", "period_id 3 and 4"],
     ),
+    "P8": (
+        {
+            "scope": "period",
+            "end_time": T0,
+            "cat_id": 25,
+            "period_id": 4,
+            "metrics": {
+                "tracked_cat_id": 26,
+                "voted_cat_id": 25,
+                "tracked_frames": 1096,
+                "relabeled_frames": 772,
+                "votes": {"25": {"score": 9.0, "frames": 772}, "26": {"score": 6.2, "frames": 153}},
+                "key_frames": [
+                    {"t": "2026-10-28T16:35:21.976102", "box": [10.0, 20.0, 100.0, 200.0], "real": True},
+                ],
+            },
+        },
+        ["visit 4", "labeled cat 26", "vote awards it to cat 25", "cat 25: 9.0 pts (772 frames)",
+         "stole 772 frames", "vote points", "Box [10.0, 20.0, 100.0, 200.0]", "period_id 4"],
+    ),
     "H1": (
         {
             "time": T1,
@@ -285,7 +305,7 @@ SECTIONS = ["Conflict:", "Validate:", "Context:", "Alternatives:", "Resources"]
 
 
 def test_every_code_has_standalone_prompt():
-    assert set(CASES) == {"T1", "T2", "T3", "T4", "T5", "T6", "T7", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "H1"}
+    assert set(CASES) == {"T1", "T2", "T3", "T4", "T5", "T6", "T7", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "H1"}
     for code, (kw, needles) in CASES.items():
         prompt = build_prompt(_esc(code, **kw))
         assert prompt.startswith(f"[E6-{code}]"), code

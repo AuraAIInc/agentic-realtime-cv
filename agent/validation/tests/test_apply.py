@@ -87,6 +87,92 @@ def test_error_ops_pass_through():
     assert out == [{**rows[0], "validated_by": "pass-through", "verdict": "pass"}]
 
 
+def _box_row(ts, cat_id, period_id, box, orig=None):
+    row = _row(ts, cat_id, period_id)
+    row.update({"box_x1": box[0], "box_y1": box[1], "box_x2": box[2], "box_y2": box[3]})
+    if orig is not None:
+        row["orig_cat_id"] = orig
+    return row
+
+
+def test_frame_ops_match_disputed_box_not_just_timestamp_cat():
+    # Regression: two boxes share one timestamp (E6/E7). Each op must land on
+    # its own box even after an earlier op rewrote the other row's cat.
+    box_a = [145.0, 357.0, 234.0, 462.0]
+    box_b = [174.0, 457.0, 279.0, 585.0]
+    rows = [_box_row(T0, 25, 4, box_a, orig=26), _box_row(T0, 26, 2, box_b, orig=25)]
+    ops = [
+        _op("T2", "keep_original", {"name": "E6-T2", "cat_id": 25,
+                                    "metrics": {"original_cat_id": 26, "box": box_a}}),
+        _op("T2", "keep_original", {"name": "E7-T2", "cat_id": 26,
+                                    "metrics": {"original_cat_id": 25, "box": box_b}}),
+    ]
+    out = apply_ops(rows, ops)
+    assert [r["cat_id"] for r in out] == [26, 25]
+    assert out[0]["validated_by"] == "E6-T2" and out[1]["validated_by"] == "E7-T2"
+
+
+def test_frame_ops_match_tracked_cat_across_rewrites():
+    # E6 rewrites the row's cat before E8's drop runs; the drop must still
+    # find its row by the tracked (pre-apply) cat, not the live one.
+    box = [145.0, 357.0, 234.0, 462.0]
+    rows = [_box_row(T0, 25, 4, box, orig=26)]
+    ops = [
+        _op("T2", "keep_original", {"name": "E6-T2", "cat_id": 25,
+                                    "metrics": {"original_cat_id": 26, "box": box}}),
+        _op("T4", "drop_box_as_outlier", {"name": "E8-T4", "cat_id": 25,
+                                          "metrics": {"box": box}}),
+    ]
+    assert apply_ops(rows, ops) == []
+
+
+def test_frame_op_ignores_non_overlapping_box():
+    rows = [_box_row(T0, 25, 4, [1.0, 2.0, 3.0, 4.0])]
+    op = _op("T2", "keep_original", {"metrics": {"original_cat_id": 26, "box": [400.0, 400.0, 500.0, 500.0]}})
+    out = apply_ops(rows, [op])
+    assert out[0]["cat_id"] == 25 and out[0]["validated_by"] == "pass-through"
+
+
+def test_t4_confirm_and_drop():
+    box = [145.0, 357.0, 234.0, 462.0]
+    rows = [_box_row(T0, 25, 4, box), _box_row(T1, 25, 4, box)]
+    out = apply_ops(rows, [_op("T4", "confirm_reset", {"metrics": {"box": box}})])
+    assert len(out) == 2 and out[0]["verdict"] == "confirm_reset"
+    assert out[1]["validated_by"] == "pass-through"
+    out = apply_ops(rows, [_op("T4", "drop_box_as_outlier", {"metrics": {"box": box}})])
+    assert [r["create_time"] for r in out] == [T1.isoformat(timespec="microseconds")]
+
+
+def test_t4_link_continuation_renumbers_restart_period():
+    box = [145.0, 357.0, 234.0, 462.0]
+    rows = [_box_row(T1, 25, 3, box), _box_row(T0, 25, 4, box)]
+    op = _op("T4", "link_continuation", {"period_id": 3, "metrics": {"box": box, "continued_period_id": 4}})
+    out = apply_ops(rows, [op])
+    assert [r["period_id"] for r in out] == [3, 3]
+    assert out[1]["verdict"] == "link_continuation"
+
+
+def test_t4_link_without_target_records_note_and_keeps_rows():
+    box = [145.0, 357.0, 234.0, 462.0]
+    rows = [_box_row(T0, 25, 4, box)]
+    out = apply_ops(rows, [_op("T4", "link_continuation", {"period_id": 3, "metrics": {"box": box}})])
+    assert len(out) == 1 and out[0]["period_id"] == 4
+    assert out[0]["validated_by"] == "E1-T4" and "link target unknown" in out[0]["note"]
+
+
+def test_p8_relabel_keep_and_unknown():
+    rows = [_row(T0, 26, 2), _row(T1, 26, 2), _row(T0, 25, 3)]
+    esc_extra = {"period_id": 2, "metrics": {"tracked_cat_id": 26, "voted_cat_id": 25}}
+    out = apply_ops(rows, [_op("P8", "relabel_to_vote", esc_extra)])
+    assert [r["cat_id"] for r in out] == [25, 25, 25]
+    assert out[0]["validated_by"] == "E1-P8" and out[2]["validated_by"] == "pass-through"
+    out = apply_ops(rows, [_op("P8", "keep_tracked", esc_extra)])
+    assert [r["cat_id"] for r in out] == [26, 26, 25]
+    assert out[0]["verdict"] == "keep_tracked"
+    out = apply_ops(rows, [_op("P8", "mark_unknown", esc_extra)])
+    assert [r["cat_id"] for r in out] == [None, None, 25]
+
+
 def test_chained_p7_merges_collapse_transitively():
     rows = [_row(T0, 25, 1), _row(T0, 25, 2), _row(T0, 25, 3), _row(T0, 25, 4)]
     ops = [

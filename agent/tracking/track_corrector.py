@@ -55,6 +55,7 @@ class TrackCorrector:
         self.detecting = [False for _ in range(self.number_of_cats)]
         self.last_revised_detection = [None for _ in range(self.number_of_cats)]
         self._synth_run = [[None, False, None, 0.0] for _ in range(self.number_of_cats)]
+        self._wipe_pending = {}  # cat_idx -> T4 escalation awaiting its restart period
         logger.info("TrackCorrector initialized")
 
         self.now_detecting_date = None
@@ -63,6 +64,19 @@ class TrackCorrector:
         if callable(self._period_ids):
             return self._period_ids()
         return next(self._period_ids)
+
+    def _mint_period(self, cat_idx):
+        """Allocate a period, linking it to a pending T4 wipe as its restart.
+
+        A jump reset closes the old visit immediately but the restart period
+        is only minted ~15 s later at commit time; recording the link on the
+        escalation lets a ``link_continuation`` verdict renumber precisely.
+        """
+        pid = self.get_new_period_id()
+        pending = self._wipe_pending.pop(cat_idx, None)
+        if pending is not None:
+            pending.metrics["continued_period_id"] = pid
+        return pid
 
     def remove_misdetection(self, new_det, cat_idx):
         new_box = np.array(new_det)[1:5]
@@ -126,7 +140,7 @@ class TrackCorrector:
         }
 
     def _escalate(self, code, reason, time, cat_id=None, period_id=None, metrics=None):
-        emit_escalation(
+        return emit_escalation(
             self.escalations,
             Escalation(time=time, scope="frame", code=code, reason=reason, cat_id=cat_id, period_id=period_id, metrics=metrics or {}, seq=next(self._esc_seq)),
         )
@@ -263,7 +277,7 @@ class TrackCorrector:
                 if jump_iou is not None and jump_iou < 0.2:
                     was_detecting = self.detecting[cat_idx]
                     close_note = "and closed the period" if was_detecting else "but no visit was open to close"
-                    self._escalate(
+                    t4 = self._escalate(
                         "T4",
                         f"cat {cat_id} new box missed the base (IoU {jump_iou:.2f}); wiped {len(self.buffer[cat_idx])} buffered rows {close_note}",
                         self.right_time,
@@ -278,6 +292,10 @@ class TrackCorrector:
                             "had_open_visit": bool(was_detecting),
                         },
                     )
+                    if was_detecting:
+                        # The restart period mints later at commit time; _mint_period
+                        # records it on this escalation for link_continuation.
+                        self._wipe_pending[cat_idx] = t4
                     for k in range(len(self.buffer[cat_idx])):
                         self.buffer[cat_idx][k][1:7] = [None] * 5 + [0]
                         self.buffer_origin[cat_idx][k][1:7] = [None] * 5 + [0]
@@ -456,7 +474,7 @@ class TrackCorrector:
                 self.base[cat_idx] = revised.copy()
                 self.max_period_conf[cat_idx] = max(self.max_period_conf[cat_idx], revised[6])
                 if not self.detecting[cat_idx]:
-                    self.period_id[cat_idx] = self.get_new_period_id()
+                    self.period_id[cat_idx] = self._mint_period(cat_idx)
                 self.detecting[cat_idx] = True
 
                 if self.last_revised_detection[cat_idx] is not None and revised[5] is not None:
@@ -467,7 +485,7 @@ class TrackCorrector:
                         # logger.debug(f"Continuous distance: {distance:.2f} (Time:{revised[0]} - Cat:{revised[-2]})")
                         if distance > 300:
                             old_period_id = self.period_id[cat_idx]
-                            self.period_id[cat_idx] = self.get_new_period_id()
+                            self.period_id[cat_idx] = self._mint_period(cat_idx)
                             retracted = []
                             while len(self.revised_detection[cat_idx]) > 0 and self.revised_detection[cat_idx][-1][5] is None:
                                 remove_detection = self.revised_detection[cat_idx].pop()
@@ -650,6 +668,7 @@ class TrackCorrector:
         self.last_revised_detection = [None for _ in range(self.number_of_cats)]
         self.escalations = []
         self._synth_run = [[None, False, None, 0.0] for _ in range(self.number_of_cats)]
+        self._wipe_pending = {}
 
     def save_image_to_db(self, create_time, detected, is_grey, view_id, device_id, sink, finish_up=False):
         if create_time is not None:

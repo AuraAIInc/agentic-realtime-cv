@@ -205,6 +205,12 @@ def build_t4_prompt(esc: Escalation) -> str:
         close = "No visit was still committing, so there is nothing left to close."
     else:
         close = "The old visit then closes on the following frames, and the next commit mints a new period."
+    cont = m.get("continued_period_id")
+    cont_txt = (
+        f" The restart continued as visit {cont} (period_id {cont}) — linking would join it back to visit {pid}."
+        if isinstance(cont, int)
+        else ""
+    )
     return (
         f"{_head(esc, 'Track thrown away: new sighting matched nothing')}\n"
         f"Task: validate whether discarding cat {esc.cat_id}'s old anchor and restarting from the new box at {_ts(esc.time)} was "
@@ -214,7 +220,7 @@ def build_t4_prompt(esc: Escalation) -> str:
         f"Context: the anchor (base) is the cat's last committed position. Nothing had been seen for a while — no pending "
         f"detections — but the visit was still alive, so when the new box arrived somewhere the anchor cannot reach, the tracker "
         f"concluded it cannot continue the old track. Here {anchor}. The wipe is safe because with nothing pending, buffered rows "
-        f"hold only empties and guesses, never real sightings; the new box is kept as the fresh start. {close} {MODEL_CAVEAT}\n"
+        f"hold only empties and guesses, never real sightings; the new box is kept as the fresh start. {close}{cont_txt} {MODEL_CAVEAT}\n"
         f"Alternatives: keep the old track and treat the new box as an outlier, or link the new box as a continuation.\n"
         f"Resources: visit {pid} (this is period_id {pid} — look it up in tracking__get_period_detail or the database); frames via "
         f"images__get_image (boxes are the tracked positions for reference):\n"
@@ -576,6 +582,38 @@ def build_p7_prompt(esc: Escalation) -> str:
     )
 
 
+def build_p8_prompt(esc: Escalation) -> str:
+    m = esc.metrics
+    pid = esc.period_id
+    tracked, voted = m.get("tracked_cat_id"), m.get("voted_cat_id")
+    votes = m.get("votes") or {}
+    if votes:
+        ranked = sorted(votes, key=lambda c: -float(votes[c].get("score", 0)))
+        table = "; ".join(f"cat {c}: {_f(votes[c].get('score'), '.1f')} pts ({int(votes[c].get('frames', 0))} frames)" for c in ranked)
+    else:
+        table = "no vote breakdown recorded"
+    relabeled = m.get("relabeled_frames")
+    if isinstance(relabeled, (int, float)) and relabeled:
+        steal = f"Continuity stole {int(relabeled)} frames: the camera said cat {voted} but the tracker filed them under cat {tracked}. "
+    else:
+        steal = ""
+    key_frames = [f for f in (m.get("key_frames") or []) if isinstance(f, dict) and f.get("t")]
+    frames = _labeled_key_frames(key_frames) if key_frames else _period_frames(esc, "which cat is visible? check start, middle and end")
+    return (
+        f"{_head(esc, 'Tracker label disagrees with the period vote')}\n"
+        f"Conflict: visit {pid} is labeled cat {tracked} frame by frame, but the whole-visit vote awards it to cat {voted} "
+        f"({table}).\n"
+        f"Validate: watching the frames, is this visit cat {voted} throughout, cat {tracked}, or different cats at different times?\n"
+        f"Context: the tracker assumes smooth motion, so one early label can drag a whole visit along even when most frames "
+        f"disagree; the vote counts the camera's original labels instead ({_SCORE_EXPLAIN}). {steal}Proposal relabels the "
+        f"visit to cat {voted}. {MODEL_CAVEAT}\n"
+        f"Alternatives: keep the tracker's cat {tracked}, or mark the visit unknown.\n"
+        f"Resources: visit {pid} (this is period_id {pid} — look it up in tracking__get_period_detail or the database); key frames "
+        f"via images__get_image (boxes are the tracked positions for reference):\n"
+        f"{frames}"
+    )
+
+
 def build_h1_prompt(esc: Escalation) -> str:
     m = esc.metrics
     quiet = _f(m.get("quiet_seconds"), ".0f")
@@ -623,6 +661,7 @@ _BUILDERS = {
     "P5": build_p5_prompt,
     "P6": build_p6_prompt,
     "P7": build_p7_prompt,
+    "P8": build_p8_prompt,
     "H1": build_h1_prompt,
 }
 
@@ -704,6 +743,8 @@ def _involved_cats(code: str, esc: Escalation) -> list | None:
         return [esc.cat_id] + rest
     if code in ("P6", "P7"):
         return [esc.cat_id]
+    if code == "P8":
+        return [m.get("voted_cat_id"), m.get("tracked_cat_id")]
     if code == "H1":
         cats = (m.get("cat_ids") or []) if isinstance(m, dict) else []
         return list(cats) if cats else None

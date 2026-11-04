@@ -167,6 +167,51 @@ def test_cost_math():
     assert label_with_sam.estimate_cost_usd(1000, 1_000_000, 1_000_000) == 2.5 + 1.25 + 4.25
 
 
+def test_classify_defaults_to_contributor():
+    model, _, _, pricing = label_with_sam.load_spark_settings()
+    assert model == "muse-spark-1.3-contributor"
+    assert pricing == {"input": 0.10, "output": 0.20}
+
+
+def test_classify_standard_flag_uses_regular_spark():
+    model, _, _, pricing = label_with_sam.load_spark_settings(contributor=False)
+    assert model == "muse-spark-1.3"
+    assert pricing == {"input": 1.25, "output": 4.25}
+    assert label_with_sam.standard_spark_pricing() == {"input": 1.25, "output": 4.25}
+
+
+def test_contributor_report_shows_standard_equivalent(tmp_path):
+    session = {
+        "session_id": "t", "started": "s", "finished": "f", "wall_seconds": 1.0,
+        "dry_run": False, "start_key": "a", "end_key": "b", "hours": ["h"],
+        "sam_model": "sam-3.1", "spark_model": "muse-spark-1.3-contributor",
+        "spark_tier": "contributor",
+        "spark_pricing": {"input": 0.10, "output": 0.20},
+        "spark_pricing_standard": {"input": 1.25, "output": 4.25},
+        "concepts": ["animal"],
+        "workers": 10, "limit": None,
+        "images_in_range": 1, "processed": 1, "skipped": 0, "failed": 0,
+        "sam_calls": 2, "spark_calls": 1, "proposed": 1,
+        "boxes_total": 1, "boxes_by_class": {"Qb": 1}, "dropped": 0, "rejected": 0,
+        "tokens": {"input": 1000, "output": 2000, "total": 3000},
+        "cost_usd": 0.0055, "sam_cost_usd": 0.005, "spark_cost_usd": 0.0005,
+        "cost_standard_usd": 0.01476, "spark_cost_standard_usd": 0.00976,
+        "queries": [{"class_id": 0, "name": "Qb", "concept": "Qb: white"}],
+        "first_sam_image": "h/img.jpg", "first_sam_prompt": "animal",
+        "first_spark_image": "h/img.jpg", "first_spark_prompt": "Identify...",
+        "per_hour": {"h": {"in_range": 1, "processed": 1, "skipped": 0, "failed": 0, "boxes": 1}},
+        "failures": [], "results": [],
+    }
+    md, js = label_with_sam.write_session_report(
+        str(tmp_path / "r.md"), str(tmp_path / "r.json"), session)
+    body = open(md).read()
+    assert "Contributor billed" in body
+    assert "Standard equivalent: $0.0148" in body
+    assert "quote this in project reports" in body
+    assert "may be used to train future Meta models" in body
+    assert json.load(open(js))["spark_tier"] == "contributor"
+
+
 def test_session_report_writes_md_and_json(tmp_path):
     session = {
         "session_id": "t", "started": "s", "finished": "f", "wall_seconds": 1.0,

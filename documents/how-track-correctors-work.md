@@ -186,8 +186,9 @@ In each frame from [run_tracking_viz.py](../existing_work_before_hackathon/run_t
 Both correctors flag the exact spots they could not decide confidently, for
 human/AI review: frame-level branch points (`T1`–`T7`: ambiguous relabels,
 duplicate ties, jump resets, target guesses, teleports, long interpolation)
-and period-level verdicts (`P1`–`P7`: close votes, weak winners, forced
-reassignments, long unknowns, low quality, merge candidates, static links).
+and period-level verdicts (`P1`–`P8`: close votes, weak winners, forced
+reassignments, long unknowns, low quality, merge candidates, static links,
+tracker/vote splits).
 Each point is one
 JSON line on stdout and one record in the corrector's `escalations` list, drawn
 by the viz as red lines (frames) and light red spans (periods). Strategy,

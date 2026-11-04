@@ -23,6 +23,7 @@ Period codes (PeriodCorrector):
     P5 low_quality          winner's mean conf low or mostly missing frames
     P6 merge_candidate      period may connect to the same cat's previous period
     P7 static_link          both ends static and overlapping; sleeping cat split by a long gap
+    P8 tracker_vote_split   tracker's frame labels disagree with the period vote winner
 
 Heartbeat code (TrackingRun):
     H1 quiet_spot_check    no escalation for a while; spot-check the quiet window
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
 class Escalation:
     time: datetime.datetime
     scope: str  # "frame" or "period"
-    code: str  # T1..T7, P1..P7, H1
+    code: str  # T1..T7, P1..P8, H1
     reason: str
     end_time: datetime.datetime | None = None  # period scope: the flagged span
     cat_id: int | None = None
