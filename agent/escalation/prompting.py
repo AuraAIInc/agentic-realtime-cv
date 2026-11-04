@@ -576,6 +576,38 @@ def build_p7_prompt(esc: Escalation) -> str:
     )
 
 
+def build_h1_prompt(esc: Escalation) -> str:
+    m = esc.metrics
+    quiet = _f(m.get("quiet_seconds"), ".0f")
+    msgs = m.get("messages")
+    msgs_txt = f" ({msgs} frames ingested)" if isinstance(msgs, (int, float)) else ""
+    if (m.get("kind") or "") == "end_of_run":
+        title = "Quiet run spot-check: nothing was flagged"
+        conflict = (
+            f"the whole run stayed quiet — no escalation from {_ts(esc.time)} to {_ts(esc.end_time)} "
+            f"({quiet} seconds{msgs_txt})"
+        )
+    else:
+        title = "Quiet window spot-check: nothing flagged for a while"
+        conflict = (
+            f"no escalation from {_ts(esc.time)} to {_ts(esc.end_time)} "
+            f"({quiet} seconds of confident tracking{msgs_txt})"
+        )
+    cats = m.get("cat_ids") or []
+    cats_txt = f" View cats under review: {', '.join(f'cat {c}' for c in cats)}." if cats else ""
+    frames = _period_frames(esc, "spot-check: right cat, right boxes, nothing missed?")
+    return (
+        f"{_head(esc, title)}\n"
+        f"Conflict: {conflict} — this is a routine audit, not a suspected error.\n"
+        f"Validate: watching the frames, is the tracking right across the window — identities, boxes, presence?\n"
+        f"Context: proposal keeps everything as-is.{cats_txt} The tracker saw nothing uncertain, so there is no "
+        f"specific suspect; a confident stretch can still hide a steady mislabel or a missed cat. {MODEL_CAVEAT}\n"
+        f"Alternatives: confirm, or flag the issue in words (rows stay as-is for a follow-up).\n"
+        f"Resources: key frames ~1/min via images__get_image (boxes are the tracked positions for reference):\n"
+        f"{frames}"
+    )
+
+
 _BUILDERS = {
     "T1": build_t1_prompt,
     "T2": build_t2_prompt,
@@ -591,6 +623,7 @@ _BUILDERS = {
     "P5": build_p5_prompt,
     "P6": build_p6_prompt,
     "P7": build_p7_prompt,
+    "H1": build_h1_prompt,
 }
 
 
@@ -671,6 +704,9 @@ def _involved_cats(code: str, esc: Escalation) -> list | None:
         return [esc.cat_id] + rest
     if code in ("P6", "P7"):
         return [esc.cat_id]
+    if code == "H1":
+        cats = (m.get("cat_ids") or []) if isinstance(m, dict) else []
+        return list(cats) if cats else None
     return [esc.cat_id]
 
 

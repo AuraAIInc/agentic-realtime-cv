@@ -159,6 +159,15 @@ class P7Review(EscalationReview):
     )
 
 
+class H1Review(EscalationReview):
+    """Quiet-window spot-check: the tracker was confident, nothing was flagged."""
+
+    verdict: Literal["confirm", "flag_issue"] = Field(
+        description="confirm: tracking looks right across the spot-check window. flag_issue: something looks wrong "
+        "(wrong cat, missed cat, bad boxes) — describe it in the rationale; rows stay as-is for a follow-up."
+    )
+
+
 REVIEW_SCHEMAS = {
     "T1": T1Review,
     "T2": T2Review,
@@ -174,6 +183,7 @@ REVIEW_SCHEMAS = {
     "P5": P5Review,
     "P6": P6Review,
     "P7": P7Review,
+    "H1": H1Review,
 }
 
 

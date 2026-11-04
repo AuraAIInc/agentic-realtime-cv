@@ -43,8 +43,11 @@ def test_parse_review_accepts_and_rejects():
 
 
 def test_query_carries_prompt_schema_and_memory():
+    from agent.validation.worker import TOOL_CAVEATS
+
     query, schema = build_validation_query(_esc())
     assert "Validate:" in query and "ONLY a JSON object" in query
+    assert TOOL_CAVEATS in query  # no crop retries, stale period detail ignored
     assert schema["properties"]["verdict"]["enum"] == ["confirm", "keep_original", "reassign_other", "drop"]
     query2, _ = build_validation_query(_esc(), memory_brief="cat 25 naps here daily")
     assert "cat 25 naps here daily" in query2
@@ -231,9 +234,12 @@ def _merged_answer(**overrides):
 def test_merged_query_carries_full_sections_and_envelope_schema():
     from agent.escalation import build_prompt
 
+    from agent.validation.worker import TOOL_CAVEATS
+
     members = _merged_pair()
     query, schema = build_merged_query(members, ["brief one", None])
     assert "reviewing 2 related escalation cases" in query
+    assert TOOL_CAVEATS in query
     assert "minimum total tool" in query and "fetch each image once" in query
     assert "=== Case 1 of 2: E6-T2 ===" in query
     assert "=== Case 2 of 2: E7-T3 ===" in query
@@ -370,3 +376,31 @@ def test_worker_max_batch_one_disables_merging():
     ops = worker.stop(timeout=30)
     assert seen == ["T2", "T3"]
     assert len(ops) == 2
+
+
+def test_worker_records_backend_run_stats_on_ops():
+    async def backend(query, schema, code):
+        backend.last_run_stats = {
+            "run_dir": "/tmp/r-validation",
+            "trace": "/tmp/r-validation/trace.md",
+            "images_used": 3,
+        }
+        return _review_json()
+
+    worker = ValidationWorker(backend=backend)
+    worker.start()
+    worker.enqueue(_esc())
+    ops = worker.stop(timeout=30)
+    assert ops[0]["agent_run"]["images_used"] == 3
+    assert ops[0]["agent_run"]["trace"] == "/tmp/r-validation/trace.md"
+
+
+def test_worker_agent_run_is_none_when_backend_reports_nothing():
+    async def backend(query, schema, code):
+        return _review_json()
+
+    worker = ValidationWorker(backend=backend)
+    worker.start()
+    worker.enqueue(_esc())
+    ops = worker.stop(timeout=30)
+    assert ops[0]["agent_run"] is None

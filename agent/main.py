@@ -19,11 +19,17 @@ Run directory (<out>/<run_name>/):
   periods.jsonl     period verdicts; images.jsonl: per-frame capture log
   escalations.jsonl one Escalation JSON object per line
   validations.jsonl (only with --validate) one validation op per escalation
+                    (each op carries its agent_run stats + trace.md path)
   validated.jsonl + validated.db (only with --validate) verdict-corrected rows
   original.png / revised.png  timeline strip charts (unless --no-plot)
   validated.png (only with --validate, unless --no-plot) validated strip chart
   process_frames/*.jpg + process.mp4  (only with --process-viz)
-  run.json          args, view, cat mapping, counts incl. escalations by code
+  run.json          args, view, cat mapping, started/finished/elapsed wall time,
+                    counts incl. escalations by code
+  report.md         session summary (unless --no-report): metrics, charts,
+                    escalations + verdicts, LLM trace links, memory stores,
+                    images/tokens/cost; regenerate with
+                    `python -m agent.tracking.report <run_dir>`
 
 Importing this module has no side effects; tests import the helpers directly.
 """
@@ -37,11 +43,14 @@ import itertools
 import json
 import logging
 import math
+import time
 from collections import Counter
 from pathlib import Path
 
+from agent.escalation import Escalation, EscalationConfig, emit as emit_escalation
 from agent.tracking import FileSink, PeriodCorrector, RunStore, TrackCorrector, plot_detection_charts, plot_validated_chart, resolve_cat_ids
 from agent.tracking.process_viz import init_frame_dir, render_process_frame, stitch_mp4
+from agent.tracking.report import REPORT_FILE, write_session_report
 from agent.tracking.store import DEFAULT_RUNS_DIR
 
 logger = logging.getLogger(__name__)
@@ -99,6 +108,27 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=False,
         help="validate every escalation live with the supervisor agent and write validated_detection "
         "outputs (default --no-validate: escalations are only logged)",
+    )
+    parser.add_argument(
+        "--report",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="write a report.md session summary after finish (charts, escalations + verdicts, "
+        "LLM trace links, memory stores, images/tokens/cost; default --report)",
+    )
+    parser.add_argument(
+        "--heartbeat-seconds",
+        type=float,
+        default=None,
+        help="quiet-window spot-check interval in stream seconds (default from ESCALATION_HEARTBEAT_SECONDS, "
+        "300; 0 disables the periodic H1)",
+    )
+    parser.add_argument(
+        "--heartbeat-at-end",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="emit one H1 spot-check when a run ends with zero escalations "
+        "(default from ESCALATION_HEARTBEAT_AT_END, on)",
     )
     return parser
 
@@ -423,7 +453,11 @@ class TrackingRun:
         bootstrap_frame: str | None = None,
         validate: bool = False,
         validator=None,  # inject a ValidationWorker (tests); otherwise built when validate=True
+        report: bool = True,
     ):
+        self.started_at = datetime.datetime.now()
+        self._t0 = time.perf_counter()
+        self.report = report
         self.view_id = int(view_id)
         self.start = start
         self.end_exclusive = end_exclusive
@@ -959,6 +993,8 @@ class TrackingRun:
         if self.process_viz:
             artifacts.append("process_frames/")
         artifacts.append("run.json")
+        if self.report:
+            artifacts.append(REPORT_FILE)
 
         by_code: Counter = Counter(esc.code for esc in self._escs.all)
         counts = dict(self.store.counters)
@@ -969,6 +1005,9 @@ class TrackingRun:
             by_verdict: Counter = Counter((op.get("review") or {}).get("verdict", "?") for op in ops)
             counts["validations_total"] = len(ops)
             counts["validations_by_verdict"] = dict(sorted(by_verdict.items()))
+        if self._resolved:
+            counts["labeler_keyframes_total"] = sum(len(v) for v in self._resolved.values())
+        finished_at = datetime.datetime.now()
         end_minute = self.end_exclusive - datetime.timedelta(seconds=60)
         meta = {
             "run_name": run_dir.name,
@@ -985,12 +1024,26 @@ class TrackingRun:
             },
             "counts": counts,
             "artifacts": artifacts,
-            "created_at": datetime.datetime.now().isoformat(timespec="microseconds"),
+            "started_at": self.started_at.isoformat(timespec="microseconds"),
+            "finished_at": finished_at.isoformat(timespec="microseconds"),
+            "elapsed_s": round(time.perf_counter() - self._t0, 1),
+            "created_at": finished_at.isoformat(timespec="microseconds"),
             "run_dir": str(run_dir),
         }
         self.store.write_run_json(meta)
         self.store.close()
         self._shutdown_memory()
+        # Memory shutdown (merge + promote) trails run.json by up to minutes;
+        # re-stamp the finish so the report's trace window covers it.
+        finished_at = datetime.datetime.now()
+        meta["finished_at"] = finished_at.isoformat(timespec="microseconds")
+        meta["elapsed_s"] = round(time.perf_counter() - self._t0, 1)
+        self.store.write_run_json(meta)
+        if self.report:
+            try:
+                write_session_report(run_dir)
+            except Exception:
+                logger.exception("session report failed; run artifacts are complete without it")
         logger.info(f"run written: {run_dir}")
         return run_dir
 
@@ -1184,6 +1237,7 @@ def main(argv=None) -> int:
         memory=args.memory,
         bootstrap_frame=args.bootstrap_frame,
         validate=args.validate,
+        report=args.report,
     )
     logger.info(f"run dir: {store.run_dir} (view {args.view_id}, cats {cat_ids})")
     if args.live:

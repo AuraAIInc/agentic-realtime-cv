@@ -176,7 +176,7 @@ def process_one(job, ctx):
                 ctx["first_prompt"] = (f"{hour}/{name}", prompt)
         parsed = None
         for _ in range(2):  # one retry: strict mode usually makes this unnecessary
-            output_text, usage = sam_mod.call_responses(
+            output_text, usage = sam_mod.call_responses_with_retry(
                 ctx["base_url"], ctx["api_key"],
                 build_spark_detect_payload(ctx["model"], prompt, image_bytes))
             result["calls"] += 1

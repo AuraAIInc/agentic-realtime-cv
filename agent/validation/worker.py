@@ -52,6 +52,16 @@ MERGED_PREAMBLE = (
     "calls and reasoning steps. Judge each case on its own evidence."
 )
 
+#: Tool-failure rules appended to every validation query (single and merged).
+#: The image server fails fast when it cannot crop, and the period-detail tool
+#: can serve a stale window in replays — both have burned whole batches before.
+TOOL_CAVEATS = (
+    "Tool rules: if an images__get_image call with box/max_side errors, that server cannot crop — "
+    "do NOT retry crops; fetch the frame once without box/max_side and judge from the full image. "
+    "If tracking__get_period_detail returns timestamps outside this review window, it is stale — "
+    "ignore it and judge from the key frames plus images."
+)
+
 
 def _agent_event_log(kind: str, data) -> None:
     """Terminal log for one supervisor-agent event during validation."""
@@ -101,6 +111,7 @@ def build_validation_query(esc, memory_brief: str | None = None) -> tuple[str, d
     prompt = build_prompt(esc)
     if memory_brief:
         prompt += f"\nPast context from memory (may help, may be stale): {memory_brief}"
+    prompt += f"\n{TOOL_CAVEATS}"
     prompt += "\nReturn ONLY a JSON object following the output schema — no prose, no fences."
     return prompt, json.loads(review_schema_json(esc.code))
 
@@ -162,7 +173,7 @@ def build_merged_query(escalations: list, memory_briefs: list | None = None) -> 
     the answer is one review per case keyed by escalation name.
     """
     briefs = list(memory_briefs or []) + [None] * len(escalations)
-    parts = [MERGED_PREAMBLE.format(n=len(escalations))]
+    parts = [MERGED_PREAMBLE.format(n=len(escalations)), TOOL_CAVEATS]
     for i, esc in enumerate(escalations):
         name = getattr(esc, "name", None) or getattr(esc, "code", "?")
         section = f"\n=== Case {i + 1} of {len(escalations)}: {name} ===\n{build_prompt(esc)}"
@@ -222,6 +233,11 @@ class ValidationWorker:
     verdict events. ``merge_window_s`` / ``merge_max_batch`` /
     ``merge_max_chars`` control queue merging (see ``batcher``);
     ``merge_max_batch=1`` disables merging (every escalation validates solo).
+
+    Every op also carries ``agent_run``: per-call stats (run dir, trace.md
+    path, turns, tool calls, images used, timing, tokens, cost) when the
+    backend reports them (the supervisor backend always does), else None.
+    The session report uses these to link each escalation to its LLM trace.
     """
 
     def __init__(
@@ -312,7 +328,24 @@ class ValidationWorker:
                         options=RunOptions(text_format=fmt, tool_names=list(VALIDATION_TOOLS), tag="validation"),
                     )
                     logger.info("validation agent final answer:\n%s", result.answer)
+                    run_agent.last_run_stats = {
+                        "run_dir": result.run_dir,
+                        "trace": str(Path(result.run_dir) / "trace.md") if result.run_dir else None,
+                        "model": result.model,
+                        "turns": result.turns,
+                        "tool_calls": len(result.tool_steps),
+                        "images_used": result.images_used,
+                        "high_res_used": result.high_res_used,
+                        "llm_ms": result.llm_ms,
+                        "tools_ms": result.tools_ms,
+                        "total_ms": result.total_ms,
+                        "usage": dict(result.usage),
+                        "est_cost_usd": cfg.estimate_cost_usd(result.usage),
+                        "stopped_reason": result.stopped_reason,
+                    }
                     return result.answer
+
+                run_agent.last_run_stats = None
 
                 await self._consume(run_agent)
         except Exception:
@@ -346,8 +379,10 @@ class ValidationWorker:
         logger.info("validating batch [%s] (%d cases%s)", ", ".join(names), len(members), span)
         briefs = [self._memory_brief(esc) for esc in members]
         query, schema = build_merged_query(members, briefs)
+        agent_run = None
         try:
             answer = await run_agent(query, schema, label)
+            agent_run = getattr(run_agent, "last_run_stats", None)
             reviews = parse_merged_review(members, answer)
             for name in names:
                 logger.info("escalation %s verdict: %s", name, reviews[name].get("verdict"))
@@ -360,7 +395,7 @@ class ValidationWorker:
         for esc, name in zip(members, names):
             review = reviews[name]
             self._memory_verdict(esc, review)
-            ops.append({"escalation": json.loads(esc.to_json()), "review": review})
+            ops.append({"escalation": json.loads(esc.to_json()), "review": review, "agent_run": agent_run})
         return ops
 
     async def _validate_one(self, esc, run_agent) -> dict:
@@ -368,8 +403,10 @@ class ValidationWorker:
         logger.info("validating escalation %s", name)
         brief = self._memory_brief(esc)
         query, schema = build_validation_query(esc, memory_brief=brief)
+        agent_run = None
         try:
             answer = await run_agent(query, schema, esc.code)
+            agent_run = getattr(run_agent, "last_run_stats", None)
             review = parse_review(esc.code, answer)
             logger.info("escalation %s verdict: %s", name, review.get("verdict"))
             if review.get("rationale"):
@@ -378,7 +415,7 @@ class ValidationWorker:
             logger.warning("escalation %s validation failed: %s", name, exc)
             review = {"verdict": "error", "error": str(exc)}
         self._memory_verdict(esc, review)
-        return {"escalation": json.loads(esc.to_json()), "review": review}
+        return {"escalation": json.loads(esc.to_json()), "review": review, "agent_run": agent_run}
 
     # -- memory hooks (best-effort; never break validation) --
 

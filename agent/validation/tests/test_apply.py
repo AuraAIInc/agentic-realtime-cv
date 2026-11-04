@@ -87,6 +87,53 @@ def test_error_ops_pass_through():
     assert out == [{**rows[0], "validated_by": "pass-through", "verdict": "pass"}]
 
 
+def test_chained_p7_merges_collapse_transitively():
+    rows = [_row(T0, 25, 1), _row(T0, 25, 2), _row(T0, 25, 3), _row(T0, 25, 4)]
+    ops = [
+        _op("P7", "merge", {"name": "E4-P7", "period_id": 4, "metrics": {"prev_period_id": 3}}),
+        _op("P7", "merge", {"name": "E3-P7", "period_id": 3, "metrics": {"prev_period_id": 2}}),
+        _op("P7", "merge", {"name": "E2-P7", "period_id": 2, "metrics": {"prev_period_id": 1}}),
+    ]
+    out = apply_ops(rows, ops)  # reverse op order: result must not depend on arrival order
+    assert [r["period_id"] for r in out] == [1, 1, 1, 1]
+    assert all(r["verdict"] == "merge" for r in out[1:])
+
+
+def test_p7_merge_fills_gap_with_interpolated_rows():
+    t_a = datetime.datetime(2026, 10, 28, 16, 35, 20, 500000)
+    t_b = datetime.datetime(2026, 10, 28, 16, 35, 24, 500000)
+    row_a = _row(t_a, 25, 1)
+    row_a.update({"box_x1": 0.0, "box_y1": 0.0, "box_x2": 10.0, "box_y2": 10.0})
+    row_b = _row(t_b, 25, 2)
+    row_b.update({"box_x1": 40.0, "box_y1": 0.0, "box_x2": 50.0, "box_y2": 10.0})
+    out = apply_ops([row_a, row_b], [_op("P7", "merge", {"period_id": 2, "metrics": {"prev_period_id": 1}})])
+    fills = [r for r in out if r.get("gap_filled")]
+    assert [r["create_time"] for r in fills] == [
+        "2026-10-28T16:35:21.000000",
+        "2026-10-28T16:35:22.000000",
+        "2026-10-28T16:35:23.000000",
+        "2026-10-28T16:35:24.000000",
+    ]
+    assert [r["create_time"] for r in out] == sorted(r["create_time"] for r in out)  # slotted in order
+    assert all(r["period_id"] == 1 for r in out)
+    first, last = fills[0], fills[-1]
+    assert (first["box_x1"], first["box_x2"]) == (5.0, 15.0)  # f=0.125 across the 4 s span
+    assert (last["box_x1"], last["box_x2"]) == (35.0, 45.0)  # f=0.875
+    assert all(r["conf"] == 0 and r["orig_cat_id"] is None for r in fills)
+    assert all(r["validated_by"] == "E1-P7" and r["verdict"] == "merge" for r in fills)
+
+
+def test_merge_fill_skipped_on_cat_disagreement():
+    t_a = datetime.datetime(2026, 10, 28, 16, 35, 20, 500000)
+    t_b = datetime.datetime(2026, 10, 28, 16, 35, 24, 500000)
+    out = apply_ops(
+        [_row(t_a, 25, 1), _row(t_b, 26, 2)],
+        [_op("P7", "merge", {"period_id": 2, "metrics": {"prev_period_id": 1}})],
+    )
+    assert [r["period_id"] for r in out] == [1, 1]  # renumber stands
+    assert all(not r.get("gap_filled") for r in out)  # but nothing is synthesized
+
+
 def test_materialize_writes_jsonl_and_sqlite(tmp_path):
     rows = [_row(T0, 25, 4)]
     jsonl_path, db_path, out = materialize(tmp_path, rows, [_op("P5", "keep")])

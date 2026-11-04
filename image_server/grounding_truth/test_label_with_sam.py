@@ -191,3 +191,45 @@ def test_session_report_writes_md_and_json(tmp_path):
     assert "DRY RUN" in body
     assert "animal" in body and "Identify..." in body
     assert json.load(open(js))["session_id"] == "t"
+
+
+def test_transient_classifier():
+    assert label_with_sam.is_transient_api_error(RuntimeError("API HTTP 504: timed out"))
+    assert label_with_sam.is_transient_api_error(RuntimeError("API HTTP 429: slow down"))
+    assert label_with_sam.is_transient_api_error(RuntimeError("API HTTP 500: boom"))
+    assert not label_with_sam.is_transient_api_error(RuntimeError("API HTTP 400: bad schema"))
+    assert not label_with_sam.is_transient_api_error(RuntimeError("API HTTP 401: no key"))
+    assert not label_with_sam.is_transient_api_error(RuntimeError("unreadable JPEG header"))
+    import urllib.error
+
+    assert label_with_sam.is_transient_api_error(urllib.error.URLError("timed out"))
+    assert label_with_sam.is_transient_api_error(TimeoutError())
+
+
+def test_retry_wrapper_retries_transient_then_succeeds(monkeypatch):
+    calls = []
+
+    def flaky(base_url, api_key, payload, timeout=240):
+        calls.append(1)
+        if len(calls) < 3:
+            raise RuntimeError("API HTTP 504: request timed out")
+        return ("ok", {"input": 1})
+
+    monkeypatch.setattr(label_with_sam, "call_responses", flaky)
+    monkeypatch.setattr(label_with_sam.time, "sleep", lambda s: None)
+    assert label_with_sam.call_responses_with_retry("u", "k", {}) == ("ok", {"input": 1})
+    assert len(calls) == 3
+
+
+def test_retry_wrapper_fails_fast_on_client_error(monkeypatch):
+    import pytest
+
+    def bad_request(base_url, api_key, payload, timeout=240):
+        raise RuntimeError("API HTTP 400: bad schema")
+
+    sleeps = []
+    monkeypatch.setattr(label_with_sam, "call_responses", bad_request)
+    monkeypatch.setattr(label_with_sam.time, "sleep", sleeps.append)
+    with pytest.raises(RuntimeError, match="API HTTP 400"):
+        label_with_sam.call_responses_with_retry("u", "k", {})
+    assert sleeps == []

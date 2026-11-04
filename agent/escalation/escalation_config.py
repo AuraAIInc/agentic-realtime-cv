@@ -23,10 +23,18 @@ def _int(name: str, default: int) -> int:
     return int(raw) if raw is not None else default
 
 
+def _bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in ("0", "false", "no", "off", "")
+
+
 @dataclass(frozen=True)
 class EscalationConfig:
     duplicate_tie_margin: float = 0.15  # T3: ESCALATION_DUPLICATE_TIE_MARGIN
     synth_gap_seconds: float = 5.0  # T7: ESCALATION_SYNTH_GAP_SECONDS
+    synth_static_max_px: float = 15.0  # T7: ESCALATION_SYNTH_STATIC_MAX_PX (skip T7 while the interp run stays within this displacement)
     vote_margin: float = 2.0  # P1: ESCALATION_VOTE_MARGIN
     weak_winner_score: float = 3.0  # P2: ESCALATION_WEAK_WINNER_SCORE
     weak_winner_min_length: int = 10  # P2: ESCALATION_WEAK_WINNER_MIN_LENGTH
@@ -40,12 +48,15 @@ class EscalationConfig:
     static_max_px: float = 15.0  # P7: ESCALATION_STATIC_MAX_PX
     static_overlap_iou: float = 0.5  # P7: ESCALATION_STATIC_OVERLAP_IOU
     static_link_max_gap: float = 600.0  # P7: ESCALATION_STATIC_LINK_MAX_GAP (10 min)
+    heartbeat_seconds: float = 300.0  # H1: ESCALATION_HEARTBEAT_SECONDS (0 disables the periodic spot-check)
+    heartbeat_at_end: bool = True  # H1: ESCALATION_HEARTBEAT_AT_END (one spot-check when a run ends with zero escalations)
 
     @classmethod
     def from_env(cls) -> "EscalationConfig":
         return cls(
             duplicate_tie_margin=_float("ESCALATION_DUPLICATE_TIE_MARGIN", cls.duplicate_tie_margin),
             synth_gap_seconds=_float("ESCALATION_SYNTH_GAP_SECONDS", cls.synth_gap_seconds),
+            synth_static_max_px=_float("ESCALATION_SYNTH_STATIC_MAX_PX", cls.synth_static_max_px),
             vote_margin=_float("ESCALATION_VOTE_MARGIN", cls.vote_margin),
             weak_winner_score=_float("ESCALATION_WEAK_WINNER_SCORE", cls.weak_winner_score),
             weak_winner_min_length=_int("ESCALATION_WEAK_WINNER_MIN_LENGTH", cls.weak_winner_min_length),
@@ -59,4 +70,6 @@ class EscalationConfig:
             static_max_px=_float("ESCALATION_STATIC_MAX_PX", cls.static_max_px),
             static_overlap_iou=_float("ESCALATION_STATIC_OVERLAP_IOU", cls.static_overlap_iou),
             static_link_max_gap=_float("ESCALATION_STATIC_LINK_MAX_GAP", cls.static_link_max_gap),
+            heartbeat_seconds=_float("ESCALATION_HEARTBEAT_SECONDS", cls.heartbeat_seconds),
+            heartbeat_at_end=_bool("ESCALATION_HEARTBEAT_AT_END", cls.heartbeat_at_end),
         )

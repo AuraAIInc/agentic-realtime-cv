@@ -192,26 +192,28 @@ def test_jump_frame_context_captures_pre_post_and_mids():
 
 
 def test_p5_carries_counts_box_and_key_frames():
+    # Strong winner (11 real sightings, score 9.0) but low quality: P5 fires
+    # alone — a weak winner would take P2 instead (see dedup test below).
     pc = PeriodCorrector(cat_ids=[25, 26])
-    for i in range(8):
+    for i in range(12):
         t = T0 + datetime.timedelta(seconds=i * 10)
-        orig = 26 if i % 4 == 0 else None
-        box = [10 + i, 10, 100 + i, 100] if i % 4 != 3 else [None, None, None, None]
-        pc.detections.append(np.array([t, *box, orig, 0.5, 26, 7], dtype=object))
-    assert pc._median_winner_box(7, 26) == [14.0, 10.0, 104.0, 100.0]
+        box = [10 + i, 10, 100 + i, 100] if i != 11 else [None, None, None, None]
+        pc.detections.append(np.array([t, *box, 26, 0.5, 26, 7], dtype=object))
+    assert pc._median_winner_box(7, 26) == [15.0, 10.0, 105.0, 100.0]
     frames = pc._sample_period_frames(7, cap=4)
     assert len(frames) == 4
     assert frames[0]["real"] is True and frames[0]["box"] == [10.0, 10.0, 100.0, 100.0]
     assert frames[-1]["box"] is None and frames[-1]["real"] is False
-    stats = {"detect_length": np.array([0, 2]), "detect_conf": np.array([0.0, 0.5]),
-             "detect_rate": np.array([0.0, 0.1]), "length": 8}
+    stats = {"detect_length": np.array([0, 11]), "detect_conf": np.array([0.0, 0.5]),
+             "detect_rate": np.array([0.0, 0.1]), "length": 12}
     buf = io.StringIO()
     with redirect_stdout(buf):
-        pc._check_vote_escalations(7, stats, np.array([0.0, 9.0]), 1, 9.0, (T0, T0 + datetime.timedelta(seconds=70)))
-    p5 = next(e for e in pc.escalations if e.code == "P5")
-    assert p5.metrics["total_frames"] == 8
-    assert p5.metrics["detect_counts"] == {"26": 2}
-    assert p5.metrics["winner_box"] == [14.0, 10.0, 104.0, 100.0]
+        pc._check_vote_escalations(7, stats, np.array([0.0, 9.0]), 1, 9.0, (T0, T0 + datetime.timedelta(seconds=110)))
+    assert [e.code for e in pc.escalations] == ["P5"]
+    p5 = pc.escalations[0]
+    assert p5.metrics["total_frames"] == 12
+    assert p5.metrics["detect_counts"] == {"26": 11}
+    assert p5.metrics["winner_box"] == [15.0, 10.0, 105.0, 100.0]
     assert len(p5.metrics["key_frames"]) == 6
 
 
@@ -257,6 +259,46 @@ def test_p2_carries_key_frames():
     p2 = next(e for e in pc.escalations if e.code == "P2")
     assert len(p2.metrics["key_frames"]) == 6
     assert p2.metrics["key_frames"][0]["box"] == [10.0, 10.0, 100.0, 100.0]
+
+
+def test_weak_winner_suppresses_duplicate_p5():
+    pc = PeriodCorrector(cat_ids=[25, 26])
+    for i in range(12):
+        t = T0 + datetime.timedelta(seconds=i)
+        pc.detections.append(np.array([t, 10 + i, 10, 100 + i, 100, 25, 0.4, 25, 7], dtype=object))
+    # weak winner (score 2.0) AND low quality (conf 0.4): same visit, same key
+    # frames, same keep/drop question — only P2 fires (it keeps the merge option).
+    stats = {"detect_length": np.array([12, 0]), "detect_conf": np.array([0.4, 0.0]),
+             "detect_rate": np.array([1.0, 0.0]), "length": 12}
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        pc._check_vote_escalations(7, stats, np.array([2.0, 0.0]), 0, 9.0, (T0, T0 + datetime.timedelta(seconds=11)))
+    assert [e.code for e in pc.escalations] == ["P2"]
+
+
+def _synth_poop(t, box):
+    x1, y1, x2, y2 = box
+    return np.array([t, x1, y1, x2, y2, None, 0.4, 0], dtype=object)
+
+
+def test_t7_skips_static_run_but_fires_on_motion():
+    tc = TrackCorrector(cat_ids=[0])
+    still = [10, 10, 100, 100]
+    tc._synth_run[0] = [T0, False, list(still), 0.0]
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        # 6 s of drift within 2 px: silent, flag stays False.
+        tc._maybe_escalate_synth_run(0, _synth_poop(T0 + datetime.timedelta(seconds=6), [11, 10, 101, 100]), T0, still, 0.0)
+    assert tc.escalations == [] and tc._synth_run[0][1] is False
+    with redirect_stdout(buf):
+        # the same run starts moving: fires, with displacement in metrics.
+        tc._maybe_escalate_synth_run(
+            0, _synth_poop(T0 + datetime.timedelta(seconds=7), [200, 10, 290, 100]), T0, still, tc._synth_run[0][3]
+        )
+    assert [e.code for e in tc.escalations] == ["T7"]
+    assert tc.escalations[0].metrics["run_displacement_px"] >= 15.0
+    assert tc.escalations[0].metrics["gap_seconds"] == 7.0
+    assert tc._synth_run[0][1] is True
 
 
 def _seed_jump_reset(tc, detecting):

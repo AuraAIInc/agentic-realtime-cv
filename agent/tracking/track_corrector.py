@@ -15,7 +15,7 @@ from collections import Counter, deque
 
 import numpy as np
 
-from agent.escalation import Escalation, EscalationConfig, even_pick
+from agent.escalation import Escalation, EscalationConfig, even_pick, max_displacement
 from agent.escalation import emit as emit_escalation
 from agent.tracking.sinks import InMemorySink
 
@@ -54,7 +54,7 @@ class TrackCorrector:
         self.max_period_conf = [0 for _ in range(self.number_of_cats)]
         self.detecting = [False for _ in range(self.number_of_cats)]
         self.last_revised_detection = [None for _ in range(self.number_of_cats)]
-        self._synth_run = [[None, False] for _ in range(self.number_of_cats)]
+        self._synth_run = [[None, False, None, 0.0] for _ in range(self.number_of_cats)]
         logger.info("TrackCorrector initialized")
 
         self.now_detecting_date = None
@@ -396,6 +396,48 @@ class TrackCorrector:
             rows = [rows[i] for i in even_pick(len(rows), cap)]
         return [{"t": r[0].isoformat(timespec="microseconds"), "box": [float(v) for v in r[1:5]]} for r in rows]
 
+    def _extend_synth_disp(self, cat_idx, first_box, run_disp: float, poop) -> float:
+        """Fold one interpolated frame into the run's max displacement from its start box.
+
+        O(1) per frame; the running max catches wander-and-return drift that an
+        endpoint-only check would miss.
+        """
+        if first_box is None:
+            return run_disp
+        step = max_displacement([first_box, list(poop[1:5])])
+        if step is not None and step > run_disp:
+            run_disp = step
+            self._synth_run[cat_idx][3] = run_disp
+        return run_disp
+
+    def _maybe_escalate_synth_run(self, cat_idx, poop, run_start, run_box, run_disp) -> None:
+        """T7: flag a long interpolated-only run that actually moved.
+
+        A run that never moved (sleeping cat) stays silent no matter how long
+        it grows — P7 judges the visit split at close instead. The flag stays
+        False on silence so motion later in the run still escalates.
+        """
+        run_disp = self._extend_synth_disp(cat_idx, run_box, run_disp, poop)
+        gap_seconds = (poop[0] - run_start).total_seconds()
+        if gap_seconds <= self.escalation_config.synth_gap_seconds:
+            return
+        if run_disp < self.escalation_config.synth_static_max_px:
+            return
+        self._escalate(
+            "T7",
+            f"cat {self.idx_to_id[cat_idx]} committed {gap_seconds:.1f} s of interpolated-only frames with no real detection",
+            poop[0],
+            cat_id=self.idx_to_id[cat_idx],
+            period_id=self.period_id[cat_idx] or None,
+            metrics={
+                "gap_start": run_start,
+                "gap_seconds": gap_seconds,
+                "run_displacement_px": run_disp,
+                "interp_frames": self._sample_synth_run(cat_idx, run_start, poop[0]),
+            },
+        )
+        self._synth_run[cat_idx][1] = True
+
     def collect_buffer(self, cat_idx, sink, view_id):
         # self.check_buffer_label()
 
@@ -488,26 +530,13 @@ class TrackCorrector:
             # print(f"pooped cat: {cat_idx} - {kk}: {list(poop)}")
             yield True, poop
             if poop[1] is not None and poop[5] is None:
-                run_start, run_flagged = self._synth_run[cat_idx]
+                run_start, run_flagged, run_box, run_disp = self._synth_run[cat_idx]
                 if run_start is None:
-                    self._synth_run[cat_idx] = [poop[0], False]
-                elif not run_flagged and (poop[0] - run_start).total_seconds() > self.escalation_config.synth_gap_seconds:
-                    gap_seconds = (poop[0] - run_start).total_seconds()
-                    self._escalate(
-                        "T7",
-                        f"cat {self.idx_to_id[cat_idx]} committed {gap_seconds:.1f} s of interpolated-only frames with no real detection",
-                        poop[0],
-                        cat_id=self.idx_to_id[cat_idx],
-                        period_id=self.period_id[cat_idx] or None,
-                        metrics={
-                            "gap_start": run_start,
-                            "gap_seconds": gap_seconds,
-                            "interp_frames": self._sample_synth_run(cat_idx, run_start, poop[0]),
-                        },
-                    )
-                    self._synth_run[cat_idx][1] = True
+                    self._synth_run[cat_idx] = [poop[0], False, list(poop[1:5]), 0.0]
+                elif not run_flagged:
+                    self._maybe_escalate_synth_run(cat_idx, poop, run_start, run_box, run_disp)
             else:
-                self._synth_run[cat_idx] = [None, False]
+                self._synth_run[cat_idx] = [None, False, None, 0.0]
             if poop[1] is None:
                 self.detecting[cat_idx] = False
                 self.last_revised_detection[cat_idx] = None
@@ -620,7 +649,7 @@ class TrackCorrector:
         self.detecting = [False for _ in range(self.number_of_cats)]
         self.last_revised_detection = [None for _ in range(self.number_of_cats)]
         self.escalations = []
-        self._synth_run = [[None, False] for _ in range(self.number_of_cats)]
+        self._synth_run = [[None, False, None, 0.0] for _ in range(self.number_of_cats)]
 
     def save_image_to_db(self, create_time, detected, is_grey, view_id, device_id, sink, finish_up=False):
         if create_time is not None:

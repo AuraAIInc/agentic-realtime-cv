@@ -7,10 +7,15 @@ ops match revised rows by exact timestamp (+ cat); period ops match by
 applier cannot execute precisely (visit splits, merges into an unnamed
 neighbor, core trims with a free-text span) keep the rows and record a note
 instead of guessing.
+
+A decided merge also bridges the gap: one interpolated row per whole second
+between the two boundary detections, marked ``gap_filled`` (``conf`` 0 like
+tracker-interpolated rows) so the merged visit reads as one track.
 """
 
 from __future__ import annotations
 
+import bisect
 import datetime
 import json
 import sqlite3
@@ -87,9 +92,163 @@ def _touch(row: dict, name: str, verdict: str) -> None:
     row["verdict"] = verdict
 
 
-def apply_ops(revised_rows: list[dict], ops: list[dict]) -> list[dict]:
+#: (code, verdict, metrics key holding the merge target) for verdicts that
+#: renumber one period into another.
+_MERGE_VERDICTS = {
+    "P6": ("merge", "prev_period_id"),
+    "P7": ("merge", "prev_period_id"),
+    "T6": ("merge_visits", "old_period_id"),
+}
+
+
+def _canonical_merge_targets(ops: list[dict]) -> dict[int, int]:
+    """Map each merged-away period id to its final representative (the min id).
+
+    Chained merges (2->1, 3->2, ...) must collapse transitively: sequential
+    application would cascade-shift ids instead of merging. Union-find over
+    all merge pairs first, then every row lands on the set minimum whatever
+    order the ops arrive in.
+    """
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
+    merged: set[int] = set()
+    for op in ops:
+        esc = op.get("escalation") or {}
+        review = op.get("review") or {}
+        spec = _MERGE_VERDICTS.get(esc.get("code"))
+        if spec is None or review.get("verdict") != spec[0]:
+            continue
+        pid = esc.get("period_id")
+        target = (esc.get("metrics") or {}).get(spec[1])
+        if isinstance(pid, int) and isinstance(target, int) and pid != target:
+            union(pid, target)
+            merged.add(pid)
+    return {pid: find(pid) for pid in merged}
+
+
+def _row_time(row: dict) -> datetime.datetime | None:
+    """Parsed row timestamp as naive local time (None when unparseable)."""
+    ts = _parse_ts(row.get("create_time"))
+    if ts is not None and ts.tzinfo is not None:
+        ts = ts.replace(tzinfo=None)
+    return ts
+
+
+def _boxed(row: dict) -> bool:
+    return all(isinstance(row.get(k), (int, float)) for k in ("box_x1", "box_y1", "box_x2", "box_y2"))
+
+
+def _merge_pair_names(ops: list[dict]) -> tuple[dict[tuple[int, int], str], dict[int, str]]:
+    """Map merge ops to names: exact (prev, pid) pairs plus pid fallbacks."""
+    exact: dict[tuple[int, int], str] = {}
+    by_later: dict[int, str] = {}
+    for op in ops:
+        esc = op.get("escalation") or {}
+        review = op.get("review") or {}
+        spec = _MERGE_VERDICTS.get(esc.get("code"))
+        if spec is None or review.get("verdict") != spec[0]:
+            continue
+        pid = esc.get("period_id")
+        prev = (esc.get("metrics") or {}).get(spec[1])
+        if not isinstance(pid, int) or not isinstance(prev, int) or pid == prev:
+            continue
+        name = esc.get("name") or esc.get("code") or "merge"
+        exact.setdefault((prev, pid), name)
+        by_later.setdefault(pid, name)
+    return exact, by_later
+
+
+def _fill_merged_gaps(rows: list[dict], orig_pids: list, ops: list[dict], merge_targets: dict[int, int]) -> list[dict]:
+    """Bridge each merged gap with 1-second interpolated rows between its boundary detections.
+
+    ``rows`` are post-verdict (drops removed, ids renumbered); ``orig_pids``
+    aligns by index so gap endpoints are found on pre-merge membership while
+    anchors use post-verdict boxes/cats. Filled rows slot into time order and
+    carry ``gap_filled=True`` plus the merging op's name.
+    """
+    members: dict[int, set[int]] = {}
+    for pid in set(merge_targets) | set(merge_targets.values()):
+        members.setdefault(merge_targets.get(pid, pid), set()).add(pid)
+    sets = [m for m in members.values() if len(m) > 1]
+    if not sets:
+        return rows
+    exact_names, later_names = _merge_pair_names(ops)
+    by_orig: dict[int, list[dict]] = {}
+    for row, pid in zip(rows, orig_pids):
+        if isinstance(pid, int):
+            by_orig.setdefault(pid, []).append(row)
+    fills: list[dict] = []
+    for group in sets:
+        any_member = next(iter(group))
+        rep = merge_targets.get(any_member, any_member)
+        ordered = sorted(group, key=lambda p: min((_row_time(r) or datetime.datetime.max for r in by_orig.get(p, [])), default=datetime.datetime.max))
+        for earlier, later in zip(ordered, ordered[1:]):
+            a_rows = [r for r in by_orig.get(earlier, []) if _boxed(r) and _row_time(r) is not None]
+            b_rows = [r for r in by_orig.get(later, []) if _boxed(r) and _row_time(r) is not None]
+            if not a_rows or not b_rows:
+                continue
+            anchor_a = max(a_rows, key=_row_time)
+            anchor_b = min(b_rows, key=_row_time)
+            cat = anchor_a.get("cat_id")
+            if cat is None or anchor_b.get("cat_id") != cat:
+                continue  # identity disagreement: renumber stands, no synthesis
+            t_a, t_b = _row_time(anchor_a), _row_time(anchor_b)
+            span = (t_b - t_a).total_seconds()
+            if span <= 0:
+                continue
+            name = exact_names.get((earlier, later), later_names.get(later, "merge-chain"))
+            box_a = [anchor_a[k] for k in ("box_x1", "box_y1", "box_x2", "box_y2")]
+            box_b = [anchor_b[k] for k in ("box_x1", "box_y1", "box_x2", "box_y2")]
+            t = t_a.replace(microsecond=0) + datetime.timedelta(seconds=1)
+            while t < t_b:
+                f = (t - t_a).total_seconds() / span
+                box = [a + f * (b - a) for a, b in zip(box_a, box_b)]
+                fills.append(
+                    {
+                        "create_time": t.isoformat(timespec="microseconds"),
+                        "box_x1": box[0],
+                        "box_y1": box[1],
+                        "box_x2": box[2],
+                        "box_y2": box[3],
+                        "orig_cat_id": None,
+                        "conf": 0,
+                        "cat_id": cat,
+                        "period_id": rep,
+                        "view_id": anchor_a.get("view_id"),
+                        "validated_by": name,
+                        "verdict": "merge",
+                        "gap_filled": True,
+                    }
+                )
+                t += datetime.timedelta(seconds=1)
+    if not fills:
+        return rows
+    keys = [_row_time(r) or datetime.datetime.max for r in rows]
+    for fill in fills:
+        key = _row_time(fill)
+        i = bisect.bisect_right(keys, key)
+        rows.insert(i, fill)
+        keys.insert(i, key)
+    return rows
+
+
+def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool = True) -> list[dict]:
     """Return validated rows: copies of ``revised_rows`` with verdict ops applied."""
     rows = [{**r, "validated_by": "pass-through", "verdict": "pass"} for r in revised_rows]
+    orig_pids = [r.get("period_id") for r in revised_rows]
+    merge_targets = _canonical_merge_targets(ops)
     for op in ops:
         esc = op.get("escalation") or {}
         review = op.get("review") or {}
@@ -99,11 +258,20 @@ def apply_ops(revised_rows: list[dict], ops: list[dict]) -> list[dict]:
         name = esc.get("name") or esc.get("code") or "?"
         when = _parse_ts(esc.get("time"))
         handler = _HANDLERS.get(esc.get("code"), _noop)
+        spec = _MERGE_VERDICTS.get(esc.get("code"))
+        if spec is not None and verdict == spec[0] and isinstance(esc.get("period_id"), int):
+            resolved = merge_targets.get(esc["period_id"])
+            if resolved is not None and resolved != esc["period_id"]:
+                esc = {**esc, "metrics": {**(esc.get("metrics") or {}), spec[1]: resolved}}
         for row in rows:
             if row.get("deleted"):
                 continue
             handler(row, esc, review, verdict, name, when)
-    return [r for r in rows if not r.pop("_drop", False)]
+    kept = [(row, pid) for row, pid in zip(rows, orig_pids) if not row.pop("_drop", False)]
+    rows = [row for row, _ in kept]
+    if fill_merged_gaps:
+        rows = _fill_merged_gaps(rows, [pid for _, pid in kept], ops, merge_targets)
+    return rows
 
 
 def _noop(row, esc, review, verdict, name, when) -> None:
@@ -261,6 +429,7 @@ _HANDLERS = {
     "P5": _p5,
     "P6": _p6_p7,
     "P7": _p6_p7,
+    "H1": _noop,  # spot-check audit: verdicts are advisory, rows stay as-is
 }
 
 

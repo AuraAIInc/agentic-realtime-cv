@@ -3,6 +3,7 @@
 from agent.tracking.cat_config import resolve_cat_ids
 from agent.tracking.charts import plot_detection_charts, plot_validated_chart
 from agent.tracking.period_corrector import PeriodCorrector
+from agent.tracking.report import REPORT_FILE, write_session_report
 from agent.tracking.sinks import InMemorySink, Sink
 from agent.tracking.store import FileSink, RunStore
 from agent.tracking.track_corrector import TrackCorrector
@@ -17,4 +18,6 @@ __all__ = [
     "plot_detection_charts",
     "plot_validated_chart",
     "resolve_cat_ids",
+    "REPORT_FILE",
+    "write_session_report",
 ]

@@ -338,6 +338,34 @@ def call_responses(base_url, api_key, payload, timeout=240):
     return output_text_of(body), (body.get("usage") or {})
 
 
+def is_transient_api_error(exc: Exception) -> bool:
+    """True for API failures worth retrying: HTTP 429/5xx or transport timeouts.
+
+    ``call_responses`` converts HTTP errors to ``RuntimeError("API HTTP {code}: ...")``;
+    anything reaching us as a raw ``URLError`` is transport-level (timeout, DNS,
+    refused). Client errors (400, 401, 404, ...) fail fast — retrying is pointless.
+    """
+    if re.match(r"API HTTP (429|5\d\d)\b", str(exc)):
+        return True
+    return isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError))
+
+
+def call_responses_with_retry(base_url, api_key, payload, timeout=240, attempts=3):
+    """``call_responses`` with backoff retries on transient failures.
+
+    One 504/timeout used to fail the whole image (108 lost labels in a single
+    session); transient errors now retry twice (2 s, 4 s) before giving up.
+    """
+    for attempt in range(attempts):
+        try:
+            return call_responses(base_url, api_key, payload, timeout)
+        except Exception as exc:
+            if not is_transient_api_error(exc) or attempt + 1 >= attempts:
+                raise
+            time.sleep(2 * (attempt + 1))
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def load_spark_settings(model_config=None):
     """Return (model, base_url, api_key, pricing) for the agent role."""
     cfg_path = model_config or os.getenv("MODEL_CONFIG") or DEFAULT_MODELS
@@ -564,7 +592,7 @@ def process_one(job, ctx):
         # Stage 1: propose regions with the union of grounding concepts.
         proposed = []
         for concept in SAM_CONCEPTS:
-            output_text, usage = call_responses(
+            output_text, usage = call_responses_with_retry(
                 ctx["sam_base_url"], ctx["sam_api_key"],
                 build_sam_payload(ctx["sam_model"], build_sam_prompt(concept),
                                   image_bytes))
@@ -586,7 +614,7 @@ def process_one(job, ctx):
             with ctx["first_spark_lock"]:
                 if ctx["first_spark_prompt"] is None:
                     ctx["first_spark_prompt"] = (f"{hour}/{name}", prompt)
-            output_text, usage = call_responses(
+            output_text, usage = call_responses_with_retry(
                 ctx["spark_base_url"], ctx["spark_api_key"],
                 build_spark_payload(ctx["spark_model"], prompt, image_bytes))
             result["spark_calls"] += 1
@@ -595,7 +623,7 @@ def process_one(job, ctx):
                 ids = parse_spark_json(output_text, len(proposed), valid_ids)
             except ValueError:
                 # one retry: the model sometimes wraps JSON in prose
-                output_text, usage = call_responses(
+                output_text, usage = call_responses_with_retry(
                     ctx["spark_base_url"], ctx["spark_api_key"],
                     build_spark_payload(ctx["spark_model"], prompt, image_bytes))
                 result["spark_calls"] += 1

@@ -166,7 +166,8 @@ class PeriodCorrector:
                     "key_frames": self._sample_period_frames(period_id),
                 },
             )
-        if float(score[top_idx]) < cfg.weak_winner_score or stats["detect_length"][top_idx] < cfg.weak_winner_min_length:
+        weak_winner = float(score[top_idx]) < cfg.weak_winner_score or stats["detect_length"][top_idx] < cfg.weak_winner_min_length
+        if weak_winner:
             self._escalate(
                 "P2",
                 f"period {period_id} winner cat {top_cat} is weak: score {float(score[top_idx]):.1f}, {int(stats['detect_length'][top_idx])} original frames",
@@ -182,7 +183,9 @@ class PeriodCorrector:
             )
         winner_conf = float(stats["detect_conf"][top_idx])
         winner_rate = float(stats["detect_rate"][top_idx])
-        if winner_conf < cfg.low_mean_conf or winner_rate < cfg.low_detect_rate:
+        # A thin visit fires P2 already with the same key frames and the same
+        # keep/drop question (plus a merge option) — a P5 on top is pure cost.
+        if (winner_conf < cfg.low_mean_conf or winner_rate < cfg.low_detect_rate) and not weak_winner:
             self._escalate(
                 "P5",
                 f"period {period_id} cat {top_cat} is low quality: mean conf {winner_conf:.2f}, original-frame rate {winner_rate:.2f}",

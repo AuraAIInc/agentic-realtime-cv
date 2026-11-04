@@ -49,6 +49,19 @@ Period codes (PeriodCorrector):
 | P6 | merge_candidate | period may connect to the same cat's previous period |
 | P7 | static_link | both ends static and overlapping; sleeping cat split by a long gap |
 
+Heartbeat code (TrackingRun, period scope over the quiet window):
+
+| Code | Name | Meaning |
+|------|------|---------|
+| H1 | quiet_spot_check | no escalation for `heartbeat_seconds` (default 300 s); routine audit |
+
+The heartbeat fires at most once per quiet stretch: when stream time passes
+`heartbeat_seconds` with no escalation since the window start, and once at
+`finish()` when the whole run stayed quiet (`heartbeat_at_end`, default on).
+Set `ESCALATION_HEARTBEAT_SECONDS=0` to disable the periodic check and
+`ESCALATION_HEARTBEAT_AT_END=0` to disable the end-of-run fallback. `H1`
+verdicts (`confirm` / `flag_issue`) never rewrite rows.
+
 Tests: `tests/test_escalation_points.py` (run `pytest agent/escalation/tests`
 from the repo root). `test_explicit_config_wins_over_env` stays with the
 tracking phase since it needs `TrackCorrector`.

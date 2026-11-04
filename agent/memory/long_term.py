@@ -71,6 +71,7 @@ ESCALATION_FAMILIES = {
     "P4": "occlusion",
     "P6": "merge",
     "P7": "merge",
+    "H1": "routine",
 }
 
 
@@ -246,10 +247,11 @@ class LongTermMemory:
 
         Families (design doc table): identity T1/T2/T5 (hit cell + neighbors),
         motion T4/T6 (wider cells + current slot/hour), continuity T3/T7
-        (current slot + hour), routine P1/P2/P5 (day/hour + history), conflict
-        P3 (same-slot history), occlusion P4 (environment + contrast), merge
-        P6/P7 (gap span + place routine). Metrics carry no boxes, so T4/T6
-        cover the path with a wider neighbor radius around ``box``.
+        (current slot + hour), routine P1/P2/P5/H1 (day/hour + history),
+        conflict P3 (same-slot history), occlusion P4 (environment +
+        contrast), merge P6/P7 (gap span + place routine). Metrics carry no
+        boxes, so T4/T6 cover the path with a wider neighbor radius around
+        ``box``.
         """
         code = str(getattr(esc, "code", "") or "").upper()
         family = ESCALATION_FAMILIES.get(code, "generic")
