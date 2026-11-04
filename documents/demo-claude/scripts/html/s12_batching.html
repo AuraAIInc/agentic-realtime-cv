@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root{
+  --bg:#1a1a19; --panel:#232321; --panel2:#2b2b28; --line:#3a3935;
+  --t1:#f2f1ed; --t2:#c3c2b7; --t3:#8e8d84;
+  --qb:#3987e5; --qbo:#d95926; --edge:#199e70; --agent:#9085e9;
+  --doubt:#fab219; --good:#0ca30c; --bad:#e66767;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg);color:var(--t1);
+  font-family:-apple-system,"SF Pro Display","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:"SF Mono",Menlo,monospace}
+.slide{position:absolute;inset:0;padding:88px 112px 110px;display:flex;flex-direction:column;justify-content:center}
+.kicker{font-size:26px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);font-weight:600}
+h1{font-size:76px;line-height:1.06;font-weight:700;letter-spacing:-.02em}
+h2{font-size:56px;line-height:1.1;font-weight:700;letter-spacing:-.015em}
+.lead{font-size:34px;line-height:1.4;color:var(--t2)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:36px 40px}
+.pill{display:inline-flex;align-items:center;gap:10px;padding:8px 18px;border-radius:999px;
+  font-size:24px;font-weight:600;background:var(--panel2);border:1px solid var(--line)}
+.dot{width:14px;height:14px;border-radius:50%;display:inline-block}
+.frame{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line)}
+.frame img{display:block;width:100%;height:100%}
+.box{position:absolute;border:4px solid;border-radius:6px}
+.tag{position:absolute;padding:6px 14px;border-radius:10px;font-size:24px;font-weight:700;white-space:nowrap;color:#111}
+.foot{position:absolute;left:112px;right:112px;bottom:48px;font-size:20px;color:var(--t3);display:flex;justify-content:space-between}
+.stamp{display:inline-block;padding:10px 26px;border:4px solid;border-radius:14px;font-size:40px;font-weight:800;letter-spacing:.06em;transform:rotate(-4deg)}
+
+    .grid{display:grid;grid-template-columns:820px 1fr;gap:80px;margin-top:50px}
+    .g{display:flex;align-items:center;gap:20px;margin-bottom:26px}
+    .chips{display:flex;gap:10px;flex-wrap:wrap;width:500px}
+    .chip{font-family:"SF Mono",Menlo,monospace;font-size:22px;padding:8px 12px;border-radius:10px;background:#2e2a1f;border:2px solid var(--doubt)}
+    .call{font-size:26px;font-weight:700;padding:16px 22px;border-radius:14px;background:#26243a;border:2px solid var(--agent);white-space:nowrap}
+    .m{margin-bottom:34px}
+    .mh{font-size:26px;color:var(--t2);margin-bottom:12px;display:flex;justify-content:space-between}
+    .b{height:30px;border-radius:0 8px 8px 0;margin-bottom:6px;display:flex;align-items:center}
+    .b span{font-size:22px;margin-left:14px;color:var(--t2);white-space:nowrap}
+    </style></head>
+<body><div class="slide">
+      <div class="kicker">Related doubts are reviewed together</div>
+      <h2 style="margin-top:16px">12 questions, 3 calls. Each image fetched once.</h2>
+      <div class="grid"><div><div class="g"><div class="chips"><span class=chip>E1 T7</span><span class=chip>E2 T6</span><span class=chip>E3 P5</span><span class=chip>E4 T7</span></div><svg width="70" height="20"><line x1="0" y1="10" x2="58" y2="10" stroke="#8e8d84" stroke-width="3"/><path d="M56,3 L68,10 L56,17 z" fill="#8e8d84"/></svg><span class="call">Call 1</span></div><div class="g"><div class="chips"><span class=chip>E5 T2</span><span class=chip>E6 T2</span><span class=chip>E7 T2</span><span class=chip>E8 T4</span></div><svg width="70" height="20"><line x1="0" y1="10" x2="58" y2="10" stroke="#8e8d84" stroke-width="3"/><path d="M56,3 L68,10 L56,17 z" fill="#8e8d84"/></svg><span class="call">Call 2</span></div><div class="g"><div class="chips"><span class=chip>E9 P6</span><span class=chip>E10 T7</span><span class=chip>E11 P2</span><span class=chip>E12 P2</span></div><svg width="70" height="20"><line x1="0" y1="10" x2="58" y2="10" stroke="#8e8d84" stroke-width="3"/><path d="M56,3 L68,10 L56,17 z" fill="#8e8d84"/></svg><span class="call">Call 3</span></div></div><div><div class="m"><div class="mh"><span>Agent calls</span><b style="color:var(--t1)">−75%</b></div><div class="b" style="width:560px;background:#4a4944"><span style="position:relative;left:560px">one call each · 12</span></div><div class="b" style="width:140px;background:var(--agent)"><span style="position:relative;left:140px">merged · 3</span></div></div><div class="m"><div class="mh"><span>Tokens</span><b style="color:var(--t1)">−56%</b></div><div class="b" style="width:560px;background:#4a4944"><span style="position:relative;left:560px">one call each · 518k</span></div><div class="b" style="width:248px;background:var(--agent)"><span style="position:relative;left:248px">merged · 230k</span></div></div><div class="m"><div class="mh"><span>Cost</span><b style="color:var(--t1)">−57%</b></div><div class="b" style="width:560px;background:#4a4944"><span style="position:relative;left:560px">one call each · $0.60</span></div><div class="b" style="width:243px;background:var(--agent)"><span style="position:relative;left:243px">merged · $0.26</span></div></div><div class="m"><div class="mh"><span>Minutes</span><b style="color:var(--t1)">−60%</b></div><div class="b" style="width:560px;background:#4a4944"><span style="position:relative;left:560px">one call each · 9.4</span></div><div class="b" style="width:226px;background:var(--agent)"><span style="position:relative;left:226px">merged · 3.8</span></div></div></div></div></div><div class="foot"><span>Runs 012059 (one call per escalation) vs 231613 (merged batches ≤60 s, ≤4 cases) · same window, same tracker output</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>
