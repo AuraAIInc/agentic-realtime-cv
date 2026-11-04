@@ -20,7 +20,7 @@ LLM spend. Takes a single run directory; the hour resolves automatically.
 YOLO class ids map to cat ids through the hour's `classes_map.json`.
 The hour resolves from the run: `--hour` first, then a labels-mode run's
 `hour_dir` arg, else the run window's hour stamp under `--data-root`
-(default: the `agentic-realtime-cv-e2e` retrieved-images tree).
+(default: this repo's `image_server/retrieved_images`).
 
 ## Method
 
@@ -40,7 +40,7 @@ The hour resolves from the run: `--hour` first, then a labels-mode run's
 ```bash
 # Single run (absolute path fine; hour + GT auto-resolve)
 .venv/bin/python evaluation/evaluate.py \
-  /Users/muyang/Documents/Personal/Github/agentic-realtime-cv-e2e/output/tracking_runs/<run_name>
+  output/tracking_runs/<run_name>
 
 # Explicit hour / GT source / thresholds
 .venv/bin/python evaluation/evaluate.py <run_dir> \
@@ -48,7 +48,7 @@ The hour resolves from the run: `--hour` first, then a labels-mode run's
   --gt-source labels --iou 0.5 --out /tmp/eval_out
 ```
 
-Outputs into `--out` (default: the e2e `output/` dir): `<run>_eval.md`
+Outputs into `--out` (default: the repo's `output/` dir): `<run>_eval.md`
 (headline first, then per-IoU details and cost) plus `<run>_metrics.json`
 (machine-readable, same numbers).
 

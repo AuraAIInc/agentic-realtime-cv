@@ -10,7 +10,7 @@ Positional input is a single tracking-run directory (absolute path fine):
 The hour directory resolves automatically: labels-mode runs carry it in
 run.json args; replay/live runs derive it from the run window
 (<data-root>/YYYY-MM-DD-HH). --hour overrides. --data-root defaults to
-the agentic-realtime-cv-e2e retrieved_images tree.
+this repo's image_server/retrieved_images tree.
 
 Stages scored (IoU 0.5 and 0.75 unless --iou says otherwise):
 
@@ -45,8 +45,9 @@ LABEL_STAGES = (("muse", "muse_labels"), ("spark", "spark_labels"))
 PIPE_STAGES = (("raw", "stream.jsonl"), ("revised", "revised.jsonl"), ("validated", "validated.jsonl"))
 STEM_RE = re.compile(r"^\d+_(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d+)$")
 
-DEFAULT_DATA_ROOT = "/Users/muyang/Documents/Personal/Github/agentic-realtime-cv-e2e/image_server/retrieved_images"
-DEFAULT_OUT_DIR = "/Users/muyang/Documents/Personal/Github/agentic-realtime-cv-e2e/output"
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_DATA_ROOT = os.path.join(_REPO, "image_server", "retrieved_images")
+DEFAULT_OUT_DIR = os.path.join(_REPO, "output")
 
 
 def stem_to_time(stem: str) -> str | None:
@@ -554,7 +555,7 @@ def main() -> None:
     ap.add_argument("--data-root", default=DEFAULT_DATA_ROOT, help="retrieved_images tree for hour lookup.")
     ap.add_argument("--gt-source", choices=sorted(GT_SOURCES), default="labels")
     ap.add_argument("--iou", type=float, action="append", default=[0.5, 0.75])
-    ap.add_argument("--out", default=None, help="Report dir (default: e2e output dir).")
+    ap.add_argument("--out", default=None, help="Report dir (default: <repo>/output).")
     ap.add_argument("--audit", default=None, help="Apply documented GT corrections (e.g. evaluation/gt_audit.yaml).")
     args = ap.parse_args()
 
