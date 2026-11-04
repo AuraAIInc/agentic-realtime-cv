@@ -19,6 +19,11 @@ views:
       # ([348,46,408,106]). A cat lying beside it gives a wider box (IoU 0.3-0.5) and is kept.
       # Move or delete this zone if the ball moves.
       - {name: exercise_ball, kind: decoy, box: [348, 46, 408, 106], min_iou: 0.6}
+      # The ball plus the small round object right of it, boxed together as one "Qbo"
+      # (315 detections on 10-25 04:2x, static to the pixel; no GT label anywhere sits here).
+      # Without this zone the tracker holds the pair under Qbo, then files the real walking
+      # Qbo (04:25:41, 400 px away) under the same track and overwrites its boxes.
+      - {name: exercise_ball_pair, kind: decoy, box: [351, 47, 458, 109], min_iou: 0.6}
     # - {name: sofa, kind: place, box: [0, 80, 320, 420]}
     # - {name: litter_box, kind: place, box: [170, 500, 310, 600]}
     # - {name: doorway, kind: entry, box: [690, 0, 800, 110]}

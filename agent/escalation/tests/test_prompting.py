@@ -611,3 +611,14 @@ def test_p6_different_cats_names_the_cat_from_appearance():
     assert "name the new visit's cat from its APPEARANCE" in prompt
     assert "never which cat is in the box" in prompt
     assert "The camera labeled visit 6 cat 25" in prompt
+
+
+def test_p8_tail_variant_names_the_tail_and_points_to_split():
+    esc = _esc(
+        "P8", scope="period", end_time=T0, cat_id=26, period_id=2,
+        metrics={"tracked_cat_id": 26, "voted_cat_id": 25, "tail_from": "2026-10-28T16:35:27.800000",
+                 "tail_frames": 13, "relabeled_frames": 13, "key_frames": []},
+    )
+    text = build_prompt(esc)
+    assert "whole-visit vote agrees" in text and "16:35:27" in text
+    assert "split_mixed with chosen_cat_id=25" in text

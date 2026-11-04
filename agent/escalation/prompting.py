@@ -629,10 +629,24 @@ def build_p8_prompt(esc: Escalation) -> str:
         steal = ""
     key_frames = [f for f in (m.get("key_frames") or []) if isinstance(f, dict) and f.get("t")]
     frames = _labeled_key_frames(key_frames) if key_frames else _period_frames(esc, "which cat is visible? check start, middle and end")
+    tail_from = m.get("tail_from")
+    if tail_from:
+        conflict = (
+            f"Conflict: visit {pid} is labeled cat {tracked} and the whole-visit vote agrees ({table}), but from "
+            f"{str(tail_from)[11:19]} the camera's last {int(m.get('tail_frames') or 0)} sightings name cat {voted}: the "
+            f"track may have carried on after the cats swapped. Most likely verdict if the crops confirm a swap: "
+            f"split_mixed with chosen_cat_id={voted} (find the true handover — it can come BEFORE {str(tail_from)[11:19]}, "
+            f"because the camera mislabels too); keep_tracked if the tail is still cat {tracked}. relabel_to_vote would "
+            f"relabel the WHOLE visit to cat {voted} — only if the start is cat {voted} too.\n"
+        )
+    else:
+        conflict = (
+            f"Conflict: visit {pid} is labeled cat {tracked} frame by frame, but the whole-visit vote awards it to cat {voted} "
+            f"({table}).\n"
+        )
     return (
         f"{_head(esc, 'Tracker label disagrees with the period vote')}\n"
-        f"Conflict: visit {pid} is labeled cat {tracked} frame by frame, but the whole-visit vote awards it to cat {voted} "
-        f"({table}).\n"
+        f"{conflict}"
         f"Validate: rule in this order.\n"
         f"1) BOX IDENTITY — at spread samples (start, middle, end at minimum), which cat is INSIDE the tracked box? "
         f"Fetch each sample CROPPED to its listed box via local__get_frame(timestamp=..., box=[x1, y1, x2, y2]) and QUOTE "

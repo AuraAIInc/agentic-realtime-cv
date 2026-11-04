@@ -143,6 +143,7 @@ class PeriodCorrector:
             return  # no dominant tracked label; nothing coherent to dispute
         tracked_cat = top[0][0]  # d[7] is already a cat id (see row format above)
         if tracked_cat == voted:
+            self._check_tracker_tail_split(period_id, int(tracked_cat), stats, score, bounds)
             return
         relabeled = sum(
             1
@@ -171,6 +172,68 @@ class PeriodCorrector:
             },
         )
 
+    #: Tail P8: the trailing real sightings must hold this many boxes naming another cat...
+    TAIL_MIN_FRAMES = 5
+    #: ...spanning at least this long (s)...
+    TAIL_MIN_SPAN_S = 5.0
+    #: ...with at least this share of the tail naming that cat.
+    TAIL_MIN_SHARE = 0.8
+
+    def _tail_disagreement(self, period_id, tracked_cat):
+        """(other_cat, first_time, n_frames) when the visit's trailing real sightings name another cat.
+
+        Walks the real sightings backwards and keeps the longest suffix in
+        which at least TAIL_MIN_SHARE of the camera's labels name one other
+        cat. A track that carries on after a handover (the detector-insist
+        veto only frees the new cat once its own evidence piles up) shows
+        exactly this: the whole-visit vote still agrees with the tracker,
+        so the vote check alone never fires.
+        """
+        real = [d for d in self._period_rows(period_id)
+                if d[0] is not None and d[1] is not None and not pd.isna(d[5])]
+        best = None
+        counts: Counter = Counter()
+        for k, d in enumerate(reversed(real), 1):
+            counts[int(d[5])] += 1
+            other, n = max(((c, v) for c, v in counts.items() if c != tracked_cat), key=lambda x: x[1], default=(None, 0))
+            if other is None or n < self.TAIL_MIN_FRAMES or n / k < self.TAIL_MIN_SHARE:
+                continue
+            span = (real[-1][0] - d[0]).total_seconds()
+            if span >= self.TAIL_MIN_SPAN_S:
+                best = (other, d[0], n)
+        if best is None or best[2] >= len(real) * 0.5:
+            return None  # no tail, or the "tail" is most of the visit (the vote check owns that case)
+        return best
+
+    def _check_tracker_tail_split(self, period_id, tracked_cat, stats, score, bounds):
+        """P8 (tail): the vote agrees with the tracker, but the visit's tail is another cat per the camera."""
+        tail = self._tail_disagreement(period_id, tracked_cat)
+        if tail is None:
+            return
+        other, tail_from, n = tail
+        start, end = bounds
+        self._escalate(
+            "P8",
+            f"period {period_id} tracked as cat {tracked_cat}, but its last {n} camera sightings from "
+            f"{tail_from:%H:%M:%S} name cat {other}; the track may have carried on after a handover",
+            start,
+            end,
+            cat_id=tracked_cat,
+            period_id=period_id,
+            metrics={
+                "tracked_cat_id": int(tracked_cat),
+                "voted_cat_id": int(other),
+                "tail_from": tail_from.isoformat(timespec="microseconds"),
+                "tail_frames": int(n),
+                "relabeled_frames": int(n),
+                "votes": {
+                    str(self.idx_to_id[i]): {"score": round(float(score[i]), 1), "frames": int(stats["detect_length"][i])}
+                    for i in range(len(score))
+                },
+                "key_frames": self._sample_period_frames_for_split(period_id, focus=tail_from),
+            },
+        )
+
     def _period_rows(self, period_id) -> list:
         """Committed rows of one period, in time order."""
         return [d for d in self.detections if len(d) > 8 and d[8] == period_id]
@@ -194,7 +257,7 @@ class PeriodCorrector:
 
     def _sample_period_frames_for_split(self, period_id, backbone: int = 8, jump_span_s: float = 20.0,
                                         jump_cap: int = 10, top_jumps: int = 2,
-                                        min_jump_px: float = 20.0) -> list:
+                                        min_jump_px: float = 20.0, focus=None) -> list:
         """P8 sampling: an even backbone plus dense real frames around track jumps.
 
         A hijack verdict lives or dies on the handover region, and the
@@ -219,6 +282,8 @@ class PeriodCorrector:
             steps.append((box_distance(box_a, box_b), rows[a][0], rows[b][0]))
         steps.sort(key=lambda item: -item[0])
         jumps = [(lo, hi) for dist, lo, hi in steps[: max(top_jumps, 0)] if dist >= min_jump_px]
+        if focus is not None:  # a known suspect time (tail P8): densify around it too
+            jumps.append((focus, focus))
         for lo, hi in jumps:
             lo_t = lo - datetime.timedelta(seconds=jump_span_s)
             hi_t = hi + datetime.timedelta(seconds=jump_span_s)
