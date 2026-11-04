@@ -152,7 +152,11 @@ class P6Review(EscalationReview):
         "back, two real visits of the same cat. different_cats: the visits are different cats — the new visit is "
         "actually chosen_cat_id (the previous visit keeps its label)."
     )
-    chosen_cat_id: int | None = Field(default=None, description="Required when verdict is different_cats.")
+    chosen_cat_id: int | None = Field(
+        default=None,
+        description="Required when verdict is different_cats: the cat whose appearance matches the new visit's frames "
+        "(quote the cues in the rationale), not the cat implied by other visits.",
+    )
 
 
 class P7Review(EscalationReview):

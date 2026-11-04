@@ -567,6 +567,10 @@ def build_p6_prompt(esc: Escalation) -> str:
         f"Context: proposal keeps separate. Short gap + nearby boxes suggests continuity, but the cat may have left and returned, "
         f"or the new visit may be a different cat wearing the wrong label. {MODEL_CAVEAT} {_BOX_FOCUS}\n"
         f"Alternatives: merge, confirm separate visits of the same cat, or different cats (say which cat the new visit is).\n"
+        f"If you answer different cats: name the new visit's cat from its APPEARANCE in visit {new}'s own frames — compare "
+        f"against BOTH cat profiles below and QUOTE the cues (fur length/outline, color tone, tail, face). Track bookkeeping "
+        f"(\"another visit already has this cat\") decides that the visits differ, never which cat is in the box. The camera "
+        f"labeled visit {new} cat {esc.cat_id}; keep that label unless the appearance rules it out.\n"
         f"Resources: visits {prev}, {new} (these are period_id {prev} and {new} — look them up in tracking__get_period_detail or "
         f"the database); gap frames ~1/min via images__get_image (boxes are the tracked positions for reference):\n"
         + "\n".join(lines)
