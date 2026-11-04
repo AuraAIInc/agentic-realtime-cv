@@ -43,6 +43,7 @@ import itertools
 import json
 import logging
 import math
+import os
 import time
 from collections import Counter
 from pathlib import Path
@@ -1293,6 +1294,8 @@ def main(argv=None) -> int:
     end_minute = end_exclusive - datetime.timedelta(seconds=60)
     run_name = f"view{args.view_id}_{start:%Y%m%d-%H%M}_{end_minute:%H%M}_{mode}_{now:%Y%m%d-%H%M%S-%f}"
     store = RunStore(run_name, base_dir=args.out)
+    # Local track-box lookups resolve the revised track file through this.
+    os.environ["TRACK_RUN_DIR"] = str(store.run_dir)
     run = TrackingRun(
         view_id=args.view_id,
         start=start,

@@ -697,7 +697,7 @@ def _validated_lines(validated_rows: list, ops: list) -> list[str]:
     merges = [
         (op.get("escalation") or {}).get("name")
         for op in ops
-        if (op.get("review") or {}).get("verdict") in ("merge", "merge_visits", "merge_neighbor")
+        if (op.get("review") or {}).get("verdict") in ("merge", "merge_visits")
     ]
     if merges:
         lines.append(f"- merges applied: {', '.join(m for m in merges if m)}")

@@ -41,7 +41,15 @@ def ensure_supervisor_importable() -> None:
         sys.path.insert(0, agent_dir)
 
 #: Tools the validator may use: look at frames, read visit verdicts. Nothing else.
-VALIDATION_TOOLS = ["images__get_image", "images__list_images", "tracking__get_period_detail"]
+VALIDATION_TOOLS = [
+    "images__get_image",
+    "images__list_images",
+    "tracking__get_period_detail",
+    "local__find_references",
+    "local__get_reference_image",
+    "local__get_frame",
+    "local__get_track_box",
+]
 
 #: Preamble for a joint multi-case review: share evidence, minimize total work.
 MERGED_PREAMBLE = (
@@ -49,7 +57,9 @@ MERGED_PREAMBLE = (
     "They may share frames and context — fetch each image once and use it for\n"
     "every case it belongs to. Leverage evidence across the whole time window\n"
     "for all of the cases, and resolve every case with the minimum total tool\n"
-    "calls and reasoning steps. Judge each case on its own evidence."
+    "calls and reasoning steps. Judge each case on its own evidence. When two\n"
+    "cases in this batch cover the same cat or adjacent frames, keep their\n"
+    "identities consistent — one continuous track cannot be two cats."
 )
 
 #: Tool-failure rules appended to every validation query (single and merged).
@@ -57,7 +67,11 @@ MERGED_PREAMBLE = (
 #: can serve a stale window in replays — both have burned whole batches before.
 TOOL_CAVEATS = (
     "Tool rules: if an images__get_image call with box/max_side errors, that server cannot crop — "
-    "do NOT retry crops; fetch the frame once without box/max_side and judge from the full image. "
+    "do NOT retry crops on that server; fetch the frame once without box/max_side and judge from the full image. "
+    "(local__get_frame crops locally, so box=... is always safe there — use crops when judging which cat is inside "
+    "a box.) "
+    "If an images__* call errors (the images server is down), fetch the same frame from local disk with "
+    "local__get_frame using the same timestamp — same pixels, no server needed. "
     "If tracking__get_period_detail returns timestamps outside this review window, it is stale — "
     "ignore it and judge from the key frames plus images."
 )
@@ -106,14 +120,158 @@ def parse_review(code: str, answer: str) -> dict:
         raise ValueError(f"answer fails {code} review schema: {exc}") from exc
 
 
-def build_validation_query(esc, memory_brief: str | None = None) -> tuple[str, dict]:
+def build_validation_query(esc, memory_brief: str | None = None, prior_block: str | None = None) -> tuple[str, dict]:
     """Return (query, json_schema) to send the supervisor agent for one escalation."""
     prompt = build_prompt(esc)
     if memory_brief:
         prompt += f"\nPast context from memory (may help, may be stale): {memory_brief}"
     prompt += f"\n{TOOL_CAVEATS}"
+    if prior_block:
+        prompt += f"\n{prior_block}"
     prompt += "\nReturn ONLY a JSON object following the output schema — no prose, no fences."
     return prompt, json.loads(review_schema_json(esc.code))
+
+
+#: Verdicts that settle nothing: never cited as prior rulings.
+_UNDECIDED = frozenset({"error", "flag_issue"})
+
+#: Nearby-frame radius (s) for prior rulings: spans overlapping or this close count.
+PRIOR_NEAR_S = 60.0
+
+#: Most prior rulings cited in one query (each ~1 line).
+PRIOR_MAX_LINES = 8
+
+
+def _span_of(esc) -> tuple:
+    """(start, end) datetimes for an Escalation or a journaled escalation dict."""
+    import datetime as _dt
+
+    def _one(value):
+        if value is None:
+            return None
+        if isinstance(value, _dt.datetime):
+            return value
+        try:
+            return _dt.datetime.fromisoformat(value)
+        except (TypeError, ValueError):
+            return None
+
+    if isinstance(esc, dict):
+        start, end = _one(esc.get("time")), _one(esc.get("end_time"))
+    else:
+        start, end = _one(getattr(esc, "time", None)), _one(getattr(esc, "end_time", None))
+    if start is None:
+        return None, None
+    return start, end or start
+
+
+def _box4(value) -> list | None:
+    """[x1, y1, x2, y2] as ints when value is a 4-number box, else None."""
+    try:
+        nums = [float(v) for v in value]
+    except (TypeError, ValueError):
+        return None
+    if len(nums) != 4 or not all(v == v and v not in (float("inf"), float("-inf")) for v in nums):
+        return None
+    return [int(round(v)) for v in nums]
+
+
+def _prior_box_txt(code: str | None, metrics: dict, review: dict) -> str:
+    """Box/cut evidence for a prior line, so the reviewer can match objects.
+
+    A timestamp alone lets a later case discount a prior ruling as "another
+    object"; with the ruled box it can verify same-track overlap instead.
+    "" when the escalation carries no box.
+    """
+    pairs: list = []
+    if code == "T4":
+        pairs = [("base", metrics.get("base_box")), ("new", metrics.get("box"))]
+    elif code == "T6":
+        pairs = [("pre", metrics.get("pre_box")), ("post", metrics.get("post_box"))]
+    elif code == "P6":
+        pairs = [("prev_end", metrics.get("prev_end_box")), ("new_start", metrics.get("new_start_box"))]
+    else:
+        for key in ("box", "winner_box", "new_box", "post_box", "new_start_box"):
+            if metrics.get(key) is not None:
+                pairs = [("", metrics.get(key))]
+                break
+        if not pairs:
+            for kf in metrics.get("key_frames") or []:
+                if isinstance(kf, dict) and kf.get("real") and kf.get("box") is not None:
+                    pairs = [("", kf["box"])]
+                    break
+    shown = []
+    for label, raw in pairs:
+        box = _box4(raw)
+        if box is not None:
+            shown.append(f"{label + '=' if label else 'box='}{box}")
+    txt = " ".join(shown)
+    if code == "P8" and (review or {}).get("verdict") == "split_mixed" and (review or {}).get("cut_time"):
+        try:
+            import datetime as _dt
+            cut = _dt.datetime.fromisoformat(review.get("cut_time"))
+            txt += f" split@{cut:%H:%M:%S}->{review.get('chosen_cat_id')}"
+        except (TypeError, ValueError):
+            pass
+    return (", " + txt.strip()) if txt.strip() else ""
+
+
+def prior_verdict_block(ops: list, targets) -> str:
+    """Already-decided rulings overlapping the target span(s), as a query block.
+
+    Later cases see earlier rulings on the same scene, so a reviewer judging
+    one ambiguous frame weighs the track identity siblings already settled
+    (appearance flips frame to frame under mixed lighting; the track does
+    not). Undecided verdicts (error/flag_issue) are never cited. "" when
+    nothing decided nearby yet.
+    """
+    if isinstance(targets, dict) or not isinstance(targets, (list, tuple)):
+        targets = [targets]
+    spans = [_span_of(t) for t in targets]
+    spans = [(s, e) for s, e in spans if s is not None]
+    if not spans:
+        return ""
+    lines = []
+    for op in ops or []:
+        review = (op or {}).get("review") or {}
+        if review.get("verdict") in _UNDECIDED or not review.get("verdict"):
+            continue
+        o_esc = (op or {}).get("escalation") or {}
+        start, end = _span_of(o_esc)
+        if start is None:
+            continue
+        near = False
+        for s, e in spans:
+            if start <= e and s <= end:
+                near = True
+                break
+            gap = min(abs((start - e).total_seconds()), abs((s - end).total_seconds()))
+            if gap <= PRIOR_NEAR_S:
+                near = True
+                break
+        if not near:
+            continue
+        name = o_esc.get("name") or o_esc.get("code") or "?"
+        when = f"{start:%H:%M:%S}" + (f"–{end:%H:%M:%S}" if end != start else "")
+        imgs = ((op.get("agent_run") or {}).get("images_used") or 0)
+        why = (review.get("rationale") or o_esc.get("reason") or "").replace("\n", " ").strip()
+        if len(why) > 160:
+            why = why[:157] + "..."
+        box_txt = _prior_box_txt(o_esc.get("code"), o_esc.get("metrics") or {}, review)
+        lines.append((start, f"- {name} -> {review.get('verdict')} @{when} "
+                             f"(cat {o_esc.get('cat_id')}, visit {o_esc.get('period_id')}{box_txt}, "
+                             f"{imgs} images): {why}"))
+    if not lines:
+        return ""
+    lines.sort(key=lambda item: item[0])
+    body = "\n".join(text for _, text in lines[:PRIOR_MAX_LINES])
+    return (
+        "Already decided in this run on overlapping/nearby frames (weigh heavily):\n"
+        f"{body}\n"
+        "A continuous track does not change cats without a visible handover. When a prior ruling covers nearby "
+        "frames of the same scene, reconcile explicitly: same track (stay consistent) or a different object (say "
+        "why). Contradict a prior ruling only with unanimous box-cropped evidence."
+    )
 
 
 def _verdict_literals(code: str) -> tuple | None:
@@ -166,7 +324,7 @@ def merged_review_schema(escalations: list) -> dict:
     }
 
 
-def build_merged_query(escalations: list, memory_briefs: list | None = None) -> tuple[str, dict]:
+def build_merged_query(escalations: list, memory_briefs: list | None = None, prior_block: str | None = None) -> tuple[str, dict]:
     """Return (query, json_schema) for one joint review of several escalations.
 
     Each member keeps its own full prompt section plus its own memory brief;
@@ -174,6 +332,8 @@ def build_merged_query(escalations: list, memory_briefs: list | None = None) -> 
     """
     briefs = list(memory_briefs or []) + [None] * len(escalations)
     parts = [MERGED_PREAMBLE.format(n=len(escalations)), TOOL_CAVEATS]
+    if prior_block:
+        parts.append(prior_block)
     for i, esc in enumerate(escalations):
         name = getattr(esc, "name", None) or getattr(esc, "code", "?")
         section = f"\n=== Case {i + 1} of {len(escalations)}: {name} ===\n{build_prompt(esc)}"
@@ -315,11 +475,13 @@ class ValidationWorker:
         ensure_supervisor_importable()
         from supervisor_agent.agent import MCPAgent, RunOptions
         from supervisor_agent.config import AgentConfig
+        from supervisor_agent.local_tools import LocalTools
         from supervisor_agent.mcp_hub import MCPHub
 
         cfg = AgentConfig.from_env()
         try:
             async with MCPHub(cfg.servers) as hub:
+                hub.add_local(LocalTools(), "Cat profiles, reference images (agent_data/) and local frames.")
                 agent = MCPAgent(cfg, hub, on_event=_agent_event_log)
                 logger.info("validation worker connected to supervisor backends")
 
@@ -383,7 +545,7 @@ class ValidationWorker:
             span = f", span {batch.start:%H:%M:%S}–{batch.end:%H:%M:%S}"
         logger.info("validating batch [%s] (%d cases%s)", ", ".join(names), len(members), span)
         briefs = [self._memory_brief(esc) for esc in members]
-        query, schema = build_merged_query(members, briefs)
+        query, schema = build_merged_query(members, briefs, prior_verdict_block(self.ops, members))
         agent_run = None
         retry_ops: dict[str, dict] = {}
         try:
@@ -418,7 +580,9 @@ class ValidationWorker:
         name = getattr(esc, "name", None) or getattr(esc, "code", "?")
         logger.info("validating escalation %s", name)
         brief = self._memory_brief(esc)
-        query, schema = build_validation_query(esc, memory_brief=brief)
+        query, schema = build_validation_query(
+            esc, memory_brief=brief, prior_block=prior_verdict_block(self.ops, esc)
+        )
         agent_run = None
         try:
             answer = await run_agent(query, schema, esc.code)

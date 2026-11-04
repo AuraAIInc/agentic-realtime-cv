@@ -19,6 +19,13 @@ if TYPE_CHECKING:
 
 MODEL_CAVEAT = "Note: proposal is from a small YOLO on a weak CPU — a hint, not evidence. Trust the images and cat profiles."
 
+_BOX_FOCUS = (
+    "Each period holds exactly one cat, but another cat may share the frame under its own period — "
+    "judge only the cat inside the listed box, not the most prominent cat in the image. "
+    "Full-frame views do NOT count as box evidence: fetch every judged frame CROPPED to its listed box via "
+    "local__get_frame(timestamp=..., box=[x1, y1, x2, y2]) (or images__get_image(box=...) when that server is up)."
+)
+
 _SCORE_EXPLAIN = (
     "pts = vote points (up to ~13): +3 best avg certainty, +2 most original frames, +4.2 widest area, +1 each "
     "for >20 frames / rate>0.5 / conf>0.5 / rate>0.3 — then x0.2 if under 10 original frames."
@@ -337,7 +344,8 @@ def build_t7_prompt(esc: Escalation) -> str:
         f"every box in this span was guessed, none was seen.\n"
         f"Validate: cat {esc.cat_id} present but missed (keep the guesses), or gone while the track imagined it (cut them)?\n"
         f"Context: proposal keeps the guessed run. Guessing assumes presence. {MODEL_CAVEAT}\n"
-        f"Alternatives: cut the whole span {_ts(start)} to {_ts(end)}, or shorten to the last frame where the cat is visible.\n"
+        f"Alternatives: cut the whole span {_ts(start)} to {_ts(end)}, or shorten to the last frame where the cat is visible. "
+        f"Either way the visit splits there: frames after {_ts(end)} become a new visit.\n"
         f"Resources: visit {pid} (this is period_id {pid} — use it to look up rows in tracking__get_period_detail or the database); "
         f"key frames via images__get_image (boxes are the interpolated guesses for reference):\n"
         + "\n".join(lines)
@@ -409,10 +417,18 @@ def build_p2_prompt(esc: Escalation) -> str:
         f"{_head(esc, 'Visit awarded on thin evidence')}\n"
         f"Conflict: visit {pid} -> cat {esc.cat_id} on {_f(m.get('score'), '.1f')} pts from {n} original "
         f"frames (frames actually seen, not guessed).\n"
-        f"Validate: real appearance or noise that should never have become a visit?\n"
+        f"Validate: rule in this order.\n"
+        f"1) IDENTITY — which cat is in these few frames? Compare against BOTH cat profiles below and QUOTE the cues "
+        f"that match one cat and rule the other out; if the pose hides the cues, fetch both cats' reference images "
+        f"with local__find_references + local__get_reference_image and compare side-by-side. Thin evidence makes "
+        f"identity MORE uncertain, not less — never confirm a label you have not appearance-checked. "
+        f"Judge the cat inside the visit's box (fetch CROPPED frames via local__get_frame with box=...) — a second "
+        f"cat is often co-present in the same frames.\n"
+        f"2) EXISTENCE — real appearance (confirm), noise that should never have become a visit (drop), "
+        f"or another cat's visit (reassign)?\n"
         f"Context: {_SCORE_EXPLAIN} {penalty} Proposal keeps it "
         f"as cat {esc.cat_id}. Short low-score visits are often stray boxes. {MODEL_CAVEAT}\n"
-        f"Alternatives: drop as noise, or merge into a neighboring visit.\n"
+        f"Alternatives: drop as noise, or reassign to another cat.\n"
         f"Resources: visit {pid} (this is period_id {pid} — look it up in tracking__get_period_detail or the database); key frames "
         f"via images__get_image (boxes are the tracked positions for reference):\n"
         f"{frames}"
@@ -433,11 +449,11 @@ def build_p3_prompt(esc: Escalation) -> str:
         f"{_head(esc, 'Visit got second-choice cat; first choice was taken')}\n"
         f"Conflict: visit {pid} ({_ts(esc.time)} to {_ts(esc.end_time)}) voted cat {wanted}, but {taker_txt} already claimed "
         f"that cat — one cat cannot be in two places at once, and the higher score claims first — so this visit got cat {esc.cat_id}.\n"
-        f"Validate: watching both visits' frames, is visit {pid} truly cat {esc.cat_id} — or is the other visit the mislabeled one and "
-        f"this one really cat {wanted}?\n"
+        f"Validate: watching both visits' frames, is visit {pid} truly cat {esc.cat_id} (confirm), another profile cat such as "
+        f"cat {wanted} (reassign), or not a cat at all (drop)?\n"
         f"Context: proposal assigns cat {esc.cat_id}. The swap was a scheduling fix, not new identity evidence — either visit could be "
-        f"the wrongly labeled one. {MODEL_CAVEAT}\n"
-        f"Alternatives: restore cat {wanted} here and reassign the other visit, or mark one visit unknown.\n"
+        f"the wrongly labeled one. Every visit is either one of the profile cats or not a cat. {MODEL_CAVEAT}\n"
+        f"Alternatives: confirm cat {esc.cat_id}, reassign to the cat actually visible, or drop as not-a-cat.\n"
         f"Resources: visit {pid} (this is period_id {pid} — look it up in tracking__get_period_detail or the database)"
         + (f" plus visit {taker} (period_id {taker})" if taker is not None else " plus the overlapping visits")
         + "; key frames via images__get_image (boxes are the tracked positions for reference):\n"
@@ -505,9 +521,19 @@ def build_p5_prompt(esc: Escalation) -> str:
         f"{_head(esc, 'Verdict rests on weak, patchy sightings')}\n"
         f"Conflict: visit {pid} (cat {esc.cat_id}) runs {_ts(esc.time)} to {_ts(esc.end_time)} with avg certainty "
         f"{_f(m.get('detect_conf'))}; {evidence}.\n"
-        f"Validate: real visit or noise padded with guesses?\n"
+        f"Validate: rule in this order.\n"
+        f"1) IDENTITY — which cat is actually in these frames, cat {esc.cat_id} or another? Fetch frames across the visit, "
+        f"compare what you see against BOTH cat profiles below, and QUOTE the cues that match one cat and rule the other "
+        f"out (fur length/outline, color tone, tail, face). Do this first: consistent sightings prove a real visit, not the "
+        f"right label — never confirm a label you have not appearance-checked. If the pose hides the tail/face/fur cues "
+        f"(curled or sleeping cat), fetch BOTH cats' reference images with local__find_references + "
+        f"local__get_reference_image and compare side-by-side before ruling. "
+        f"Judge the cat inside the visit's box (fetch CROPPED frames via local__get_frame with box=...) — a second "
+        f"cat is often co-present in the same frames.\n"
+        f"2) EXISTENCE — real continuous visit, or noise padded with guesses?\n"
         f"Context: proposal keeps cat {esc.cat_id}{location}. Mostly-guessed visits may not reflect reality. {MODEL_CAVEAT}\n"
-        f"Alternatives: drop, trim to the high-certainty core, or reassign.\n"
+        f"Alternatives: change the label to the right cat (say which), confirm the original detection (only when the identity "
+        f"ruling favors cat {esc.cat_id}), or drop the labels if no cat is really there.\n"
         f"Resources: visit {pid} (this is period_id {pid} — one continuous tracked visit from {_ts(esc.time)} to "
         f"{_ts(esc.end_time)}; look it up in tracking__get_period_detail or the database); key frames via images__get_image "
         f"(boxes are the tracked positions for reference):\n"
@@ -537,10 +563,10 @@ def build_p6_prompt(esc: Escalation) -> str:
         f"{_head(esc, 'Two back-to-back visits, might be one')}\n"
         f"Conflict: {span} — a {_f(m.get('gap_seconds'), '.1f')}-second gap. The last box of visit {prev} and the first box of "
         f"visit {new} are {_f(m.get('distance_px'), '.0f')} px apart (center to center).\n"
-        f"Validate: merge visits {prev} and {new} into one cat {esc.cat_id} visit?\n"
-        f"Context: proposal keeps separate. Short gap + nearby boxes suggests continuity, but the cat may have left and returned. "
-        f"{MODEL_CAVEAT}\n"
-        f"Alternatives: merge, or confirm separate visits.\n"
+        f"Validate: merge visits {prev} and {new} into one cat {esc.cat_id} visit — or are they different cats?\n"
+        f"Context: proposal keeps separate. Short gap + nearby boxes suggests continuity, but the cat may have left and returned, "
+        f"or the new visit may be a different cat wearing the wrong label. {MODEL_CAVEAT} {_BOX_FOCUS}\n"
+        f"Alternatives: merge, confirm separate visits of the same cat, or different cats (say which cat the new visit is).\n"
         f"Resources: visits {prev}, {new} (these are period_id {prev} and {new} — look them up in tracking__get_period_detail or "
         f"the database); gap frames ~1/min via images__get_image (boxes are the tracked positions for reference):\n"
         + "\n".join(lines)
@@ -574,7 +600,7 @@ def build_p7_prompt(esc: Escalation) -> str:
         f"flags a sleeping cat.\n"
         f"Validate: merge visits {prev} and {new} into one continuous cat {esc.cat_id} presence?\n"
         f"Context: proposal keeps separate. One long nap and two separate naps in the same spot look identical to the tracker. "
-        f"{MODEL_CAVEAT}\n"
+        f"{MODEL_CAVEAT} {_BOX_FOCUS}\n"
         f"Alternatives: merge, or confirm the cat left and came back to the same spot.\n"
         f"Resources: visits {prev}, {new} (these are period_id {prev} and {new} — look them up in tracking__get_period_detail or "
         f"the database); gap frames ~1/min via images__get_image (boxes are the tracked positions for reference):\n"
@@ -594,7 +620,7 @@ def build_p8_prompt(esc: Escalation) -> str:
         table = "no vote breakdown recorded"
     relabeled = m.get("relabeled_frames")
     if isinstance(relabeled, (int, float)) and relabeled:
-        steal = f"Continuity stole {int(relabeled)} frames: the camera said cat {voted} but the tracker filed them under cat {tracked}. "
+        steal = f"Continuity moved {int(relabeled)} frames: the camera labeled them cat {voted} but the tracker filed them under cat {tracked}. "
     else:
         steal = ""
     key_frames = [f for f in (m.get("key_frames") or []) if isinstance(f, dict) and f.get("t")]
@@ -603,13 +629,36 @@ def build_p8_prompt(esc: Escalation) -> str:
         f"{_head(esc, 'Tracker label disagrees with the period vote')}\n"
         f"Conflict: visit {pid} is labeled cat {tracked} frame by frame, but the whole-visit vote awards it to cat {voted} "
         f"({table}).\n"
-        f"Validate: watching the frames, is this visit cat {voted} throughout, cat {tracked}, or different cats at different times?\n"
+        f"Validate: rule in this order.\n"
+        f"1) BOX IDENTITY — at spread samples (start, middle, end at minimum), which cat is INSIDE the tracked box? "
+        f"Fetch each sample CROPPED to its listed box via local__get_frame(timestamp=..., box=[x1, y1, x2, y2]) and QUOTE "
+        f"the cues that match one cat and rule the other out. Full-frame views do NOT count — the other cat is often "
+        f"co-present and more salient than the boxed one.\n"
+        f"2) VERDICT — box evidence unanimous for the voted cat {voted} at every sample: relabel_to_vote. Unanimous for "
+        f"the tracked cat {tracked}: keep_tracked. Different cats at different times with a clean handover: split_mixed.\n"
         f"Context: the tracker assumes smooth motion, so one early label can drag a whole visit along even when most frames "
-        f"disagree; the vote counts the camera's original labels instead ({_SCORE_EXPLAIN}). {steal}Proposal relabels the "
-        f"visit to cat {voted}. {MODEL_CAVEAT}\n"
-        f"Alternatives: keep the tracker's cat {tracked}, or mark the visit unknown.\n"
+        f"disagree; the vote recounts the camera's original per-frame labels instead ({_SCORE_EXPLAIN}). {steal}But the camera "
+        f"mislabels cats routinely, so the vote is a lead, not evidence: the proposal to relabel the visit to cat {voted} "
+        f"stands or falls on box-cropped image evidence, never on the point totals. {MODEL_CAVEAT} {_BOX_FOCUS}\n"
+        f"Alternatives: keep the tracker's cat {tracked}, relabel the whole visit to cat {voted}, or split the mixed visit "
+        f"at the frame where the cat changes (say when in cut_time and which cat resumes after in chosen_cat_id). "
+        f"relabel_to_vote requires unanimous box-cropped evidence for cat {voted} at 3+ spread samples — never relabel a "
+        f"whole visit from full-frame views. If you "
+        f"split: first BOUND the handover — the cut must fall AFTER the latest timestamp the first cat is placed "
+        f"(your crops AND the 'Already decided' priors) and BEFORE the earliest timestamp placing the second cat. "
+        f"State that window in your rationale (e.g. 'first cat last at 16:35:21 per E10, second cat first at 16:35:25 "
+        f"per my crop → cut inside (16:35:21, 16:35:25]'). Then narrow it: fetch crops BETWEEN your bracketing samples "
+        f"until the gap is under ~10 s — never place a cut across an unsampled gap wider than that. Place cut_time at "
+        f"the LAST frame where the first cat is still stably visible — not the first ambiguous "
+        f"frame — then VERIFY by fetching one frame just before and one just after your cut and confirming each side shows "
+        f"the expected cat. If the track oscillates between the cats with no clean handover, do not split: pick keep or relabel. "
+        f"When the pose hides the cues, fetch both cats' reference images (local__find_references + "
+        f"local__get_reference_image) and compare side-by-side.\n"
         f"Resources: visit {pid} (this is period_id {pid} — look it up in tracking__get_period_detail or the database); key frames "
-        f"via images__get_image (boxes are the tracked positions for reference):\n"
+        f"via images__get_image (boxes are the tracked positions for reference). Crop ONLY with the listed (time, box) "
+        f"pairs — for bisection pick the listed times nearest your target and say which. For a time with no listed box, "
+        f"fetch the exact tracked box first via local__get_track_box(period_id={pid}, timestamp=...) and crop THAT; "
+        f"never invent boxes or reuse one sample's box at another time:\n"
         f"{frames}"
     )
 
@@ -732,19 +781,24 @@ def _involved_cats(code: str, esc: Escalation) -> list | None:
             return sorted(votes, key=lambda c: -float(votes[c].get("score", 0)))
         return [esc.cat_id, m.get("runner_up_cat_id")]
     if code == "P2":
-        return [esc.cat_id]
+        return None  # reassign can name any cat, so show every known profile
     if code == "P3":
         return [esc.cat_id, m.get("wanted_cat_id")]
     if code == "P4":
         return None
     if code == "P5":
+        runner_up = m.get("runner_up_cat_id")
+        if runner_up is not None:
+            return [esc.cat_id, runner_up]
         counts = m.get("detect_counts") or {}
         rest = sorted((c for c in counts if str(c) != str(esc.cat_id)), key=lambda c: -int(counts[c]))
         return [esc.cat_id] + rest
-    if code in ("P6", "P7"):
+    if code == "P6":
+        return None  # the new visit may be any cat; the reviewer needs every profile
+    if code == "P7":
         return [esc.cat_id]
     if code == "P8":
-        return [m.get("voted_cat_id"), m.get("tracked_cat_id")]
+        return None  # split_mixed can name any cat for the second half; the reviewer needs every profile
     if code == "H1":
         cats = (m.get("cat_ids") or []) if isinstance(m, dict) else []
         return list(cats) if cats else None

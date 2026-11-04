@@ -164,7 +164,8 @@ CASES = {
             },
         },
         ["visit 4", "2.1", "3 original frames", "vote points", "x0.2 penalty",
-         "Box [10.0, 20.0, 100.0, 200.0]", "period_id 4", "real sighting"],
+         "Box [10.0, 20.0, 100.0, 200.0]", "period_id 4", "real sighting",
+         "reassign to another cat"],
     ),
     "P3": (
         {
@@ -281,7 +282,8 @@ CASES = {
             },
         },
         ["visit 4", "labeled cat 26", "vote awards it to cat 25", "cat 25: 9.0 pts (772 frames)",
-         "stole 772 frames", "vote points", "Box [10.0, 20.0, 100.0, 200.0]", "period_id 4"],
+         "moved 772 frames", "vote points", "Box [10.0, 20.0, 100.0, 200.0]", "period_id 4",
+         "split the mixed visit", "judge only the cat inside the listed box"],
     ),
     "H1": (
         {
@@ -492,6 +494,91 @@ def test_build_prompt_inserts_cats_before_resources():
     assert "- cat 25 (Qb)" in prompt
     prompt = build_prompt(_esc("T2", cat_id=25, metrics={"original_cat_id": 26, "rule": "distance"}), profiles={})
     assert "Cats:" not in prompt
+
+
+def test_p5_carries_both_cat_profiles_and_three_actions():
+    profiles = {25: {"name": "Qb", "summary": "White short-hair."}, 26: {"name": "Qbo", "summary": "Cream long-hair."}}
+    prompt = build_prompt(
+        _esc(
+            "P5",
+            scope="period",
+            end_time=T0,
+            cat_id=26,
+            period_id=1,
+            metrics={"detect_conf": 0.54, "detect_rate": 0.14, "runner_up_cat_id": 25},
+        ),
+        profiles=profiles,
+    )
+    assert prompt.index("Cats:\n- cat 26 (Qbo)") < prompt.index("\nResources")
+    assert "- cat 25 (Qb)" in prompt
+    assert "1) IDENTITY" in prompt and "QUOTE the cues" in prompt
+    assert "consistent sightings prove a real visit, not the right label" in prompt
+    assert "change the label to the right cat (say which)" in prompt
+    assert "local__find_references + local__get_reference_image and compare side-by-side" in prompt
+    assert "CROPPED frames via local__get_frame with box=" in prompt
+
+
+def test_p2_requires_identity_ruling_first():
+    prompt = build_prompt(
+        _esc(
+            "P2",
+            scope="period",
+            end_time=T0,
+            cat_id=25,
+            period_id=3,
+            metrics={"score": 2.2, "detect_length": 2},
+        )
+    )
+    assert "1) IDENTITY" in prompt and "QUOTE the cues" in prompt
+    assert "Thin evidence makes identity MORE uncertain, not less" in prompt
+    assert "local__find_references + local__get_reference_image" in prompt
+    assert "CROPPED frames via local__get_frame with box=" in prompt
+
+
+def test_p8_requires_verified_cut_placement():
+    prompt = build_prompt(
+        _esc(
+            "P8",
+            scope="period",
+            end_time=T0,
+            cat_id=26,
+            period_id=2,
+            metrics={"tracked_cat_id": 26, "voted_cat_id": 25, "votes": {"25": {"score": 9.0, "frames": 10}}},
+        )
+    )
+    assert "LAST frame where the first cat is still stably visible" in prompt
+    assert "VERIFY by fetching one frame just before and one just after" in prompt
+    assert "no clean handover, do not split" in prompt
+    assert "local__find_references + local__get_reference_image" in prompt
+    assert "1) BOX IDENTITY" in prompt and "QUOTE" in prompt
+    assert "Full-frame views do NOT count" in prompt
+    assert "local__get_frame(timestamp=..., box=[x1, y1, x2, y2])" in prompt
+    assert "the vote is a lead, not evidence" in prompt
+    assert "unanimous box-cropped evidence for cat 25 at 3+ spread samples" in prompt
+    assert "AFTER the latest timestamp the first cat is placed" in prompt
+    assert "State that window in your rationale" in prompt
+    assert "under ~10 s" in prompt
+    assert "Crop ONLY with the listed (time, box) pairs" in prompt
+    assert "never invent boxes" in prompt
+    assert "local__get_track_box(period_id=2, timestamp=...)" in prompt
+
+
+def test_p6_offers_different_cats_with_all_profiles():
+    profiles = {25: {"name": "Qb", "summary": "White short-hair."}, 26: {"name": "Qbo", "summary": "Cream long-hair."}}
+    prompt = build_prompt(
+        _esc(
+            "P6",
+            scope="period",
+            end_time=T0,
+            cat_id=25,
+            period_id=4,
+            metrics={"prev_period_id": 3, "gap_seconds": 39.2, "distance_px": 152.0},
+        ),
+        profiles=profiles,
+    )
+    assert "or are they different cats?" in prompt
+    assert "or different cats (say which cat the new visit is)" in prompt
+    assert "- cat 25 (Qb)" in prompt and "- cat 26 (Qbo)" in prompt
 
 
 def test_unknown_code_falls_back():

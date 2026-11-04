@@ -6,9 +6,13 @@ never spends tokens on them, and every image-returning tool keeps images small.
 from __future__ import annotations
 
 import base64
+import bisect
 import datetime
 import json
 import logging
+import os
+import re
+from pathlib import Path
 
 from mcp.types import CallToolResult, ImageContent, TextContent
 
@@ -18,6 +22,12 @@ from supervisor_agent.local_tools.store import Store
 logger = logging.getLogger(__name__)
 
 BOX = {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4, "description": "[x1, y1, x2, y2] in the view's pixels"}
+
+#: Camera frame stems: 5502_2026-10-28-16-33-00-304643.jpg (same shape as replay_labels.parse_frame_time).
+_STEM_RE = re.compile(r"^\d+_(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{1,6})$")
+
+#: Nearest-frame tolerance for get_frame: beyond this the pixels may show another visit.
+FRAME_MATCH_TOLERANCE_S = 2.0
 
 TOOLS: list[dict] = [
     {
@@ -49,6 +59,27 @@ TOOLS: list[dict] = [
         "input_schema": {"type": "object", "required": ["file"], "properties": {
             "file": {"type": "string"}, "max_side": {"type": "integer", "default": 384}}},
         "returns_image": True,
+    },
+    {
+        "name": "get_frame",
+        "description": "Return a camera frame from LOCAL disk by timestamp — the same pixels the images server would "
+        "serve. Use this when images__get_image errors or the images server is down. Matches the exact frame when the "
+        "timestamp hits one, else the nearest frame within 2 s (the actual frame time and delta are reported — judge "
+        "from the returned pixels, noting any delta). Optional box crops around the cat. Counts against the image budget.",
+        "input_schema": {"type": "object", "required": ["timestamp"], "properties": {
+            "timestamp": {"type": "string", "description": "ISO-8601 (2026-10-28T16:34:42.769881) or camera (2026-10-28-16-34-42-769881) frame time"},
+            "box": BOX, "pad": {"type": "number", "default": 0.3}, "max_side": {"type": "integer", "default": 768}}},
+        "returns_image": True,
+    },
+    {
+        "name": "get_track_box",
+        "description": "Exact TRACKED box of one visit (period) at a timestamp, from this run's revised track file — "
+        "for bisection times with no listed key frame. Fetch this first, then crop that moment with get_frame(box=...) "
+        "using the returned box. Never invent boxes. No image; text only.",
+        "input_schema": {"type": "object", "required": ["period_id", "timestamp"], "properties": {
+            "period_id": {"type": "integer"},
+            "timestamp": {"type": "string", "description": "ISO-8601 or camera frame time"},
+            "tolerance_s": {"type": "number", "default": 2.0}}},
     },
     {
         "name": "make_contact_sheet",
@@ -132,10 +163,15 @@ def image_of(result) -> bytes | None:
 class LocalTools:
     server_name = "local"
 
-    def __init__(self, store: Store | None = None, hub=None):
+    def __init__(self, store: Store | None = None, hub=None, frame_roots=None, track_run_dir=None):
         self.store = store or Store()
         self.hub = hub  # set by MCPHub.add_local; used to read tracking data and stored frames
         self._sizes: dict = {}
+        self._frame_roots = [Path(p) for p in frame_roots] if frame_roots else None
+        self._frame_index: dict | None = None  # datetime -> Path, built lazily
+        self._track_run_dir = Path(track_run_dir) if track_run_dir else None
+        self._track_index: dict | None = None  # (period_id, datetime) -> (box, real)
+        self._track_mtime: float | None = None
 
     def specs(self) -> list[dict]:
         return TOOLS
@@ -179,6 +215,55 @@ class LocalTools:
             out.thumbnail((max_side, max_side))
         return imaging.to_jpeg(out)
 
+    def _resolve_frame_roots(self) -> list[Path]:
+        """Images dirs get_frame searches: explicit roots, LOCAL_FRAME_DIRS, else retrieved_images."""
+        if self._frame_roots is not None:
+            return [p for p in self._frame_roots if p.is_dir()]
+        env = os.getenv("LOCAL_FRAME_DIRS")
+        if env:
+            return [Path(p) for p in env.split(os.pathsep) if p and Path(p).is_dir()]
+        retrieved = Path(__file__).resolve().parents[3] / "image_server" / "retrieved_images"
+        if not retrieved.is_dir():
+            return []
+        return sorted(p for p in retrieved.glob("*/images") if p.is_dir())
+
+    def _frame_index_build(self) -> dict:
+        index: dict = {}
+        for root in self._resolve_frame_roots():
+            try:
+                names = sorted(os.listdir(root))
+            except OSError:
+                continue
+            for name in names:
+                if not name.lower().endswith((".jpg", ".jpeg")):
+                    continue
+                m = _STEM_RE.match(os.path.splitext(name)[0])
+                if not m:
+                    continue
+                try:
+                    when = datetime.datetime(*[int(v) for v in m.groups()[:6]], int(m.group(7).ljust(6, "0")[:6]))
+                except ValueError:
+                    continue
+                index.setdefault(when, root / name)
+        return index
+
+    def find_frame(self, when: datetime.datetime) -> tuple | None:
+        """(path, hit_time, delta_s) for the exact or nearest-in-tolerance frame, else None."""
+        if self._frame_index is None:
+            self._frame_index = self._frame_index_build()
+        if when in self._frame_index:
+            return self._frame_index[when], when, 0.0
+        keys = sorted(self._frame_index)
+        if not keys:
+            return None
+        i = bisect.bisect_left(keys, when)
+        cands = ([keys[i - 1]] if i > 0 else []) + ([keys[i]] if i < len(keys) else [])
+        hit = min(cands, key=lambda k: abs((k - when).total_seconds()))
+        delta = abs((hit - when).total_seconds())
+        if delta > FRAME_MATCH_TOLERANCE_S:
+            return None
+        return self._frame_index[hit], hit, delta
+
     async def view_size(self, view_id) -> tuple[int, int]:
         if view_id is None:
             return (640, 480)
@@ -210,6 +295,131 @@ class LocalTools:
         im = imaging.Image.open(p).convert("RGB")
         im.thumbnail((max_side, max_side))
         return _json({"file": file, "size": list(im.size)}, image=imaging.to_jpeg(im))
+
+    def _track_file(self) -> Path | None:
+        run_dir = self._track_run_dir or (Path(os.getenv("TRACK_RUN_DIR")) if os.getenv("TRACK_RUN_DIR") else None)
+        if run_dir is None:
+            return None
+        candidate = run_dir / "revised.jsonl"
+        return candidate if candidate.is_file() else None
+
+    def _track_index_build(self) -> dict:
+        index: dict = {}
+        path = self._track_file()
+        if path is None:
+            return index
+        try:
+            self._track_mtime = path.stat().st_mtime
+        except OSError:
+            return index
+        try:
+            lines = path.read_text().splitlines()
+        except OSError:
+            return index
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get("deleted"):
+                continue
+            try:
+                pid = int(row.get("period_id"))
+                when = datetime.datetime.fromisoformat(row.get("create_time"))
+            except (TypeError, ValueError):
+                continue
+            box = [row.get(k) for k in ("box_x1", "box_y1", "box_x2", "box_y2")]
+            if not all(isinstance(v, (int, float)) for v in box):
+                continue
+            index[(pid, when)] = ([float(v) for v in box], row.get("orig_cat_id") is not None)
+        return index
+
+    def find_track_box(self, period_id: int, when: datetime.datetime, tolerance_s: float = 2.0):
+        """(box, hit_time, delta_s, real) for a visit at a time, else None."""
+        path = self._track_file()
+        if path is None:
+            return None
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            return None
+        if self._track_index is None or mtime != self._track_mtime:
+            self._track_index = self._track_index_build()
+        key = (int(period_id), when)
+        if key in self._track_index:
+            box, real = self._track_index[key]
+            return box, when, 0.0, real
+        times = sorted(t for p, t in self._track_index if p == int(period_id))
+        if not times:
+            return None
+        i = bisect.bisect_left(times, when)
+        cands = ([times[i - 1]] if i > 0 else []) + ([times[i]] if i < len(times) else [])
+        hit = min(cands, key=lambda t: abs((t - when).total_seconds()))
+        delta = abs((hit - when).total_seconds())
+        if delta > tolerance_s:
+            return None
+        box, real = self._track_index[(int(period_id), hit)]
+        return box, hit, delta, real
+
+    def track_span(self, period_id: int):
+        """(first, last) datetimes of a visit's tracked rows, or None."""
+        if self._track_file() is None:
+            return None
+        if self._track_index is None:
+            self._track_index = self._track_index_build()
+        times = sorted(t for p, t in self._track_index if p == int(period_id))
+        return (times[0], times[-1]) if times else None
+
+    @staticmethod
+    def _parse_frame_time(value):
+        try:
+            return datetime.datetime.fromisoformat(value)
+        except (TypeError, ValueError):
+            pass
+        try:
+            return datetime.datetime.strptime(value, "%Y-%m-%d-%H-%M-%S-%f")
+        except (TypeError, ValueError):
+            return None
+
+    async def t_get_track_box(self, period_id, timestamp, tolerance_s=2.0):
+        when = self._parse_frame_time(timestamp)
+        if when is None:
+            return {"error": f"bad timestamp {timestamp!r}: want ISO-8601 or YYYY-MM-DD-HH-MM-SS-ffffff"}
+        if self._track_file() is None:
+            return {"error": "no revised track file (TRACK_RUN_DIR not set or no revised.jsonl yet)"}
+        try:
+            pid = int(period_id)
+        except (TypeError, ValueError):
+            return {"error": f"bad period_id {period_id!r}: want an integer visit id"}
+        found = self.find_track_box(pid, when, float(tolerance_s or 0))
+        if found is None:
+            span = self.track_span(pid)
+            hint = f" (visit {pid} spans {span[0].isoformat()}–{span[1].isoformat()})" if span else f" (visit {pid} has no tracked rows)"
+            return {"error": f"no tracked box for visit {pid} within {tolerance_s:g} s of {when.isoformat()}{hint}"}
+        box, hit, delta, real = found
+        return {"period_id": pid, "frame_time": hit.isoformat(), "delta_s": round(delta, 3),
+                "box": [round(v, 1) for v in box], "real": real}
+
+    async def t_get_frame(self, timestamp, box=None, pad=0.3, max_side=768):
+        when = self._parse_frame_time(timestamp)
+        if when is None:
+            return {"error": f"bad timestamp {timestamp!r}: want ISO-8601 or YYYY-MM-DD-HH-MM-SS-ffffff"}
+        found = self.find_frame(when)
+        if found is None:
+            roots = [str(p) for p in self._resolve_frame_roots()]
+            return {"error": f"no local frame within {FRAME_MATCH_TOLERANCE_S:g} s of {when.isoformat()} (roots: {roots or 'none'})"}
+        path, hit, delta = found
+        im = imaging.Image.open(path).convert("RGB")
+        out = imaging.crop(im, box, pad, max_side) if box else im
+        if not box and max_side:
+            out.thumbnail((max_side, max_side))
+        return _json(
+            {"frame": path.stem, "frame_time": hit.isoformat(), "delta_s": round(delta, 3), "size": list(out.size)},
+            image=imaging.to_jpeg(out),
+        )
 
     async def t_make_contact_sheet(self, items, tile=256, pad=0.3):
         tiles, used = [], []

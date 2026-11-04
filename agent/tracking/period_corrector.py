@@ -167,7 +167,7 @@ class PeriodCorrector:
                     str(self.idx_to_id[i]): {"score": round(float(score[i]), 1), "frames": int(stats["detect_length"][i])}
                     for i in range(len(score))
                 },
-                "key_frames": self._sample_period_frames(period_id),
+                "key_frames": self._sample_period_frames_for_split(period_id),
             },
         )
 
@@ -188,6 +188,46 @@ class PeriodCorrector:
         rows = [d for d in self._period_rows(period_id) if d[0] is not None]
         out = []
         for d in (rows[i] for i in even_pick(len(rows), cap)):
+            box = [float(v) for v in d[1:5]] if d[1] is not None else None
+            out.append({"t": d[0].isoformat(timespec="microseconds"), "box": box, "real": bool(box) and not pd.isna(d[5])})
+        return out
+
+    def _sample_period_frames_for_split(self, period_id, backbone: int = 8, jump_span_s: float = 20.0,
+                                        jump_cap: int = 10, top_jumps: int = 2,
+                                        min_jump_px: float = 20.0) -> list:
+        """P8 sampling: an even backbone plus dense real frames around track jumps.
+
+        A hijack verdict lives or dies on the handover region, and the
+        reviewer must crop the TRACKED box there — time-even samples alone
+        undersample a short disputed span inside a long tail, inviting
+        invented boxes. The largest frame-to-frame displacements (ranked,
+        not thresholded: at 1 fps a walking step moves as far as a
+        handover, so no fixed cutoff separates them) therefore pull in the
+        surrounding real frames, so bisection always has a listed (time,
+        box) nearby. Steps below min_jump_px cluster nothing (a static
+        track needs no handover density).
+        """
+        rows = [d for d in self._period_rows(period_id) if d[0] is not None]
+        if not rows:
+            return []
+        picks = set(even_pick(len(rows), backbone))
+        real_idx = [i for i, d in enumerate(rows) if d[1] is not None and not pd.isna(d[5])]
+        steps = []
+        for a, b in zip(real_idx, real_idx[1:]):
+            box_a = [float(v) for v in rows[a][1:5]]
+            box_b = [float(v) for v in rows[b][1:5]]
+            steps.append((box_distance(box_a, box_b), rows[a][0], rows[b][0]))
+        steps.sort(key=lambda item: -item[0])
+        jumps = [(lo, hi) for dist, lo, hi in steps[: max(top_jumps, 0)] if dist >= min_jump_px]
+        for lo, hi in jumps:
+            lo_t = lo - datetime.timedelta(seconds=jump_span_s)
+            hi_t = hi + datetime.timedelta(seconds=jump_span_s)
+            near = [i for i in real_idx if lo_t <= rows[i][0] <= hi_t]
+            for i in even_pick(len(near), min(jump_cap, len(near))):
+                picks.add(near[i])
+        out = []
+        for i in sorted(picks):
+            d = rows[i]
             box = [float(v) for v in d[1:5]] if d[1] is not None else None
             out.append({"t": d[0].isoformat(timespec="microseconds"), "box": box, "real": bool(box) and not pd.isna(d[5])})
         return out
@@ -237,6 +277,9 @@ class PeriodCorrector:
         # A thin visit fires P2 already with the same key frames and the same
         # keep/drop question (plus a merge option) — a P5 on top is pure cost.
         if (winner_conf < cfg.low_mean_conf or winner_rate < cfg.low_detect_rate) and not weak_winner:
+            runner_idx = max(
+                (i for i in range(len(score)) if i != top_idx), key=lambda i: score[i], default=None
+            )
             self._escalate(
                 "P5",
                 f"period {period_id} cat {top_cat} is low quality: mean conf {winner_conf:.2f}, original-frame rate {winner_rate:.2f}",
@@ -249,6 +292,7 @@ class PeriodCorrector:
                     "detect_rate": winner_rate,
                     "total_frames": int(stats["length"]),
                     "detect_counts": {str(self.idx_to_id[i]): int(n) for i, n in enumerate(stats["detect_length"]) if int(n) > 0},
+                    "runner_up_cat_id": self.idx_to_id[runner_idx] if runner_idx is not None else None,
                     "winner_box": self._median_winner_box(period_id, top_cat),
                     "key_frames": self._sample_period_frames(period_id),
                 },

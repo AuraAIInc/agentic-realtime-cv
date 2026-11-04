@@ -49,12 +49,42 @@ def test_t6_merge_rewrites_period():
     assert out[0]["period_id"] == 3
 
 
-def test_t7_cut_drops_gap_rows():
+def test_t7_cut_drops_gap_rows_and_splits_visit():
     mid = datetime.datetime(2026, 10, 28, 16, 35, 0)
-    rows = [_row(T1, 25, 4), _row(mid, 25, 4), _row(T0, 25, 4)]
+    after = T0 + datetime.timedelta(seconds=30)
+    rows = [_row(T1, 25, 4), _row(mid, 25, 4), _row(T0, 25, 4), _row(after, 25, 4)]
     esc_extra = {"metrics": {"gap_start": T1.isoformat(timespec="microseconds")}}
     out = apply_ops(rows, [_op("T7", "cut_at_gap_start", esc_extra)])
-    assert [r["create_time"] for r in out] == [T1.isoformat(timespec="microseconds")]
+    assert [r["create_time"] for r in out] == [
+        T1.isoformat(timespec="microseconds"), after.isoformat(timespec="microseconds")]
+    assert [r["period_id"] for r in out] == [4, 5]  # post-gap rows resume as a new visit
+    assert out[1]["validated_by"] == "E1-T7" and out[1]["verdict"] == "cut_at_gap_start"
+
+
+def test_t7_shorten_drops_tail_and_splits_visit():
+    mid1 = datetime.datetime(2026, 10, 28, 16, 34, 50)
+    mid2 = datetime.datetime(2026, 10, 28, 16, 35, 10)
+    after = T0 + datetime.timedelta(seconds=30)
+    rows = [_row(T1, 25, 4), _row(mid1, 25, 4), _row(mid2, 25, 4), _row(after, 25, 4)]
+    esc_extra = {"metrics": {"gap_start": T1.isoformat(timespec="microseconds")}}
+    review_extra = {"cut_time": mid1.isoformat(timespec="microseconds")}
+    out = apply_ops(rows, [_op("T7", "shorten_gap", esc_extra, review_extra)])
+    assert [r["create_time"] for r in out] == [
+        T1.isoformat(timespec="microseconds"), mid1.isoformat(timespec="microseconds"),
+        after.isoformat(timespec="microseconds")]
+    assert [r["period_id"] for r in out] == [4, 4, 5]
+
+
+def test_t7_split_rows_skipped_by_later_merge():
+    mid = datetime.datetime(2026, 10, 28, 16, 35, 0)
+    after = T0 + datetime.timedelta(seconds=30)
+    rows = [_row(T1, 25, 4), _row(mid, 25, 4), _row(after, 25, 4)]
+    cut = _op("T7", "cut_at_gap_start", {"metrics": {"gap_start": T1.isoformat(timespec="microseconds")}})
+    merge = _op("P6", "merge", {"metrics": {"prev_period_id": 3}})
+    out = apply_ops(rows, [cut, merge])
+    by_time = {r["create_time"]: r for r in out}
+    assert by_time[T1.isoformat(timespec="microseconds")]["period_id"] == 3  # pre-gap merges
+    assert by_time[after.isoformat(timespec="microseconds")]["period_id"] == 5  # post-gap stays split
 
 
 def test_period_relabel_and_drop():
@@ -63,19 +93,28 @@ def test_period_relabel_and_drop():
     assert [r["cat_id"] for r in out] == [26, 26]
     out = apply_ops(rows, [_op("P2", "drop")])
     assert len(out) == 1 and out[0]["period_id"] == 9
+    out = apply_ops(rows, [_op("P2", "reassign", review_extra={"chosen_cat_id": 26})])
+    assert [r["cat_id"] for r in out] == [26, 26]
+    out = apply_ops(rows, [_op("P2", "confirm")])
+    assert [r["cat_id"] for r in out] == [25, 26]
+    assert out[0]["validated_by"] == "E1-P2" and out[0]["verdict"] == "confirm"
 
 
-def test_p3_restore_and_unknown():
+def test_p3_confirm_reassign_drop():
     rows = [_row(T0, 25, 4)]
-    out = apply_ops(rows, [_op("P3", "restore_wanted", {"metrics": {"wanted_cat_id": 26}})])
-    assert out[0]["cat_id"] == 26
+    out = apply_ops(rows, [_op("P3", "reassign", review_extra={"chosen_cat_id": 26})])
+    assert out[0]["cat_id"] == 26 and out[0]["verdict"] == "reassign"
+    out = apply_ops(rows, [_op("P3", "confirm")])
+    assert out[0]["cat_id"] == 25 and out[0]["validated_by"] == "E1-P3"
+    out = apply_ops(rows, [_op("P3", "drop")])
+    assert out == []
     out = apply_ops(rows, [_op("P4", "confirm_unknown")])
     assert out[0]["cat_id"] is None
 
 
 def test_unexecutable_verdicts_keep_rows():
     rows = [_row(T0, 25, 4)]
-    for code, verdict in [("P1", "split_visit"), ("P2", "merge_neighbor"), ("P5", "trim_core"),
+    for code, verdict in [("P1", "split_visit"),
                           ("P4", "split_fragments"), ("T4", "link_continuation")]:
         out = apply_ops(rows, [_op(code, verdict)])
         assert len(out) == 1 and out[0]["cat_id"] == 25, (code, verdict)
@@ -160,7 +199,7 @@ def test_t4_link_without_target_records_note_and_keeps_rows():
     assert out[0]["validated_by"] == "E1-T4" and "link target unknown" in out[0]["note"]
 
 
-def test_p8_relabel_keep_and_unknown():
+def test_p8_relabel_keep_and_split():
     rows = [_row(T0, 26, 2), _row(T1, 26, 2), _row(T0, 25, 3)]
     esc_extra = {"period_id": 2, "metrics": {"tracked_cat_id": 26, "voted_cat_id": 25}}
     out = apply_ops(rows, [_op("P8", "relabel_to_vote", esc_extra)])
@@ -169,8 +208,19 @@ def test_p8_relabel_keep_and_unknown():
     out = apply_ops(rows, [_op("P8", "keep_tracked", esc_extra)])
     assert [r["cat_id"] for r in out] == [26, 26, 25]
     assert out[0]["verdict"] == "keep_tracked"
-    out = apply_ops(rows, [_op("P8", "mark_unknown", esc_extra)])
-    assert [r["cat_id"] for r in out] == [None, None, 25]
+
+
+def test_p8_split_mixed_labels_each_side():
+    rows = [_row(T1, 26, 2), _row(T0, 26, 2), _row(T0, 25, 3)]
+    esc_extra = {"period_id": 2, "metrics": {"tracked_cat_id": 26, "voted_cat_id": 25}}
+    review_extra = {"chosen_cat_id": 25, "cut_time": T1.isoformat(timespec="microseconds")}
+    out = apply_ops(rows, [_op("P8", "split_mixed", esc_extra, review_extra)])
+    assert [(r["period_id"], r["cat_id"]) for r in out] == [(2, 26), (4, 25), (3, 25)]
+    assert out[1]["validated_by"] == "E1-P8" and out[1]["verdict"] == "split_mixed"
+    # missing cut keeps rows but records why
+    out = apply_ops(rows, [_op("P8", "split_mixed", esc_extra, {"chosen_cat_id": 25})])
+    assert [(r["period_id"], r["cat_id"]) for r in out] == [(2, 26), (2, 26), (3, 25)]
+    assert "cut_time" in out[0]["note"] and out[2].get("note") is None
 
 
 def test_chained_p7_merges_collapse_transitively():
@@ -218,6 +268,53 @@ def test_merge_fill_skipped_on_cat_disagreement():
     )
     assert [r["period_id"] for r in out] == [1, 1]  # renumber stands
     assert all(not r.get("gap_filled") for r in out)  # but nothing is synthesized
+
+
+def test_t6_confirm_split_drops_whole_interp_bridge():
+    t0 = datetime.datetime(2026, 10, 28, 16, 35, 20)
+    t1 = datetime.datetime(2026, 10, 28, 16, 35, 21)
+    t2 = datetime.datetime(2026, 10, 28, 16, 35, 22)
+    t3 = datetime.datetime(2026, 10, 28, 16, 35, 23)
+    pre = _row(t0, 25, 3)
+    tomb1 = {**_row(t1, 25, 3), "orig_cat_id": None, "deleted": True}
+    live_interp = {**_row(t1 + datetime.timedelta(microseconds=500000), 25, 3), "orig_cat_id": None}
+    tomb2 = {**_row(t2, 25, 3), "orig_cat_id": None, "deleted": True}
+    other_cat = {**_row(t2, 26, 3), "orig_cat_id": None}  # same span, other cat: survives
+    post = _row(t3, 25, 4)
+    op = _op("T6", "confirm_split", {"time": t3.isoformat(), "metrics": {"pre_time": t0.isoformat()}})
+    out = apply_ops([pre, tomb1, live_interp, tomb2, other_cat, post], [op])
+    iso = lambda t: t.isoformat(timespec="microseconds")
+    assert [r["create_time"] for r in out] == [iso(t0), iso(t2), iso(t3)]
+    assert [r["cat_id"] for r in out] == [25, 26, 25]
+    assert out[-1]["validated_by"] == "E1-T6" and out[-1]["verdict"] == "confirm_split"
+
+
+def test_t6_confirm_split_falls_back_to_sampled_stamps():
+    t1 = datetime.datetime(2026, 10, 28, 16, 35, 21)
+    t2 = datetime.datetime(2026, 10, 28, 16, 35, 22)
+    sampled = {**_row(t1, 25, 3), "orig_cat_id": None, "deleted": True}
+    unsampled = {**_row(t2, 25, 3), "orig_cat_id": None, "deleted": True}
+    op = _op(
+        "T6",
+        "confirm_split",
+        {"time": t2.isoformat(), "metrics": {"retracted_frames": [{"t": t1.isoformat()}]}},
+    )
+    out = apply_ops([sampled, unsampled], [op])
+    assert [r["create_time"] for r in out] == [t2.isoformat(timespec="microseconds")]  # partial but safe
+
+
+def test_p6_different_cats_relabels_new_visit_only():
+    rows = [_row(T0, 25, 3), _row(T1, 25, 4)]
+    op = _op(
+        "P6",
+        "different_cats",
+        {"period_id": 4, "metrics": {"prev_period_id": 3}},
+        {"chosen_cat_id": 26},
+    )
+    out = apply_ops(rows, [op])
+    assert [(r["period_id"], r["cat_id"]) for r in out] == [(3, 25), (4, 26)]
+    assert out[0]["validated_by"] == "pass-through"  # previous visit keeps its label
+    assert out[1]["validated_by"] == "E1-P6" and out[1]["verdict"] == "different_cats"
 
 
 def test_materialize_writes_jsonl_and_sqlite(tmp_path):

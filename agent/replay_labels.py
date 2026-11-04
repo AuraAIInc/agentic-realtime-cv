@@ -14,6 +14,11 @@ Label semantics: a present-but-empty ``.txt`` is an observed empty frame
 (ingested, advances timeouts); a *missing* ``.txt`` is an unobserved frame
 (skipped, never fed as empty). Boxes get ``--conf`` (default 1.0: ground
 truth is certain) and must clear ``--min-conf`` like any raw detection.
+
+After the run, validated rows are exported as YOLO files (real sightings
+only — interpolated guesses never become ground truth) into
+``<hour-dir>/validated_labels/`` — never into ``labels/``, which stays the
+reference input. Use :func:`export_run` to backfill an already-finished run.
 """
 
 from __future__ import annotations
@@ -83,6 +88,126 @@ def yolo_to_pixels(parts: list[str], width: int, height: int) -> tuple[int, floa
     return cid, x1, y1, x2, y2
 
 
+def collect_frames(images_dir: Path) -> list[tuple[datetime.datetime, Path]]:
+    """All timestamped images, oldest first (unparseable names logged + skipped)."""
+    frames: list[tuple[datetime.datetime, Path]] = []
+    for name in sorted(os.listdir(images_dir)):
+        if not name.lower().endswith((".jpg", ".jpeg")):
+            continue
+        when = parse_frame_time(os.path.splitext(name)[0])
+        if when is None:
+            logger.warning("skipping image with unparseable name: %s", name)
+            continue
+        frames.append((when, images_dir / name))
+    frames.sort()
+    return frames
+
+
+def fed_frames(frames: list[tuple[datetime.datetime, Path]], labels_dir: Path) -> list[tuple[datetime.datetime, Path]]:
+    """Frames having a label file (observable); missing files are never fed."""
+    return [(when, path) for when, path in frames if (labels_dir / (path.stem + ".txt")).is_file()]
+
+
+def export_validated_labels(
+    run_dir: Path | str,
+    fed: list[tuple[datetime.datetime, Path]],
+    order: list[int],
+    out_dir: Path | str,
+    classes_src: Path | None = None,
+) -> dict:
+    """Write validated rows as YOLO ``<image-stem>.txt`` files; return stats.
+
+    Ground truth keeps real sightings only: tombstones, interpolated rows
+    (tracker guesses and merge gap-fills alike), unboxed rows, and unknown
+    identities are all excluded. Every fed frame gets a file (empty when no
+    box survived); unobserved frames get none.
+    """
+    import json
+
+    from agent.validation.apply import VALIDATED_FILE
+
+    run_dir, out_dir = Path(run_dir), Path(out_dir)
+    stats = {"files": 0, "boxes": 0, "dropped_interp": 0, "unknown_cat": 0, "unmatched_time": 0, "bad_box": 0}
+    if not fed:
+        logger.warning("no fed frames; label export skipped")
+        return stats
+    rows = [json.loads(line) for line in (run_dir / VALIDATED_FILE).read_text().splitlines() if line.strip()]
+    idx_of = {tid: i for i, tid in enumerate(order)}
+    by_time: dict[datetime.datetime, Path] = {}
+    for when, path in fed:
+        by_time.setdefault(when, path)
+    sizes: dict[Path, tuple[int, int]] = {}
+    lines_by_stem: dict[str, list[str]] = {path.stem: [] for _, path in fed}
+    for row in rows:
+        if row.get("deleted") or row.get("orig_cat_id") is None:
+            stats["dropped_interp"] += 1
+            continue
+        box = [row.get(k) for k in ("box_x1", "box_y1", "box_x2", "box_y2")]
+        if not all(isinstance(v, (int, float)) for v in box):
+            stats["bad_box"] += 1
+            continue
+        if row.get("cat_id") not in idx_of:
+            stats["unknown_cat"] += 1
+            continue
+        try:
+            ts = datetime.datetime.fromisoformat(row["create_time"])
+        except (KeyError, ValueError):
+            stats["unmatched_time"] += 1
+            continue
+        img_path = by_time.get(ts)
+        if img_path is None:
+            stats["unmatched_time"] += 1
+            continue
+        if img_path not in sizes:
+            sizes[img_path] = image_size(img_path)
+        width, height = sizes[img_path]
+        x1, y1, x2, y2 = box
+        cx = min(max((x1 + x2) / 2 / width, 0.0), 1.0)
+        cy = min(max((y1 + y2) / 2 / height, 0.0), 1.0)
+        w = min(max((x2 - x1) / width, 0.0), 1.0)
+        h = min(max((y2 - y1) / height, 0.0), 1.0)
+        if w <= 0 or h <= 0:
+            stats["bad_box"] += 1
+            continue
+        lines_by_stem[img_path.stem].append(f"{idx_of[row['cat_id']]} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for stem, lines in lines_by_stem.items():
+        (out_dir / f"{stem}.txt").write_text("\n".join(lines) + ("\n" if lines else ""))
+    if classes_src is not None and Path(classes_src).is_file():
+        (out_dir / "classes.txt").write_text(Path(classes_src).read_text())
+    stats["files"] = len(lines_by_stem)
+    stats["boxes"] = sum(len(v) for v in lines_by_stem.values())
+    return stats
+
+
+def export_run(run_dir: Path | str, hour_dir: Path | str, export_dir_name: str = "validated_labels") -> dict:
+    """Backfill YOLO labels for an already-finished labels-mode run.
+
+    Re-derives the run's fed frames from its ``run.json`` args (same
+    window/limit/labels-dir the run used).
+    """
+    import json
+
+    from agent.main import resolve_window
+
+    run_dir, hour_dir = Path(run_dir), Path(hour_dir)
+    meta = json.loads((run_dir / "run.json").read_text())
+    args = meta.get("args") or {}
+    labels_dir = hour_dir / (args.get("labels") or "muse_labels")
+    images_dir = hour_dir / "images"
+    order = load_order(hour_dir)
+    frames = collect_frames(images_dir)
+    labeled = fed_frames(frames, labels_dir)
+    start_s = args.get("start") or labeled[0][0].strftime("%Y-%m-%d-%H-%M")
+    end_s = args.get("end") or labeled[-1][0].strftime("%Y-%m-%d-%H-%M")
+    start, end_exclusive = resolve_window(start_s, end_s)
+    frames = [(when, path) for when, path in frames if start <= when < end_exclusive]
+    if args.get("limit") is not None:
+        frames = frames[: max(int(args["limit"]), 0)]
+    fed = fed_frames(frames, labels_dir)
+    return export_validated_labels(run_dir, fed, order, hour_dir / export_dir_name, hour_dir / "classes.txt")
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agent.replay_labels",
@@ -120,6 +245,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=True,
         help="write a report.md session summary after finish (default --report)",
     )
+    parser.add_argument(
+        "--export-labels",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="export validated rows as YOLO files (real sightings only) into "
+        "<hour-dir>/<--export-dir> after finish (default --export-labels)",
+    )
+    parser.add_argument(
+        "--export-dir",
+        default="validated_labels",
+        help="label export folder inside --hour-dir (default validated_labels)",
+    )
     return parser
 
 
@@ -153,19 +290,10 @@ def main(argv=None) -> int:
     if unknown:
         parser.error(f"classes_map order {order} has tracking ids unknown to view {args.view_id} (cats {cat_ids}): {unknown}")
 
-    frames: list[tuple[datetime.datetime, Path]] = []
-    for name in sorted(os.listdir(images_dir)):
-        if not name.lower().endswith((".jpg", ".jpeg")):
-            continue
-        when = parse_frame_time(os.path.splitext(name)[0])
-        if when is None:
-            logger.warning("skipping image with unparseable name: %s", name)
-            continue
-        frames.append((when, images_dir / name))
-    frames.sort()
+    frames = collect_frames(images_dir)
     if not frames:
         parser.error(f"no timestamped images in {images_dir}")
-    labeled = [(when, path) for when, path in frames if (labels_dir / (path.stem + ".txt")).is_file()]
+    labeled = fed_frames(frames, labels_dir)
     if not labeled:
         parser.error(f"no label files matching {images_dir} in {labels_dir}")
     start_s = args.start or labeled[0][0].strftime("%Y-%m-%d-%H-%M")
@@ -184,6 +312,8 @@ def main(argv=None) -> int:
     now = datetime.datetime.now()
     run_name = f"view{args.view_id}_{start:%Y%m%d-%H%M}_{end_minute:%H%M}_labels_{now:%Y%m%d-%H%M%S-%f}"
     store = RunStore(run_name, base_dir=args.out or DEFAULT_RUNS_DIR)
+    # Local track-box lookups resolve the revised track file through this.
+    os.environ["TRACK_RUN_DIR"] = str(store.run_dir)
     run = TrackingRun(
         view_id=args.view_id,
         start=start,
@@ -204,6 +334,7 @@ def main(argv=None) -> int:
 
     size_cache: dict[Path, tuple[int, int]] = {}
     skipped_missing = 0
+    fed: list[tuple[datetime.datetime, Path]] = []
     for i, (when, img_path) in enumerate(frames):
         label_path = labels_dir / (img_path.stem + ".txt")
         if not label_path.is_file():
@@ -255,10 +386,29 @@ def main(argv=None) -> int:
             "model_id": None,
         }
         run.process_message(msg)
+        fed.append((when, img_path))
         if (i + 1) % 250 == 0:
             logger.info("ingested %d/%d frames (%d escs)", i + 1, len(frames), len(run._escs.all))
     logger.info("ingest done: %d frames fed, %d skipped (no label), %d escalations", len(frames) - skipped_missing, skipped_missing, len(run._escs.all))
     run_dir = run.finish()
+    if args.export_labels:
+        try:
+            if not (run_dir / "validated.jsonl").is_file():
+                logger.warning("no validated.jsonl (validation off?); label export skipped")
+            else:
+                stats = export_validated_labels(run_dir, fed, order, hour_dir / args.export_dir, hour_dir / "classes.txt")
+                logger.info(
+                    "exported validated labels to %s: %d files, %d boxes (%d interp excluded, %d unknown-cat, %d unmatched, %d bad-box)",
+                    hour_dir / args.export_dir,
+                    stats["files"],
+                    stats["boxes"],
+                    stats["dropped_interp"],
+                    stats["unknown_cat"],
+                    stats["unmatched_time"],
+                    stats["bad_box"],
+                )
+        except Exception:
+            logger.exception("label export failed; run artifacts are complete without it")
     print(f"run written: {run_dir}")
     return 0
 

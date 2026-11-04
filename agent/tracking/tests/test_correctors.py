@@ -211,6 +211,7 @@ def test_p5_carries_counts_box_and_key_frames():
         pc._check_vote_escalations(7, stats, np.array([0.0, 9.0]), 1, 9.0, (T0, T0 + datetime.timedelta(seconds=110)))
     assert [e.code for e in pc.escalations] == ["P5"]
     p5 = pc.escalations[0]
+    assert p5.metrics["runner_up_cat_id"] == 25  # score-ranked, not count-ranked
     assert p5.metrics["total_frames"] == 12
     assert p5.metrics["detect_counts"] == {"26": 11}
     assert p5.metrics["winner_box"] == [15.0, 10.0, 105.0, 100.0]
@@ -536,7 +537,25 @@ def test_p8_fires_when_tracker_disagrees_with_vote():
     assert p8.metrics["tracked_frames"] == 24
     assert p8.metrics["relabeled_frames"] == 18
     assert p8.metrics["votes"]["0"]["frames"] == 18
-    assert len(p8.metrics["key_frames"]) == 6
+    # P8 samples denser than the shared cap-6: an 8-frame backbone plus jump clusters.
+    assert len(p8.metrics["key_frames"]) == 8
+
+
+def test_p8_key_frames_cluster_around_track_jump():
+    pc = PeriodCorrector(cat_ids=[0, 1])
+    rug, bed = [300, 100, 360, 170], [170, 450, 280, 585]
+    # 40 s on the rug, then a jump to the bed for 200 s: a short disputed
+    # span inside a long tail, like the 16:34 window.
+    _feed_period(pc, 101, 1, T0, 40, rug, lambda i: 0, step_s=1.0)
+    _feed_period(pc, 101, 1, T0 + datetime.timedelta(seconds=40), 200, bed, lambda i: 0, step_s=1.0)
+    frames = pc._sample_period_frames_for_split(101)
+    times = [datetime.datetime.fromisoformat(f["t"]) for f in frames]
+    assert times == sorted(times)  # time order, endpoints kept
+    assert times[0] == T0 and times[-1] == T0 + datetime.timedelta(seconds=239)
+    jump = T0 + datetime.timedelta(seconds=40)
+    near = [t for t in times if abs((t - jump).total_seconds()) <= 20]
+    assert len(near) >= 8  # dense around the handover, not just the tail
+    assert all(f["box"] is not None and f["real"] is True for f in frames)
 
 
 def test_p8_silent_when_tracker_matches_vote():

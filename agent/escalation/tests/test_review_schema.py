@@ -20,9 +20,9 @@ def test_every_code_has_minimal_schema():
         assert schema["required"] == ["verdict", "rationale"], code
         assert "rationale" in schema["properties"], code
         allowed = {"verdict", "rationale"}
-        if code in ("T1", "T2", "P1", "P4", "P5"):
+        if code in ("T1", "T2", "P1", "P2", "P3", "P4", "P5", "P6", "P8"):
             allowed.add("chosen_cat_id")
-        if code == "T7":
+        if code in ("T7", "P8"):
             allowed.add("cut_time")
         assert set(schema["properties"]) == allowed, code
 
@@ -48,6 +48,20 @@ def test_reviews_validate_and_reject_bad_verdicts():
     assert (
         review_model_for("P8").model_validate({"verdict": "relabel_to_vote", "rationale": "vote wins"}).verdict
         == "relabel_to_vote"
+    )
+    assert (
+        review_model_for("P5")
+        .model_validate({"verdict": "reassign", "chosen_cat_id": 25, "rationale": "wrong cat"})
+        .chosen_cat_id
+        == 25
+    )
+    with pytest.raises(ValidationError):
+        review_model_for("P5").model_validate({"verdict": "trim_core", "rationale": "x"})
+    assert (
+        review_model_for("P6")
+        .model_validate({"verdict": "different_cats", "chosen_cat_id": 26, "rationale": "new visit is Qbo"})
+        .chosen_cat_id
+        == 26
     )
     with pytest.raises(ValidationError):
         review_model_for("P8").model_validate({"verdict": "keep", "rationale": "x"})

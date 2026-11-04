@@ -206,6 +206,45 @@ def test_validated_chart_writes_nonempty_png(tmp_path):
     assert path.is_file() and path.stat().st_size > 0
 
 
+def test_validated_chart_keeps_nulled_rows_on_unknown_lane(tmp_path, monkeypatch):
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    real_subplots = plt.subplots
+    axes = []
+
+    def spy_subplots(*a, **k):
+        fig, ax = real_subplots(*a, **k)
+        axes.append(ax)
+        return fig, ax
+
+    monkeypatch.setattr(plt, "subplots", spy_subplots)
+    # known rows cluster near T0; the nulled (mark_unknown) row sits far later:
+    # dropping it would shrink the chart to the cluster.
+    rows = _synth_rows(4, [25])
+    rows.append(
+        {
+            "create_time": (T0 + datetime.timedelta(seconds=300)).isoformat(),
+            "box_x1": 100,
+            "box_y1": 50,
+            "box_x2": 200,
+            "box_y2": 150,
+            "cat_id": None,
+            "verdict": "mark_unknown",
+        }
+    )
+    out = tmp_path / "charts"
+    path = plot_validated_chart(rows, out, [25, 26], cat_names={25: "Qb", 26: "Qbo"})
+    assert path.stat().st_size > 0
+    (ax,) = axes
+    assert ax.get_ylim() == (0, 3)
+    assert [t.get_text() for t in ax.get_yticklabels()] == ["Qb", "Qbo", "unknown"]
+    assert len(ax.collections[0].get_segments()) == 5  # the nulled row is drawn, not skipped
+    lo, hi = ax.get_xlim()
+    assert lo < mdates.date2num(T0)
+    assert hi > mdates.date2num(T0 + datetime.timedelta(seconds=290))
+
+
 def test_charts_handle_empty_input(tmp_path):
     out = tmp_path / "empty"
     orig, rev = plot_detection_charts([], [], out, [25, 26])

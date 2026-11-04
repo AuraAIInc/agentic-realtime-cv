@@ -128,11 +128,14 @@ one `verdict` enum plus at most one qualifier field (e.g. `cut_time`,
 - T6: confirm_split / merge_visits / drop_box
 - T7: keep_synthesis / cut_at_gap_start / shorten_gap
 - P1: confirm_winner / award_runner_up / split_visit
-- P2: keep / drop / merge_neighbor
-- P3: confirm_reassign / restore_wanted / mark_unknown
+- P2: confirm / drop / reassign
+- P3: confirm / reassign / drop
 - P4: assign_cat / split_fragments / confirm_unknown
 - P5: keep / drop / trim_core / reassign
-- P6, P7: merge / keep_separate
+- P6: merge / keep_separate / different_cats
+- P7: merge / keep_separate
+- P8: relabel_to_vote / keep_tracked / split_mixed
+- H1: confirm / flag_issue
 
 ## 5. Validation: queue → supervisor agent → verdicts
 
