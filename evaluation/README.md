@@ -92,10 +92,8 @@ sys.path.insert(0, "evaluation")
 from evaluate import evaluate_run, render_report
 
 res = evaluate_run(
-    "/Users/muyang/Documents/Personal/Github/agentic-realtime-cv-e2e"
-    "/output/tracking_runs/<run_name>",
-    "/Users/muyang/Documents/Personal/Github/agentic-realtime-cv-e2e"
-    "/image_server/retrieved_images/2026-10-28-16",
+    "output/tracking_runs/<run_name>",
+    "image_server/retrieved_images/2026-10-28-16",
     gt_source="labels",
     iou_thrs=[0.5],
 )

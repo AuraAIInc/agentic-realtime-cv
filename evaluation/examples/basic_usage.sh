@@ -2,10 +2,10 @@
 # Basic evaluation runs. Execute from the repo root.
 set -euo pipefail
 
-RUN=/Users/muyang/Documents/Personal/Github/agentic-realtime-cv-e2e/output/tracking_runs/view3_20261028-1633_1640_replay_db_20261104-110807-376138
+RUN=output/tracking_runs/view3_20261028-1633_1640_replay_db_20261104-110807-376138
 
 # 1) Single run, everything auto-resolved (hour, GT, cost).
-#    Report -> agentic-realtime-cv-e2e/output/evaluation_runs/<run>_eval.md
+#    Report -> output/evaluation_runs/<run>_eval.md
 #    (+ <run>_metrics.json and <run>_{original,revised,validated}.png).
 .venv/bin/python evaluation/evaluate.py "$RUN"
 

@@ -13,8 +13,8 @@ from evaluate import copy_charts, evaluate_run, render_report, resolve_hour_dir 
 import json  # noqa: E402
 
 RUN = (
-    "/Users/muyang/Documents/Personal/Github/agentic-realtime-cv-e2e"
-    "/output/tracking_runs/view3_20261028-1633_1640_replay_db_20261104-110807-376138"
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    + "/output/tracking_runs/view3_20261028-1633_1640_replay_db_20261104-110807-376138"
 )
 
 
