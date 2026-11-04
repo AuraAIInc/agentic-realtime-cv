@@ -1,0 +1,30 @@
+# Documented corrections to image_server/retrieved_images/<hour>/labels, applied only when
+# evaluation/evaluate.py runs with --audit. The label files themselves are never modified.
+# Every entry was checked by eye on the frames (see documents/e2e-identity-fix-20261104.md).
+#
+#   window       [start, end) ISO times; GT frames outside are not scored
+#   drop_decoys  drop GT boxes on a zones.yaml kind: decoy object (a ball is not a cat)
+#   relabel      GT boxes in [from, to) with class cls_from become cls_to
+hours:
+  2026-10-25-04:
+    # Labels outside 04:19-04:37 are the raw detector export, never validated (before 04:19
+    # they are byte-identical to labels_detector_backup/: 682 frames, all the ball labeled
+    # Qbo). The validated export (labels run view3_20261025-0419_0437) covers 04:19-04:37.
+    window: ["2026-10-25T04:19:00", "2026-10-25T04:38:00"]
+    drop_decoys: true   # no-op inside the window: the validated labels never boxed the ball
+    relabel:
+      # One cat in view (57 of 60 GT frames have one box); 04:35:52-04:36:04 crops show a long
+      # coat with a dark plume tail and dark paws (Qbo); GT and the detector both said Qb.
+      - {from: "2026-10-25T04:35:48", to: "2026-10-25T04:36:08", cls_from: 25, cls_to: 26}
+    # Known, NOT corrected: many frames with a clearly visible cat have empty GT
+    # (04:20-04:26, 04:31-04:35), so presence precision here is understated.
+  2026-10-26-02:
+    drop_decoys: true
+    relabel:
+      # One cat in view, long fluffy coat with a dark plume tail (Qbo's cue, Qb's tail is
+      # white); detector says Qbo at 0.82-0.87; the SAM label set says 319 Qbo / 203 Qb.
+      # Extended back to 02:05:30 after checking 02:05:38-02:05:57: same single cat, dark
+      # plume tail and dark paws, detector Qbo on 7 of 8 frames.
+      - {from: "2026-10-26T02:05:30", to: "2026-10-26T02:09:15", cls_from: 25, cls_to: 26}
+  2026-10-28-16:
+    drop_decoys: true   # no GT box sits on the ball here; listed for symmetry

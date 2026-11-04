@@ -123,7 +123,48 @@ def load_stage(run_dir: str, fname: str) -> dict:
     return preds
 
 
-def evaluate_run(run_dir: str, hour_dir: str, gt_source: str, iou_thrs: list) -> dict:
+def load_audit(path: str | None, hour: str) -> dict:
+    """The gt_audit.yaml entry for one hour ({} when no audit or no entry)."""
+    if not path:
+        return {}
+    import yaml
+
+    with open(path) as f:
+        return ((yaml.safe_load(f) or {}).get("hours") or {}).get(hour) or {}
+
+
+def apply_audit(gt: dict, audit: dict, view_id: int = 3) -> tuple[dict, dict]:
+    """Apply window / drop_decoys / relabel corrections; returns (gt, change counts)."""
+    if not audit:
+        return gt, {}
+    changes = {"frames_outside_window": 0, "decoy_boxes_dropped": 0, "boxes_relabeled": 0}
+    lo, hi = (audit.get("window") or ["", "9999"])
+    out = {}
+    decoys = []
+    if audit.get("drop_decoys"):
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from agent.tracking.decoys import load_decoys, match_decoy
+
+        decoys = load_decoys(view_id)
+    for t, boxes in gt.items():
+        if not (lo <= t < hi):
+            changes["frames_outside_window"] += 1
+            continue
+        kept = []
+        for b in boxes:
+            if decoys and match_decoy((b.x1, b.y1, b.x2, b.y2), decoys):
+                changes["decoy_boxes_dropped"] += 1
+                continue
+            for r in audit.get("relabel") or []:
+                if r["from"] <= t < r["to"] and b.cls == r["cls_from"]:
+                    b = Box(b.x1, b.y1, b.x2, b.y2, r["cls_to"], b.conf)
+                    changes["boxes_relabeled"] += 1
+            kept.append(b)
+        out[t] = kept
+    return out, changes
+
+
+def evaluate_run(run_dir: str, hour_dir: str, gt_source: str, iou_thrs: list, audit_path: str | None = None) -> dict:
     label_dir = os.path.join(hour_dir, GT_SOURCES[gt_source])
     with open(os.path.join(hour_dir, "classes_map.json")) as f:
         cmap = json.load(f)
@@ -135,6 +176,7 @@ def evaluate_run(run_dir: str, hour_dir: str, gt_source: str, iou_thrs: list) ->
     img_w, img_h = size if size else (800, 600)
 
     gt = load_yolo_labels(label_dir, order, img_w, img_h)
+    gt, audit_changes = apply_audit(gt, load_audit(audit_path, os.path.basename(os.path.normpath(hour_dir))))
     run_frames = [r["create_time"] for r in load_jsonl(os.path.join(run_dir, "images.jsonl"))]
     frame_set = [t for t in run_frames if t in gt]
     missing_gt = [t for t in run_frames if t not in gt]
@@ -149,6 +191,7 @@ def evaluate_run(run_dir: str, hour_dir: str, gt_source: str, iou_thrs: list) ->
         "run_frames": len(run_frames),
         "eval_frames": len(frame_set),
         "frames_without_gt": len(missing_gt),
+        "audit": audit_changes,
         "stages": {},
     }
     for stage, fname in STAGES:
@@ -253,6 +296,7 @@ def render_report(results: list, iou_thrs: list) -> str:
             f"image size {res['image_size'][0]}x{res['image_size'][1]}",
             f"- Frames: {res['eval_frames']} evaluated "
             f"({res['run_frames']} in run, {res['frames_without_gt']} without GT)",
+            *([f"- GT audit applied: {res['audit']}"] if res.get("audit") else []),
             "",
         ]
         for t in iou_thrs:
@@ -300,12 +344,13 @@ def main() -> None:
     ap.add_argument("--gt-source", choices=sorted(GT_SOURCES), default="muse")
     ap.add_argument("--iou", type=float, action="append", default=[0.5, 0.75])
     ap.add_argument("--out", default=None, help="Report dir (default: evaluation/reports).")
+    ap.add_argument("--audit", default=None, help="Apply documented GT corrections (e.g. evaluation/gt_audit.yaml).")
     args = ap.parse_args()
 
     out_dir = args.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
     os.makedirs(out_dir, exist_ok=True)
 
-    results = [evaluate_run(r, args.hour, args.gt_source, args.iou) for r in args.run]
+    results = [evaluate_run(r, args.hour, args.gt_source, args.iou, args.audit) for r in args.run]
     for res in results:
         with open(os.path.join(out_dir, f"{res['run']}_metrics.json"), "w") as f:
             json.dump(res, f, indent=2)

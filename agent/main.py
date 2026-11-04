@@ -1038,7 +1038,7 @@ class TrackingRun:
                 from agent.validation import materialize
 
                 revised_rows = read_revised_rows(run_dir / RunStore.REVISED_FILE)
-                jsonl_path, db_path, _ = materialize(run_dir, revised_rows, ops)
+                jsonl_path, db_path, _ = materialize(run_dir, revised_rows, ops, cat_ids=self.cat_ids)
                 validated_jsonl = jsonl_path
                 artifacts += [jsonl_path.name, db_path.name, RunStore.VALIDATIONS_FILE]
             except Exception:

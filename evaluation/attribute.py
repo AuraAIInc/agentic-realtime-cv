@@ -25,7 +25,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from evaluate import GT_SOURCES, jpeg_size, load_yolo_labels  # noqa: E402
+from evaluate import GT_SOURCES, apply_audit, jpeg_size, load_audit, load_yolo_labels  # noqa: E402
 from metrics import Box, iou  # noqa: E402
 
 
@@ -55,12 +55,14 @@ def main() -> None:
     ap.add_argument("--hour", required=True)
     ap.add_argument("--gt-source", default="labels", choices=list(GT_SOURCES))
     ap.add_argument("--json", help="write the tallies here")
+    ap.add_argument("--audit", help="apply documented GT corrections (evaluation/gt_audit.yaml)")
     a = ap.parse_args()
 
     order = json.load(open(os.path.join(a.hour, "classes_map.json")))["order"]
     img = next(p for p in sorted(os.listdir(os.path.join(a.hour, "images"))) if p.endswith(".jpg"))
     w, h = jpeg_size(os.path.join(a.hour, "images", img))
     gt = load_yolo_labels(os.path.join(a.hour, GT_SOURCES[a.gt_source]), order, w, h)
+    gt, _ = apply_audit(gt, load_audit(a.audit, os.path.basename(os.path.normpath(a.hour))))
     frames = {json.loads(l)["create_time"] for l in open(os.path.join(a.run, "images.jsonl"))}
     gt = {t: v for t, v in gt.items() if t in frames}
 

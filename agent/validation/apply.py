@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import bisect
 import datetime
+import logging
 import itertools
 import json
 import sqlite3
@@ -69,6 +70,8 @@ _VALIDATED_COLS = (
     "validated_by",
     "verdict",
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_ts(value) -> datetime.datetime | None:
@@ -355,14 +358,62 @@ def _drop_confirmed_split_bridges(pairs: list[tuple], ops: list[dict]) -> list[t
     return [(row, pid) for row, pid in pairs if not _is_split_bridge_row(row, spans)]
 
 
-def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool = True) -> list[dict]:
+def _cat_aliases(valid: set) -> dict:
+    """Map ids an agent might use for a cat (canonical profile id, another view's tracking id)
+    to this run's tracking id, when the profile resolves to exactly one of ``valid``."""
+    try:
+        from agent.tracking.cat_config import load_cat_profiles
+
+        profiles = load_cat_profiles() or []
+    except Exception:
+        return {}
+    aliases: dict = {}
+    for cat in profiles:
+        ids = {cat.get("cat_id"), *((cat.get("tracking_ids") or {}).values())}
+        ids = {int(i) for i in ids if isinstance(i, int) or (isinstance(i, str) and i.isdigit())}
+        own = ids & valid
+        if len(own) != 1:
+            continue
+        target = own.pop()
+        for i in ids - valid:
+            aliases.setdefault(i, set()).add(target)
+    return {k: v.pop() for k, v in aliases.items() if len(v) == 1}
+
+
+def normalize_chosen_cat(review: dict, valid: set, aliases: dict) -> tuple[dict, str | None]:
+    """Return (review, note). A chosen_cat_id outside this run's cats is mapped through
+    ``aliases`` when it is unambiguous; otherwise the op is marked unexecutable (note set).
+
+    The reviewer sees canonical profile ids (Qb = 0, Qbo = 2) next to the view's tracking ids
+    (25 / 26); on 2026-10-26 a P6 ``different_cats`` came back as cat 0 and 13 rows were
+    rewritten to a cat id the view does not have.
+    """
+    chosen = review.get("chosen_cat_id")
+    if chosen is None or not valid:
+        return review, None
+    try:
+        chosen = int(chosen)
+    except (TypeError, ValueError):
+        return review, f"chosen_cat_id {review.get('chosen_cat_id')!r} is not a cat id; rows kept as-is"
+    if chosen in valid:
+        return review, None
+    if chosen in aliases:
+        return {**review, "chosen_cat_id": aliases[chosen]}, None
+    return review, f"chosen_cat_id {chosen} is not one of this run's cats {sorted(valid)}; rows kept as-is"
+
+
+def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool = True, cat_ids=None) -> list[dict]:
     """Return validated rows: copies of ``revised_rows`` with verdict ops applied.
 
     Ops match rows by their pre-apply (tracked) cat/period: verdicts were
     raised against the tracker's labels, and earlier ops rewrite them, so
     matching live values misfires across ops sharing a frame or period.
+    ``cat_ids`` (the run's tracking ids) guards ``chosen_cat_id`` against ids the view does
+    not have; None (direct callers, old tests) skips the guard.
     """
     rows = [{**r, "validated_by": "pass-through", "verdict": "pass"} for r in revised_rows]
+    valid = {int(c) for c in cat_ids} if cat_ids is not None else set()
+    aliases = _cat_aliases(valid) if valid else {}
     orig_cats = [r.get("cat_id") for r in revised_rows]
     orig_pids = [r.get("period_id") for r in revised_rows]
     merge_targets = _canonical_merge_targets(ops)
@@ -376,6 +427,10 @@ def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool 
             continue
         name = esc.get("name") or esc.get("code") or "?"
         when = _parse_ts(esc.get("time"))
+        review, bad_cat = normalize_chosen_cat(review, valid, aliases)
+        if bad_cat:
+            logger.warning("%s %s: %s", name, verdict, bad_cat)
+            continue
         handler = _HANDLERS.get(esc.get("code"), _noop)
         if (esc.get("code") == "T7" and verdict in ("cut_at_gap_start", "shorten_gap")) or (
             esc.get("code") == "P8" and verdict == "split_mixed"
@@ -653,8 +708,8 @@ def write_validated(run_dir: str | Path, rows: list[dict]) -> tuple[Path, Path]:
     return jsonl_path, db_path
 
 
-def materialize(run_dir: str | Path, revised_rows: list[dict], ops: list[dict]) -> tuple[Path, Path, list[dict]]:
+def materialize(run_dir: str | Path, revised_rows: list[dict], ops: list[dict], cat_ids=None) -> tuple[Path, Path, list[dict]]:
     """Apply ``ops`` to ``revised_rows`` and write validated outputs; return (jsonl, db, rows)."""
-    rows = apply_ops(revised_rows, ops)
+    rows = apply_ops(revised_rows, ops, cat_ids=cat_ids)
     jsonl_path, db_path = write_validated(run_dir, rows)
     return jsonl_path, db_path, rows

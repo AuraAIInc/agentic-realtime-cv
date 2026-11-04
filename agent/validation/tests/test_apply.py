@@ -332,3 +332,32 @@ def test_materialize_writes_jsonl_and_sqlite(tmp_path):
         assert got == [(25, "E1-P5", "keep")]
     finally:
         conn.close()
+
+
+def test_chosen_cat_outside_the_run_is_mapped_or_refused():
+    from agent.validation.apply import normalize_chosen_cat
+
+    valid = {25, 26}
+    aliases = {0: 25, 2: 26, 1: 26}  # canonical Qb=0 / Qbo=2, view-1 Qbo=1
+    r, note = normalize_chosen_cat({"verdict": "different_cats", "chosen_cat_id": 0}, valid, aliases)
+    assert note is None and r["chosen_cat_id"] == 25
+    r, note = normalize_chosen_cat({"verdict": "reassign", "chosen_cat_id": 26}, valid, aliases)
+    assert note is None and r["chosen_cat_id"] == 26
+    _, note = normalize_chosen_cat({"verdict": "reassign", "chosen_cat_id": 7}, valid, aliases)
+    assert note and "not one of this run's cats" in note
+    r, note = normalize_chosen_cat({"verdict": "keep"}, valid, aliases)
+    assert note is None and "chosen_cat_id" not in r
+
+
+def test_apply_ops_never_writes_an_unknown_cat_id():
+    from agent.validation.apply import apply_ops
+
+    rows = [
+        {"create_time": "2026-10-26T02:15:52.000000", "cat_id": 25, "orig_cat_id": 25, "period_id": 11,
+         "box_x1": 1.0, "box_y1": 1.0, "box_x2": 9.0, "box_y2": 9.0},
+    ]
+    op = {"escalation": {"name": "E30-P6", "code": "P6", "time": "2026-10-26T02:15:13", "end_time": "2026-10-26T02:15:52",
+                         "cat_id": 25, "period_id": 11, "metrics": {"prev_period_id": 10}},
+          "review": {"verdict": "different_cats", "chosen_cat_id": 7, "rationale": "x"}}
+    out = apply_ops(rows, [op], cat_ids=[25, 26])
+    assert out[0]["cat_id"] == 25 and out[0]["verdict"] == "pass"
