@@ -248,8 +248,8 @@ class Store:
         problems = []
         if not NAME_RE.match(name or ""):
             problems.append("name must be lower_snake_case")
-        if kind not in ("place", "occluder", "entry"):
-            problems.append("kind must be place, occluder or entry")
+        if kind not in ("place", "occluder", "entry", "decoy"):
+            problems.append("kind must be place, occluder, entry or decoy")
         if (box is None) == (polygon is None):
             problems.append("give exactly one of box or polygon")
         entry = {"name": name, "kind": kind, **({"box": [round(float(v), 1) for v in box]} if box else {}), **({"polygon": polygon} if polygon else {})}

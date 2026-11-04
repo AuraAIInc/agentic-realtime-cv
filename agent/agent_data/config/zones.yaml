@@ -4,6 +4,8 @@
 #   place     - somewhere a cat does something (sofa, food_bowl, water, bed, tent)
 #   occluder  - something a cat can walk behind; a track gap across it is not a teleport
 #   entry     - a doorway or opening a cat can appear from / disappear into
+#   decoy     - a static object the detector keeps calling a cat; detections whose box overlaps it
+#               at IoU >= min_iou (default 0.6) are dropped at ingest (agent/tracking/decoys.py)
 # Add zones by hand, or ask the agent ("label the cat when it sits on the sofa") and confirm
 # the box it proposes. Nothing below is measured yet; the commented lines are examples.
 
@@ -11,7 +13,12 @@ version: 1
 views:
   "3":
     size: [800, 600]
-    zones: []
+    zones:
+      # Pink/blue exercise ball by the back wall. Tracked as "Qbo" for 26 min on 2026-11-01
+      # (box [351,47,407,104]), 8 min on 10-25 ([345,46,408,106]) and 6 min on 10-26
+      # ([348,46,408,106]). A cat lying beside it gives a wider box (IoU 0.3-0.5) and is kept.
+      # Move or delete this zone if the ball moves.
+      - {name: exercise_ball, kind: decoy, box: [348, 46, 408, 106], min_iou: 0.6}
     # - {name: sofa, kind: place, box: [0, 80, 320, 420]}
     # - {name: litter_box, kind: place, box: [170, 500, 310, 600]}
     # - {name: doorway, kind: entry, box: [690, 0, 800, 110]}

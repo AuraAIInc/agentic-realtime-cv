@@ -49,6 +49,7 @@ from pathlib import Path
 
 from agent.escalation import Escalation, EscalationConfig, emit as emit_escalation
 from agent.tracking import FileSink, PeriodCorrector, RunStore, TrackCorrector, plot_detection_charts, plot_validated_chart, resolve_cat_ids
+from agent.tracking.decoys import load_decoys, match_decoy
 from agent.tracking.process_viz import init_frame_dir, render_process_frame, stitch_mp4
 from agent.tracking.report import REPORT_FILE, write_session_report
 from agent.tracking.store import DEFAULT_RUNS_DIR
@@ -192,15 +193,19 @@ def view_matches(msg_view, view_id: int) -> bool:
         return str(msg_view) == str(view_id)
 
 
-def build_img_detected(detections, *, min_conf: float, known_ids) -> tuple:
+def build_img_detected(detections, *, min_conf: float, known_ids, decoys=None) -> tuple:
     """Filter one message's detections into the {cat_id: [x1,y1,x2,y2,orig,conf]} ingest map.
 
     Keeps detections strictly above min_conf (legacy semantics) whose cat id is
-    known for this view. Returns (img_detected, stats Counter with raw, kept,
-    low_conf, unknown_cat, bad_box, bad_list counts).
+    known for this view and whose box does not sit on a known decoy object
+    (``decoys``: zones.yaml ``kind: decoy`` entries, see agent.tracking.decoys).
+    The map holds one box per cat id; when the detector gives two boxes the
+    same id in one frame, the more confident one is kept (it used to be
+    whichever came last). Returns (img_detected, stats Counter with raw, kept,
+    low_conf, unknown_cat, bad_box, bad_list, decoy, dup_cat counts).
     """
     known = set(known_ids)
-    stats = Counter(raw=0, kept=0, low_conf=0, unknown_cat=0, bad_box=0, bad_list=0)
+    stats = Counter(raw=0, kept=0, low_conf=0, unknown_cat=0, bad_box=0, bad_list=0, decoy=0, dup_cat=0)
     img_detected = {}
     if not isinstance(detections, list):
         stats["bad_list"] += 1
@@ -223,6 +228,13 @@ def build_img_detected(detections, *, min_conf: float, known_ids) -> tuple:
         if cat_id not in known:
             stats["unknown_cat"] += 1
             continue
+        if decoys and match_decoy((x1, y1, x2, y2), decoys):
+            stats["decoy"] += 1
+            continue
+        if cat_id in img_detected:
+            stats["dup_cat"] += 1
+            if img_detected[cat_id][5] >= conf:
+                continue
         img_detected[cat_id] = [x1, y1, x2, y2, cat_id, conf]
     stats["kept"] = len(img_detected)
     return img_detected, stats
@@ -456,6 +468,7 @@ class TrackingRun:
         report: bool = True,
         heartbeat_seconds: float | None = None,  # None: from ESCALATION_HEARTBEAT_SECONDS (0 disables)
         heartbeat_at_end: bool | None = None,  # None: from ESCALATION_HEARTBEAT_AT_END
+        decoys: list | None = None,  # None: zones.yaml kind=decoy for this view; [] disables
     ):
         self.started_at = datetime.datetime.now()
         self._t0 = time.perf_counter()
@@ -472,6 +485,9 @@ class TrackingRun:
         self.track = TrackCorrector(cat_ids=self.cat_ids, escalation_seq=self._esc_seq)
         self.period = PeriodCorrector(cat_ids=self.cat_ids, escalation_seq=self._esc_seq)
         self.min_conf = min_conf
+        self.decoys = load_decoys(self.view_id) if decoys is None else list(decoys)
+        if self.decoys:
+            logger.info("decoy zones for view %s: %s", self.view_id, ", ".join(d["name"] for d in self.decoys))
         self.process_viz = process_viz
         self.cat_idx = cat_idx
         self.fps = fps
@@ -856,7 +872,7 @@ class TrackingRun:
             return self._skip("before_window")
         if create_time >= self.end_exclusive:
             return self._skip("past_end")
-        img_detected, stats = build_img_detected(msg.get("detections"), min_conf=self.min_conf, known_ids=self._known)
+        img_detected, stats = build_img_detected(msg.get("detections"), min_conf=self.min_conf, known_ids=self._known, decoys=self.decoys)
         for key, value in stats.items():
             self.counts[f"detections_{key}"] += value
         self._ingest(create_time, img_detected, msg)
@@ -999,6 +1015,7 @@ class TrackingRun:
         """finish_up both correctors, then write charts, video, and run.json."""
         logger.info("finalizing run ...")
         self.track.finish_up(self.sink)
+        self.counts["tracker_relabel_vetoes"] = int(getattr(self.track, "relabel_vetoes", 0))
         self._persist_new_escalations()
         for row in self.period.finish_up(self.view_id, self.sink):
             self._log_period_row(row)

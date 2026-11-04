@@ -103,7 +103,7 @@ TOOLS: list[dict] = [
         "confirm=true writes it (only after the user agrees).",
         "input_schema": {"type": "object", "required": ["view_id", "name", "kind"], "properties": {
             "view_id": {"type": "integer"}, "name": {"type": "string"},
-            "kind": {"type": "string", "enum": ["place", "occluder", "entry"]},
+            "kind": {"type": "string", "enum": ["place", "occluder", "entry", "decoy"]},
             "box": BOX, "polygon": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}},
             "confirm": {"type": "boolean", "default": False}}},
     },
