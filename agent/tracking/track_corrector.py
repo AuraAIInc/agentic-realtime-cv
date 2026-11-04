@@ -56,6 +56,7 @@ class TrackCorrector:
         self.last_revised_detection = [None for _ in range(self.number_of_cats)]
         self._synth_run = [[None, False, None, 0.0] for _ in range(self.number_of_cats)]
         self._wipe_pending = {}  # cat_idx -> T4 escalation awaiting its restart period
+        self.relabel_vetoes = 0  # continuity relabels refused by detector_insists()
         logger.info("TrackCorrector initialized")
 
         self.now_detecting_date = None
@@ -126,6 +127,32 @@ class TrackCorrector:
 
     def match_buffer_history(self, new_cat_id, img_detected, cat_idx):
         return self.match_buffer_history_rule(new_cat_id, img_detected, cat_idx) is not None
+
+    # A relabel X -> Y is vetoed once Y's buffer already holds this many real detections that
+    # the camera called X, and at least DETECTOR_INSIST_RATIO times as many as it called Y.
+    DETECTOR_INSIST_MIN = 5
+    DETECTOR_INSIST_RATIO = 2.0
+
+    def detector_insists(self, new_cat_id, cat_idx) -> bool:
+        """True when continuity has been overriding a consistent detector label on this track.
+
+        Continuity relabels (iou_last / distance / iou_buffer) file a box under the track it
+        overlaps. When one cat settles where the other cat's track last was (e.g. Qb sleeping in
+        the bed Qbo just left), every new Qb box overlaps the Qbo track, gets relabeled, and Qb's
+        own buffer never fills, so the hijack feeds itself (772 of 818 Qb boxes on 2026-10-28).
+        Buffer rows keep the camera's original id at index 5; once Y's recent rows are mostly
+        the camera saying X, trust the camera and let X start its own track.
+        """
+        y_id = self.idx_to_id[cat_idx]
+        said_x = said_y = 0
+        for b in self.buffer[cat_idx]:
+            if b[1] is None or b[5] is None:
+                continue
+            if b[5] == new_cat_id:
+                said_x += 1
+            elif b[5] == y_id:
+                said_y += 1
+        return said_x >= self.DETECTOR_INSIST_MIN and said_x >= self.DETECTOR_INSIST_RATIO * said_y
 
     def _nearness_source(self, cat_idx, new_box) -> dict:
         """The reference position a distance-rule relabel was based on (T2 prompt evidence)."""
@@ -212,6 +239,10 @@ class TrackCorrector:
                 if new_detected_cat_id in reasonable_detection or cat_id == new_detected_cat_id:
                     continue
                 if self.match_buffer_history(new_detected_cat_id, img_detected, cat_idx):
+                    if self.detector_insists(new_detected_cat_id, cat_idx):
+                        self.relabel_vetoes += 1
+                        logger.debug(f"Relabel {new_detected_cat_id}->{cat_id} vetoed: camera keeps saying {new_detected_cat_id}")
+                        continue
                     # img_detected[cat_id] = img_detected.pop(new_detected_cat_id)
                     correct_from_to[new_detected_cat_id] = cat_id
                     logger.debug(f"Corrected cat {new_detected_cat_id} to {cat_id}: {img_detected}")
