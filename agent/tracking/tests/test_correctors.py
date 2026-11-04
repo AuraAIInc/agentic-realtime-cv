@@ -240,7 +240,7 @@ def test_img_size_params_default_and_explicit():
     assert (tc.img_width, tc.img_height) == (800, 600)
     tc.last_detection[0] = [T0, 350, 25, 440, 205, 25, 0.9, 25]
     src = tc._nearness_source(0, [400, 20, 490, 200])
-    assert src["source_threshold_px"] == 200.0  # img_width / 4 follows the size
+    assert src["source_threshold_px"] == 160.0  # tuned radius, independent of frame size (see TrackCorrector.NEAR_PX)
 
 
 def test_p6_carries_prev_span_and_boundary_boxes():

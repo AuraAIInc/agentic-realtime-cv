@@ -95,7 +95,7 @@ class TrackCorrector:
         for h in range(1, len(self.buffer_origin[cat_idx]) + 1):
             if self.buffer_origin[cat_idx][-h][1] is None:
                 continue
-            if get_distance(new_box, self.buffer_origin[cat_idx][-h][1:5]) < self.img_width / 4:
+            if get_distance(new_box, self.buffer_origin[cat_idx][-h][1:5]) < self.NEAR_PX:
                 if not is_last_detection:
                     for k in range(1, h):
                         self.buffer[cat_idx][-k][1:6] = [None] * 5
@@ -124,7 +124,7 @@ class TrackCorrector:
         if iou > 0.2:
             return "iou_last"
 
-        if cat_idx not in img_detected and get_distance(new_box, det_reference[1:5]) < self.img_width / 4:
+        if cat_idx not in img_detected and get_distance(new_box, det_reference[1:5]) < self.NEAR_PX:
             return "distance"
 
         for b in self.buffer[cat_idx]:
@@ -140,6 +140,12 @@ class TrackCorrector:
 
     # A relabel X -> Y is vetoed once Y's buffer already holds this many real detections that
     # the camera called X, and at least DETECTOR_INSIST_RATIO times as many as it called Y.
+    #: "Near enough to be the same cat" radius (px). Every tuned run used width/4
+    #: of the legacy 640 px width = 160 px, whatever the real frame size. width/4
+    #: of view 3's real 800 px (200 px) scored worse on all three GT hours
+    #: (tracker F1 10-25 0.255->0.243, 10-26 0.591->0.579, +10 escalations on
+    #: 10-26), so the radius stays at the tuned 160 px.
+    NEAR_PX = 160.0
     DETECTOR_INSIST_MIN = 5
     DETECTOR_INSIST_RATIO = 2.0
 
@@ -173,7 +179,7 @@ class TrackCorrector:
             "source_time": ref[0].isoformat(timespec="microseconds"),
             "source_box": [float(v) for v in ref[1:5]],
             "source_distance_px": float(get_distance(new_box, ref[1:5])),
-            "source_threshold_px": float(self.img_width / 4),
+            "source_threshold_px": float(self.NEAR_PX),
         }
 
     def _escalate(self, code, reason, time, cat_id=None, period_id=None, metrics=None):
