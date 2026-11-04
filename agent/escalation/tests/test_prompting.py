@@ -548,3 +548,19 @@ def test_emit_logs_prompt_after_escalation(caplog):
     prompt_logs = [t for t in texts if "Escalation prompt E6-T2" in t]
     assert len(prompt_logs) == 1
     assert "Validate:" in prompt_logs[0]
+
+
+def test_p6_different_cats_names_the_cat_from_appearance():
+    prompt = build_prompt(
+        _esc(
+            "P6",
+            scope="period",
+            end_time=T0,
+            cat_id=25,
+            period_id=6,
+            metrics={"prev_period_id": 4, "gap_seconds": 56.2, "distance_px": 252},
+        )
+    )
+    assert "name the new visit's cat from its APPEARANCE" in prompt
+    assert "never which cat is in the box" in prompt
+    assert "The camera labeled visit 6 cat 25" in prompt
