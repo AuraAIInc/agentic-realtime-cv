@@ -263,13 +263,29 @@ CASES = {
         ["visits 3 and 4", "0.75", "120-second", "visit 3 ran", "stillness",
          "Box [10.0, 20.0, 100.0, 200.0]", "period_id 3 and 4"],
     ),
+    "H1": (
+        {
+            "time": T1,
+            "scope": "period",
+            "end_time": T0,
+            "metrics": {
+                "quiet_seconds": 312.0,
+                "messages": 48,
+                "cat_ids": [25, 26],
+                "kind": "periodic",
+            },
+        },
+        ["Quiet window spot-check", "312 seconds", "48 frames ingested",
+         "cat 25", "cat 26", "routine audit", "keeps everything as-is",
+         "2026-10-28T16:34:42.769881", "2026-10-28T16:35:21.976102"],
+    ),
 }
 
 SECTIONS = ["Conflict:", "Validate:", "Context:", "Alternatives:", "Resources"]
 
 
 def test_every_code_has_standalone_prompt():
-    assert set(CASES) == {"T1", "T2", "T3", "T4", "T5", "T6", "T7", "P1", "P2", "P3", "P4", "P5", "P6", "P7"}
+    assert set(CASES) == {"T1", "T2", "T3", "T4", "T5", "T6", "T7", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "H1"}
     for code, (kw, needles) in CASES.items():
         prompt = build_prompt(_esc(code, **kw))
         assert prompt.startswith(f"[E6-{code}]"), code
@@ -420,6 +436,17 @@ def test_p7_without_span_falls_back_to_plain_gap():
     assert "start is unknown" in prompt
     assert "stillness" in prompt
     assert "Box [" not in prompt
+
+
+def test_h1_end_of_run_variant():
+    prompt = build_prompt(
+        _esc("H1", time=T1, scope="period", end_time=T0,
+             metrics={"quiet_seconds": 125.0, "messages": 30, "cat_ids": [25], "kind": "end_of_run"})
+    )
+    assert "Quiet run spot-check" in prompt
+    assert "whole run stayed quiet" in prompt
+    assert "125 seconds (30 frames ingested)" in prompt
+    assert "cat 25" in prompt
 
 
 def test_cat_profiles_block_from_mapping():

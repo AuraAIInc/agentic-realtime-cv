@@ -20,6 +20,7 @@ FAMILIES = {
     "P1": "routine", "P2": "routine", "P5": "routine",
     "P3": "conflict", "P4": "occlusion",
     "P6": "merge", "P7": "merge",
+    "H1": "routine",
 }
 
 

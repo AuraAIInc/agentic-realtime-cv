@@ -454,6 +454,8 @@ class TrackingRun:
         validate: bool = False,
         validator=None,  # inject a ValidationWorker (tests); otherwise built when validate=True
         report: bool = True,
+        heartbeat_seconds: float | None = None,  # None: from ESCALATION_HEARTBEAT_SECONDS (0 disables)
+        heartbeat_at_end: bool | None = None,  # None: from ESCALATION_HEARTBEAT_AT_END
     ):
         self.started_at = datetime.datetime.now()
         self._t0 = time.perf_counter()
@@ -547,6 +549,14 @@ class TrackingRun:
             )
         if self.validator is not None:
             self.validator.start()
+        # Quiet-window heartbeat (H1): spot-check the tracking when nothing
+        # was flagged for a while, so a fully quiet run still gets reviewed.
+        _hb_cfg = EscalationConfig.from_env()
+        self._heartbeat_seconds = _hb_cfg.heartbeat_seconds if heartbeat_seconds is None else float(heartbeat_seconds)
+        self._heartbeat_at_end = _hb_cfg.heartbeat_at_end if heartbeat_at_end is None else bool(heartbeat_at_end)
+        self._hb_window_start = start
+        self._hb_window_messages = 0
+        self._hb_last_time = None
 
     def _esc_box(self, esc):
         """Median box of the escalation's period for memory context (None when unavailable)."""
@@ -851,7 +861,10 @@ class TrackingRun:
             self.counts[f"detections_{key}"] += value
         self._ingest(create_time, img_detected, msg)
         self._memory_tick(create_time)
-        self._persist_new_escalations()
+        new_escs = self._persist_new_escalations()
+        self._hb_last_time = create_time
+        self._hb_window_messages += 1
+        self._maybe_heartbeat(create_time, new_escs)
         if self.process_viz:
             self._render_frame()
         self.counts["messages_processed"] += 1
@@ -900,17 +913,78 @@ class TrackingRun:
             ),
         )
 
-    def _persist_new_escalations(self) -> None:
+    def _persist_new_escalations(self) -> list:
+        """Persist freshly drained corrector escalations; return them (for the heartbeat)."""
+        new = []
         for esc in self._escs.drain(self.track):
             self.store.append_escalation(esc)
             self._memory_store_escalation(esc)
             if self.validator is not None:
                 self.validator.enqueue(esc)
+            new.append(esc)
         for esc in self._escs.drain(self.period):
             self.store.append_escalation(esc)
             self._memory_store_escalation(esc)
             if self.validator is not None:
                 self.validator.enqueue(esc)
+            new.append(esc)
+        return new
+
+    def _maybe_heartbeat(self, now, new_escs: list) -> None:
+        """Emit an H1 spot-check once the quiet window reaches ``heartbeat_seconds``.
+
+        Any real escalation restarts the window; the periodic check is off
+        when ``heartbeat_seconds`` is 0. Stream time (not wall time) drives it,
+        so replays and live runs behave the same.
+        """
+        if new_escs:
+            self._hb_window_start = now
+            self._hb_window_messages = 0
+            return
+        if self._heartbeat_seconds <= 0:
+            return
+        quiet = (now - self._hb_window_start).total_seconds()
+        if quiet >= self._heartbeat_seconds:
+            self._emit_heartbeat(self._hb_window_start, now, kind="periodic")
+            self._hb_window_start = now
+            self._hb_window_messages = 0
+
+    def _maybe_end_heartbeat(self) -> None:
+        """Emit one H1 covering the run when it ends with zero escalations."""
+        if not self._heartbeat_at_end:
+            return
+        if self._escs.all:
+            return
+        if self._hb_last_time is None:
+            return
+        self._emit_heartbeat(self.start, self._hb_last_time, kind="end_of_run")
+
+    def _emit_heartbeat(self, window_start, window_end, *, kind: str) -> None:
+        """Build, log, persist, and enqueue one H1 quiet-window spot-check."""
+        quiet = max(0.0, (window_end - window_start).total_seconds())
+        esc = Escalation(
+            time=window_start,
+            end_time=window_end,
+            scope="period",
+            code="H1",
+            reason=(
+                f"heartbeat: no escalation in {quiet:.1f}s; spot-check tracking "
+                f"{window_start:%H:%M:%S}–{window_end:%H:%M:%S}"
+            ),
+            metrics={
+                "quiet_seconds": quiet,
+                "messages": self._hb_window_messages,
+                "cat_ids": list(self.cat_ids),
+                "kind": kind,
+            },
+            seq=next(self._esc_seq),
+        )
+        emit_escalation([], esc)  # log record + prompt + schema; persisted below, not via a corrector
+        self._escs.all.append(esc)
+        self.store.append_escalation(esc)
+        self._memory_store_escalation(esc)
+        if self.validator is not None:
+            self.validator.enqueue(esc)
 
     def _render_frame(self) -> None:
         path = self.frame_dir / f"frame_{self._viz_n:06d}.jpg"
@@ -930,6 +1004,7 @@ class TrackingRun:
             self._log_period_row(row)
             self._memory_store_period_row(row)
         self._persist_new_escalations()
+        self._maybe_end_heartbeat()
         self._finish_activity_labels()
         if self._raw_fh is not None:
             self._raw_fh.close()
@@ -1238,6 +1313,8 @@ def main(argv=None) -> int:
         bootstrap_frame=args.bootstrap_frame,
         validate=args.validate,
         report=args.report,
+        heartbeat_seconds=args.heartbeat_seconds,
+        heartbeat_at_end=args.heartbeat_at_end,
     )
     logger.info(f"run dir: {store.run_dir} (view {args.view_id}, cats {cat_ids})")
     if args.live:

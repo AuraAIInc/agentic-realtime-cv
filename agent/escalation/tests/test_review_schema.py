@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from agent.escalation import REVIEW_SCHEMAS, Escalation, emit, review_model_for, review_schema_json
 
-ALL_CODES = {"T1", "T2", "T3", "T4", "T5", "T6", "T7", "P1", "P2", "P3", "P4", "P5", "P6", "P7"}
+ALL_CODES = {"T1", "T2", "T3", "T4", "T5", "T6", "T7", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "H1"}
 
 
 def test_every_code_has_minimal_schema():
@@ -41,6 +41,12 @@ def test_reviews_validate_and_reject_bad_verdicts():
     assert review_model_for("T7").model_validate(
         {"verdict": "shorten_gap", "cut_time": "2026-10-28T16:34:00", "rationale": "cat left early"}
     ).cut_time
+    assert (
+        review_model_for("H1").model_validate({"verdict": "flag_issue", "rationale": "wrong cat"}).verdict
+        == "flag_issue"
+    )
+    with pytest.raises(ValidationError):
+        review_model_for("H1").model_validate({"verdict": "maybe", "rationale": "x"})
     with pytest.raises(ValidationError):
         review_model_for("T2").model_validate({"verdict": "maybe", "rationale": "x"})
     with pytest.raises(ValidationError):
