@@ -211,6 +211,7 @@ def test_p5_carries_counts_box_and_key_frames():
         pc._check_vote_escalations(7, stats, np.array([0.0, 9.0]), 1, 9.0, (T0, T0 + datetime.timedelta(seconds=110)))
     assert [e.code for e in pc.escalations] == ["P5"]
     p5 = pc.escalations[0]
+    assert p5.metrics["runner_up_cat_id"] == 25  # score-ranked, not count-ranked
     assert p5.metrics["total_frames"] == 12
     assert p5.metrics["detect_counts"] == {"26": 11}
     assert p5.metrics["winner_box"] == [15.0, 10.0, 105.0, 100.0]

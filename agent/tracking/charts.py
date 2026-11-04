@@ -3,6 +3,9 @@
 One lane per cat, x = time, each detection a vertical bar spanning its
 ``box_x1..box_x2`` normalized by the image width. The y axis runs 0..N
 (one unit lane per cat) with thin grey dotted separators between lanes.
+Rows with no (or an unlisted) cat id — e.g. ``mark_unknown`` verdicts,
+which null the cat — land on a grey ``unknown`` lane above the cat lanes
+instead of being dropped, so the validated chart always spans the run.
 Frame-scope escalations are red vertical lines; period-scope escalations
 are red spans clipped to the plotted window. Each line/span is labeled
 with its escalation name (``E<seq>-<code>``) at the bottom.
@@ -21,6 +24,9 @@ import matplotlib.pyplot as plt
 
 from agent.escalation import esc_label
 from agent.tracking.process_viz import CAT_COLORS
+
+UNKNOWN_LANE_LABEL = "unknown"
+UNKNOWN_LANE_COLOR = "grey"
 
 
 def _parse_time(value):
@@ -42,13 +48,21 @@ def _esc_span(esc):
 
 def _plot_strip(rows, path, title, cat_ids, names, escalations, width):
     idx_of = {cid: i for i, cid in enumerate(cat_ids)}
+    unknown_lane = len(cat_ids)
     times, bottoms, tops, colors = [], [], [], []
+    has_unknown = False
     for row in rows:
         if row.get("deleted"):
             continue
         cid = row.get("cat_id")
-        if cid not in idx_of:
-            continue
+        if cid in idx_of:
+            lane = idx_of[cid]
+            color = CAT_COLORS[lane % len(CAT_COLORS)]
+        else:
+            # Null/unlisted cat (e.g. a mark_unknown verdict): keep the bar on
+            # the unknown lane instead of dropping the row and shrinking the chart.
+            lane = unknown_lane
+            color = UNKNOWN_LANE_COLOR
         x1, x2 = row.get("box_x1"), row.get("box_x2")
         if x1 is None or x2 is None:
             continue
@@ -56,13 +70,18 @@ def _plot_strip(rows, path, title, cat_ids, names, escalations, width):
             t = _parse_time(row["create_time"])
         except (KeyError, ValueError, TypeError):
             continue
-        lane = idx_of[cid]
+        if lane == unknown_lane:
+            has_unknown = True
         times.append(t)
         bottoms.append(lane + min(x1, x2) / width)
         tops.append(lane + max(x1, x2) / width)
-        colors.append(CAT_COLORS[lane % len(CAT_COLORS)])
+        colors.append(color)
 
-    fig, ax = plt.subplots(figsize=(14, 2 + len(cat_ids)))
+    n_lanes = len(cat_ids) + (1 if has_unknown else 0)
+    lane_labels = [names.get(cid, str(cid)) for cid in cat_ids]
+    if has_unknown:
+        lane_labels.append(UNKNOWN_LANE_LABEL)
+    fig, ax = plt.subplots(figsize=(14, 2 + n_lanes))
     if times:
         ax.vlines(times, bottoms, tops, colors=colors, linewidths=2)
         lo, hi = min(times), max(times)
@@ -83,11 +102,11 @@ def _plot_strip(rows, path, title, cat_ids, names, escalations, width):
         ax.set_title(title)
     else:
         ax.set_title(f"{title} (no data)")
-    ax.set_ylim(0, len(cat_ids))
-    for y in range(1, len(cat_ids)):
+    ax.set_ylim(0, n_lanes)
+    for y in range(1, n_lanes):
         ax.axhline(y, color="grey", linewidth=0.8, linestyle=":")
-    ax.set_yticks([i + 0.5 for i in range(len(cat_ids))])
-    ax.set_yticklabels([names.get(cid, str(cid)) for cid in cat_ids])
+    ax.set_yticks([i + 0.5 for i in range(n_lanes)])
+    ax.set_yticklabels(lane_labels)
     ax.set_xlabel("time")
     ax.set_ylabel("cat")
     fig.autofmt_xdate()
@@ -146,7 +165,8 @@ def plot_validated_chart(
 
     Same row shape as :func:`plot_detection_charts` (validated rows carry
     extra ``validated_by``/``verdict`` fields, which are ignored here).
-    Returns the chart path.
+    Rows nulled by ``mark_unknown`` verdicts render on a grey ``unknown``
+    lane so the chart still spans the run. Returns the chart path.
     """
     cat_ids = list(cat_ids)
     if cat_names is None:

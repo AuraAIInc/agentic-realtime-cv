@@ -84,8 +84,9 @@ class T7Review(EscalationReview):
 
     verdict: Literal["keep_synthesis", "cut_at_gap_start", "shorten_gap"] = Field(
         description="keep_synthesis: the cat stayed put unseen, the guessed run is fine. cut_at_gap_start: the cat "
-        "left, end the visit where sightings stopped. shorten_gap: partly present — say the last frame where the cat "
-        "is actually visible in cut_time."
+        "left, end the visit where sightings stopped and delete the interpolated gap rows; frames after the gap "
+        "become a new visit. shorten_gap: partly present — say the last frame where the cat is actually visible in "
+        "cut_time; rows after it are deleted and frames after the gap become a new visit."
     )
     cut_time: str | None = Field(
         default=None, description="ISO timestamp of the last frame showing the cat. Required when verdict is shorten_gap."
@@ -105,19 +106,21 @@ class P1Review(EscalationReview):
 class P2Review(EscalationReview):
     """Visit awarded on very thin evidence."""
 
-    verdict: Literal["keep", "drop", "merge_neighbor"] = Field(
-        description="keep: a real appearance, keep the visit. drop: noise, delete the visit. merge_neighbor: part of "
-        "a neighboring visit of the same cat, merge them."
+    verdict: Literal["confirm", "drop", "reassign"] = Field(
+        description="confirm: a real appearance, keep the visit. drop: noise, delete the visit. reassign: another "
+        "cat's visit (say which in chosen_cat_id)."
     )
+    chosen_cat_id: int | None = Field(default=None, description="Required when verdict is reassign.")
 
 
 class P3Review(EscalationReview):
     """Visit got its second-choice cat."""
 
-    verdict: Literal["confirm_reassign", "restore_wanted", "mark_unknown"] = Field(
-        description="confirm_reassign: the second-choice cat is right. restore_wanted: this visit really is the "
-        "first-choice cat (the overlapping visit is the wrong one). mark_unknown: cannot tell, leave unassigned."
+    verdict: Literal["confirm", "reassign", "drop"] = Field(
+        description="confirm: the assigned cat is right for this visit. reassign: another profile cat is right "
+        "(say which in chosen_cat_id). drop: not a cat at all, delete the visit."
     )
+    chosen_cat_id: int | None = Field(default=None, description="Required when verdict is reassign.")
 
 
 class P4Review(EscalationReview):
@@ -133,10 +136,10 @@ class P4Review(EscalationReview):
 class P5Review(EscalationReview):
     """Visit verdict rests on weak, patchy sightings."""
 
-    verdict: Literal["keep", "drop", "trim_core", "reassign"] = Field(
-        description="keep: a real visit, keep it. drop: noise padded with guesses, delete it. trim_core: keep only "
-        "the high-certainty core (flagged for a human; rows kept as-is). reassign: another cat (say which in "
-        "chosen_cat_id)."
+    verdict: Literal["keep", "drop", "reassign"] = Field(
+        description="keep: the identity ruling favors the labeled cat (cues quoted) AND a real visit — confirm the "
+        "original detection. drop: noise padded with guesses, delete the labels. reassign: a different cat wearing "
+        "the wrong label (say which in chosen_cat_id)."
     )
     chosen_cat_id: int | None = Field(default=None, description="Required when verdict is reassign.")
 
@@ -144,10 +147,12 @@ class P5Review(EscalationReview):
 class P6Review(EscalationReview):
     """Two back-to-back visits that might be one."""
 
-    verdict: Literal["merge", "keep_separate"] = Field(
+    verdict: Literal["merge", "keep_separate", "different_cats"] = Field(
         description="merge: the cat never left, join the two visits into one. keep_separate: the cat left and came "
-        "back, two real visits."
+        "back, two real visits of the same cat. different_cats: the visits are different cats — the new visit is "
+        "actually chosen_cat_id (the previous visit keeps its label)."
     )
+    chosen_cat_id: int | None = Field(default=None, description="Required when verdict is different_cats.")
 
 
 class P7Review(EscalationReview):
@@ -162,9 +167,17 @@ class P7Review(EscalationReview):
 class P8Review(EscalationReview):
     """Tracker label disagrees with the period vote."""
 
-    verdict: Literal["relabel_to_vote", "keep_tracked", "mark_unknown"] = Field(
+    verdict: Literal["relabel_to_vote", "keep_tracked", "split_mixed"] = Field(
         description="relabel_to_vote: the voted cat is right for the whole visit, relabel it. keep_tracked: the "
-        "tracker's cat is right, the vote was wrong. mark_unknown: cannot tell, leave unassigned."
+        "tracker's cat is right, the vote was wrong. split_mixed: the visit mixes two cats — split at cut_time; "
+        "frames up to the cut keep the tracked label, frames after take chosen_cat_id as a new visit."
+    )
+    chosen_cat_id: int | None = Field(
+        default=None, description="Cat for frames after the cut. Required when verdict is split_mixed."
+    )
+    cut_time: str | None = Field(
+        default=None,
+        description="ISO timestamp of the last frame of the first cat. Required when verdict is split_mixed.",
     )
 
 

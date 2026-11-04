@@ -1,10 +1,10 @@
 # Agentic Computer Vision for Real-Time Detection with Memory
 
-**Hackathon project report** · Meta Global AI Developer Hackathon 2026 · Indie Developer track ·
-Problem statement: *Build for Your World*
+**Author: Muyang Lu** <muyang0089@gmail.com> · **Hackathon project report** · Meta Global AI
+Developer Hackathon 2026 · Indie Developer track · Problem statement: *Build for Your World*
 
-Team: Terry, Muyang · Report date: 2026-11-02 · Code state: commit `a65b9f7`; all measurements
-come from replay runs on 2026-11-02
+Team: Muyang Lu, Terry Li <li.terry710@gmail.com> · Report date: 2026-11-04 · Code state:
+commit `e0e8b35`; measurements come from replay runs between 2026-11-02 and 2026-11-04
 
 > **One line:** a $100 Raspberry Pi camera that watches our two cats all day with a tiny
 > detector, asks Meta's **Muse Spark** for help *only* when it is unsure, writes the verified
@@ -21,7 +21,7 @@ come from replay runs on 2026-11-02
 5. [System architecture](#5-system-architecture)
 6. [What we built during the hackathon](#6-what-we-built-during-the-hackathon)
 7. [Module deep dives](#7-module-deep-dives)
-8. [How we use Meta's models](#8-how-we-use-metas-models)
+8. [How we use Muse](#8-how-we-use-muse)
 9. [Results: measured, not promised](#9-results-measured-not-promised)
 10. [Cost analysis](#10-cost-analysis)
 11. [Engineering quality](#11-engineering-quality)
@@ -410,9 +410,41 @@ floor with a large white ridged rug and a light gray couch along the window wall
 
 ---
 
-## 8. How we use Meta's models
+## 8. How we use Muse
 
-Meta models carry every reasoning step in the project, not a single API call:
+Muse is not one dependency in this project; it is the toolchain that built it and the
+model family that runs it. We split work across Muse models by reasoning depth and
+latency, and we build the system itself inside Muse Code.
+
+### 8.1 Muse Code is our development environment
+
+- **Project development.** The pipeline, correctors, supervisor agent, memory system and
+  tests were implemented in Muse Code, driven by small, verified steps (each change
+  landed with a focused failing test first, then the fix).
+- **Brainstorming and design.** Architecture exploration happened conversationally with
+  Muse before any code: the escalation taxonomy, the verdict contracts, and the
+  spatial-temporal memory design all started as argued design notes.
+- **Design docs and report writing.** Specs, runbooks, session reports and this report
+  were drafted and revised in Muse Code alongside the code they describe, so
+  documentation cannot drift far from the implementation.
+- **Voice input.** Muse Code's voice function let us speak design and thoughts out
+  loud and have them land as structured documentation — the fastest way we found to
+  capture a half-formed idea before it evaporated.
+- **Workflow skills.** Complex, multi-file work was executed as Muse workflow
+  skills with focused subagents: e.g. the escalation system (trigger → prompt → strict
+  schema → verdict applier, across six files) was implemented as one orchestrated task
+  rather than a sequence of one-off prompts.
+
+### 8.2 One family, four tiers of work
+
+| Muse model | Role in this project | Why this tier |
+| --- | --- | --- |
+| **Muse Wonder** | High-level design: the escalation taxonomy (14 kinds of tracker doubt, their prompts and verdict contracts) and the spatial-temporal memory architecture | Deepest reasoning, used rarely and early, where a wrong design costs the most |
+| **Muse Spark 1.3** | Main workload. Implementation in Muse Code (agentic tools, workflow skills, experiments, evaluation harnesses); at runtime it is the supervisor agent reviewing escalations, the activity labeler, and the memory store/promote/bootstrap engine | Strong multi-turn vision + tool calling at everyday cost; strict `json_schema` verdicts; cached-token pricing |
+| **Muse SAM 3.1** | Offline ground-truth labeling: segmentation-first boxes for training/fine-tuning the edge detector and for the self-learning eval loop (§9.6) | Mask-true geometry no VLM box regression matches (F1 0.794 vs 0.612 head-to-head) |
+| **Muse Glimmer** | Edge deployment: the track corrector and camera server run on the camera device; a small locally-deployed Muse model can be invoked on-device for 100% data privacy — footage never leaves home — with super-fast response for interactive checks | Latency and privacy are hard requirements at the edge; deep reasoning stays in the cloud tier |
+
+Runtime usage in one table:
 
 | Where | Meta model | What it does | Status |
 | --- | --- | --- | --- |
@@ -421,8 +453,9 @@ Meta models carry every reasoning step in the project, not a single API call:
 | Activity labeler | **Muse Spark 1.3** (vision) | Labels each visit's key frames with activity, appearance and background | Built, measured |
 | Memory store / promote / bootstrap | **Muse Spark 1.3** | Judges contradictions; compresses children into parent summaries under word caps | Built, measured |
 | Interactive agent (CLI) | **Muse Spark 1.3** | Chat over live camera, history and tracker ("Is any cat on camera right now?"); custom labels by chat | Built |
-| Training masks | SAM 3.1 | Masks/boxes for edge retraining | Planned |
-| Voice questions | Muse Voice Transcribe | "When did Qbo last eat?" by voice | Planned |
+| Ground-truth labeling | **SAM 3.1** (+ Spark classify) | Two-stage labels for edge retraining and self-learning eval (§9.6) | Built, measured |
+| Edge inference (camera device) | **Muse Glimmer** | On-device correctors + camera server; local small-model invocation for 100% data privacy | Built, measured locally |
+| Voice questions | Muse Voice Transcribe | "When did Qbo last eat?" by voice — same voice path we used to dictate design docs | Planned |
 | Daily "cat diary" | Muse Image / Muse Wonder | Creative recap of each cat's day | Planned |
 | Private, local reasoning | Muse Spark Open (`muse-spark-open-1026`) | Keep home footage on partner or own hardware | Planned |
 
@@ -430,7 +463,7 @@ Meta models carry every reasoning step in the project, not a single API call:
 `function_call_output`), multi-turn chaining with `previous_response_id`, strict
 `json_schema` structured output, including schemas built at runtime from the union of
 scenario verdicts, and cached input pricing (28.5k of 58.8k input tokens were cached in one
-merged call).
+merged call; 52% of all inputs across the fleet, §9.5).
 
 **What we learned about the API** (from a controlled probe on Oct 31): chained turns that
 carry images sometimes return `400 referenced response not found or expired`. We ran a
@@ -517,6 +550,75 @@ Across runs, by scenario:
   visits happen in the afternoon."*
 - **Memory cost** for the latest session was about **$0.14** across 18 traced LLM calls
   (activity labels, stores, promotions).
+
+### 9.5 Fleet-wide invoke statistics (124 agent runs, 1,058 tool calls)
+
+The invoke tables (`agent_invoke` / `tool_invoke` in the project database) now hold every
+agent run from Oct 27 to Nov 3, so the design above can be measured as a fleet, not a demo:
+
+| Metric | Value |
+| --- | --- |
+| Agent runs (all Muse Spark 1.3, all answered) | 124 (93 validation, 31 untagged) |
+| Tool calls across 26 distinct tools | 1,058 |
+| Total cost | **$9.22** ($6.56 validation, $2.66 untagged) |
+| Tokens in / out / cached | 9,746,914 / 625,428 / 5,108,850 (52% of inputs cached) |
+| Median run | 4 turns, 8 tools, 60 s wall (57 s LLM, 2.6 s tools) |
+
+`images__get_image` dominates (670 calls, 63%), followed by
+`tracking__get_period_detail` (124) and `images__list_images` (60). Median latencies:
+image fetch 0.7 s, period detail 2.8 s, everything local sub-second.
+
+Tool errors are 104/1,058 (9.8%), touching 38% of runs — and 95 of them are one bug:
+`ModuleNotFoundError: No module named 'PIL'` on the image server. The split is decisive:
+**91 of 95 failures carried a crop box, and 0 of 575 successful fetches did** — every
+crop failed, every plain fetch succeeded. The remaining errors are 6 transient MCP
+session losses and 3 rolling-buffer races. The prompt now forbids crop retries and
+ignores stale period detail, and transient API errors (429/5xx/timeouts) retry with
+backoff in the labeling tools (a 108-image timeout wave was the costliest single failure).
+
+Skill usage is thin: 4 `skill__*` calls total (`check-live-detections` ×3,
+`validate-cat-identity` ×1), all in untagged runs, all successful, all sub-2 ms — and
+zero in the 93 validation runs, an adoption gap we now track.
+
+### 9.6 Ground truth, self-learning, and the label-replay loop
+
+To fine-tune the edge detector and to evaluate anything honestly, we need ground truth
+that is not the detector's own output. Three hourly label sets now exist, built two ways
+and compared head-to-head on the same 1,318-frame window (2026-10-28 16:33–16:40):
+
+| | SAM 3.1 pipeline | Spark 1.3 single-call |
+| --- | --- | --- |
+| Pipeline | SAM proposes regions → Spark classifies | One VLM call detects + identifies |
+| Wall (10 workers) | 66 min (3.0 s/img) | 99 min (4.5 s/img, timeout-inflated) |
+| Cost (Standard rates) | **$24.65 ($0.0187/img)** | ~$25.61 ($0.0195/img) |
+| Coverage | 1318/1318 (100%) | 1210/1318 (108 timeouts, since fixed with retry) |
+| F1 @ IoU 0.5 | **0.794** (P 0.936 / R 0.689) | 0.612 (P 0.656 / R 0.574) |
+| Qb / Qbo recall | 0.977 / 0.380 | 0.821 / 0.310 |
+
+SAM's errors are misses, not hallucinations (117 FP vs 766 FN); Spark's are both
+(743 FP, 1,050 FN). Both models systematically lose Qbo — the sleeping long-haired cat —
+which is now the top recall target. One caveat: the eval's ground truth is validated
+tracking output that itself ingested SAM labels, so SAM's precision is partially
+circular; its recall gap is not.
+
+The loop closes with a labels-mode runner: any YOLO label folder can be replayed as
+raw camera detections through the correctors and supervisor validation, and the
+validated result is exported back as ground-truth YOLO files (real sightings only —
+interpolated guesses never become ground truth). Three hours are through it:
+
+| Window | Frames | Periods → validated | Escalations → verdict highlights |
+| --- | --- | --- | --- |
+| 10-28 16:33 (dense, both cats) | 1,318 | 2 → 2 | 1 (routine spot-check); exported 2,465 GT boxes |
+| 10-26 02:00 (sparse, night) | 5,320 | 20 → 13 | 38 → merges, `different_cats` relabels, split confirms, drops |
+| 10-25 04:19 (mixed) | 3,234 | 16 → merged/dropped | 43 → 4 split confirms, 2 merges, 6 drops |
+
+The verdict set keeps learning from review: a confirmed T6 split now deletes its whole
+interpolated bridge (the guesses belong to neither cat), a confirmed P6/P7 merge
+re-interpolates the bridge so the visit reads as one track, P5 reviews always carry
+both cats' profiles with exactly three actions (drop / confirm / relabel), and a P6
+`different_cats` verdict applies the label revision to the new visit. On the 04:19 hour,
+993 rows were honestly left unlabeled (`mark_unknown`) when image evidence was
+unreachable — the loop records that gap instead of guessing.
 
 ---
 
@@ -733,6 +835,15 @@ python -m agent.main --view-id 3 --start 2026-10-28-16-33 --end 2026-10-28-16-59
 # chat with the agent over camera, history and tracker
 cd agent && python -m supervisor_agent "Is any cat on camera right now?"
 
+# label ground truth with SAM 3.1 (+ Spark classification), then replay labels
+# through the correctors + supervisor validation and export validated ground truth
+python image_server/grounding_truth/label_with_sam.py --start 2026-10-28-16-33 --end 2026-10-28-16-40
+python -m agent.replay_labels --view-id 3 \
+  --hour-dir image_server/retrieved_images/2026-10-28-16 --labels muse_labels --validate
+
+# fleet statistics (agent/tool invokes + skill usage)
+# -> documents/agent-tool-invoke-report-20261103.md (regenerate from aura_cat)
+
 # tests (offline)
 python -m pytest -q
 ```
@@ -748,7 +859,7 @@ memory; without one, memory falls back to an offline stub.
 | Criterion (weight) | Where this report answers it |
 | --- | --- |
 | **Impact (30%)** | §2 the problem, firsthand · §3 cat health evidence and 53M households · §14 generalization · §15 responsible design |
-| **Use of Meta AI tooling (25%)** | §8: Muse Spark as a multi-turn vision agent with MCP tools, runtime-built strict schemas, joint multi-case review, vision activity labeling and memory compression; API probe findings |
+| **Use of Meta AI tooling (25%)** | §8: Muse Code as development environment (voice input, workflow skills); Wonder for high-level design, Spark 1.3 as multi-turn vision agent with MCP tools, runtime-built strict schemas, joint multi-case review, vision activity labeling and memory compression; SAM 3.1 for ground-truth labeling; Glimmer at the edge; API probe findings |
 | **Demo (25%)** | §17 script built from real artifacts · §9 measured runs · deterministic replay anyone can rerun (§18) |
 | **Technical depth (20%)** | §5–7 architecture · §11 tests, determinism, traces · §12 honest failure analysis |
 | Bonus: Best Agentic Use-Case | Doubt-driven escalation, tool choice under image budgets, merged reasoning, verdicts that change data |

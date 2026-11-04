@@ -14,12 +14,21 @@ guessing.
 A decided merge also bridges the gap: one interpolated row per whole second
 between the two boundary detections, marked ``gap_filled`` (``conf`` 0 like
 tracker-interpolated rows) so the merged visit reads as one track.
+
+A real T7 gap (``cut_at_gap_start`` / ``shorten_gap``) also splits the
+visit: rows after the gap move to a freshly minted period id, so the
+returning cat starts a new visit instead of leaving a hole. A mixed P8
+visit (``split_mixed``) splits the same way at the reviewer's cut time,
+with the second half relabeled to ``chosen_cat_id``. Renumbering ops
+never move a row another op already moved, so an earlier split wins over
+a later merge for its rows.
 """
 
 from __future__ import annotations
 
 import bisect
 import datetime
+import itertools
 import json
 import sqlite3
 from pathlib import Path
@@ -168,12 +177,21 @@ def _canonical_merge_targets(ops: list[dict]) -> dict[int, int]:
     return {pid: find(pid) for pid in merged}
 
 
-def _row_time(row: dict) -> datetime.datetime | None:
-    """Parsed row timestamp as naive local time (None when unparseable)."""
-    ts = _parse_ts(row.get("create_time"))
+def _as_naive(ts: datetime.datetime | None) -> datetime.datetime | None:
+    """Drop tzinfo so mixed naive/aware stamps stay comparable (None passes through)."""
     if ts is not None and ts.tzinfo is not None:
         ts = ts.replace(tzinfo=None)
     return ts
+
+
+def _row_time(row: dict) -> datetime.datetime | None:
+    """Parsed row timestamp as naive local time (None when unparseable)."""
+    return _as_naive(_parse_ts(row.get("create_time")))
+
+
+def _metric_time(value) -> datetime.datetime | None:
+    """Parsed escalation-metric timestamp as naive local time (None when unparseable)."""
+    return _as_naive(_parse_ts(value))
 
 
 def _boxed(row: dict) -> bool:
@@ -274,6 +292,69 @@ def _fill_merged_gaps(rows: list[dict], orig_pids: list, ops: list[dict], merge_
     return rows
 
 
+def _confirm_split_spans(ops: list[dict]) -> list[tuple]:
+    """(cat_id, pre, post, fallback_times) for each T6 ``confirm_split`` op.
+
+    ``pre``/``post`` bound the retracted bridge; ``fallback_times`` are the
+    sampled ``retracted_frames`` stamps, used only when ``pre_time`` is missing.
+    """
+    spans = []
+    for op in ops:
+        esc = op.get("escalation") or {}
+        review = op.get("review") or {}
+        if esc.get("code") != "T6" or review.get("verdict") != "confirm_split":
+            continue
+        post = _metric_time(esc.get("time"))
+        if post is None:
+            continue
+        metrics = esc.get("metrics") or {}
+        pre = _metric_time(metrics.get("pre_time"))
+        fallback = set()
+        for frame in metrics.get("retracted_frames") or []:
+            if isinstance(frame, dict):
+                ts = _metric_time(frame.get("t"))
+                if ts is not None:
+                    fallback.add(ts)
+        spans.append((esc.get("cat_id"), pre, post, fallback))
+    return spans
+
+
+def _is_split_bridge_row(row: dict, spans: list[tuple]) -> bool:
+    """True when the row is an interpolated guess from a confirmed-split bridge.
+
+    Tombstones (already retracted upstream) and any live interpolated rows in
+    the jump span both go: the interpolation was judged unreasonable, so the
+    guesses must not survive under either side's cat.
+    """
+    if not row.get("deleted") and row.get("orig_cat_id") is not None:
+        return False
+    ts = _row_time(row)
+    if ts is None:
+        return False
+    for cat, pre, post, fallback in spans:
+        if cat is not None and row.get("cat_id") != cat:
+            continue
+        if pre is not None:
+            if pre < ts <= post:
+                return True
+        elif ts in fallback:
+            return True
+    return False
+
+
+def _drop_confirmed_split_bridges(pairs: list[tuple], ops: list[dict]) -> list[tuple]:
+    """Drop the interpolated bridge rows of every T6 ``confirm_split``.
+
+    Runs as a separate pass because the main loop skips tombstones before
+    handlers see them. Operates on (row, orig_period_id) pairs to keep the
+    caller's alignment intact.
+    """
+    spans = _confirm_split_spans(ops)
+    if not spans:
+        return pairs
+    return [(row, pid) for row, pid in pairs if not _is_split_bridge_row(row, spans)]
+
+
 def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool = True) -> list[dict]:
     """Return validated rows: copies of ``revised_rows`` with verdict ops applied.
 
@@ -285,6 +366,8 @@ def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool 
     orig_cats = [r.get("cat_id") for r in revised_rows]
     orig_pids = [r.get("period_id") for r in revised_rows]
     merge_targets = _canonical_merge_targets(ops)
+    # Fresh period ids for T7 splits: above every id the tracker minted.
+    split_ids = itertools.count(max([p for p in orig_pids if isinstance(p, int)], default=0) + 1)
     for op in ops:
         esc = op.get("escalation") or {}
         review = op.get("review") or {}
@@ -294,6 +377,10 @@ def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool 
         name = esc.get("name") or esc.get("code") or "?"
         when = _parse_ts(esc.get("time"))
         handler = _HANDLERS.get(esc.get("code"), _noop)
+        if (esc.get("code") == "T7" and verdict in ("cut_at_gap_start", "shorten_gap")) or (
+            esc.get("code") == "P8" and verdict == "split_mixed"
+        ):
+            esc = {**esc, "metrics": {**(esc.get("metrics") or {}), "split_period_id": next(split_ids)}}
         spec = _MERGE_VERDICTS.get(esc.get("code"))
         if spec is not None and verdict == spec[0] and isinstance(esc.get("period_id"), int):
             resolved = merge_targets.get(esc["period_id"])
@@ -304,6 +391,7 @@ def apply_ops(revised_rows: list[dict], ops: list[dict], fill_merged_gaps: bool 
                 continue
             handler(row, esc, review, verdict, name, when, snap_cat, snap_pid)
     kept = [(row, pid) for row, pid in zip(rows, orig_pids) if not row.pop("_drop", False)]
+    kept = _drop_confirmed_split_bridges(kept, ops)
     rows = [row for row, _ in kept]
     if fill_merged_gaps:
         rows = _fill_merged_gaps(rows, [pid for _, pid in kept], ops, merge_targets)
@@ -392,7 +480,7 @@ def _t5(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
 def _t6(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     m = esc.get("metrics") or {}
     post_box = m.get("post_box")
-    if verdict == "merge_visits" and snap_pid == esc.get("period_id"):
+    if verdict == "merge_visits" and snap_pid == esc.get("period_id") and row.get("period_id") == snap_pid:
         row["period_id"] = m.get("old_period_id", row["period_id"])
         _touch(row, name, verdict)
     elif verdict == "drop_box" and _frame_match(row, when, {esc.get("cat_id")}, post_box, snap_cat):
@@ -412,6 +500,20 @@ def _t7(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
         cut = _parse_ts(review.get("cut_time"))
         if cut is not None and _in_span(row, cut, when):
             row["_drop"] = True
+    if verdict in ("cut_at_gap_start", "shorten_gap"):
+        # Real gap: the visit splits — rows after the gap resume under a
+        # fresh period id instead of leaving a hole in the old visit.
+        split_pid = m.get("split_period_id")
+        ts = _row_time(row)
+        if (
+            isinstance(split_pid, int)
+            and isinstance(esc.get("period_id"), int)
+            and snap_pid == esc["period_id"]
+            and ts is not None
+            and ts > when
+        ):
+            row["period_id"] = split_pid
+            _touch(row, name, verdict)
 
 
 def _period_match(row: dict, period_id, snap_pid) -> bool:
@@ -432,21 +534,21 @@ def _p2(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     pid = esc.get("period_id")
     if verdict == "drop" and _period_match(row, pid, snap_pid):
         row["_drop"] = True
-    elif verdict == "keep" and _period_match(row, pid, snap_pid):
+    elif verdict == "reassign" and _period_match(row, pid, snap_pid):
+        row["cat_id"] = review.get("chosen_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    # merge_neighbor: neighbor id unknown; keep rows.
+    elif verdict == "confirm" and _period_match(row, pid, snap_pid):
+        _touch(row, name, verdict)
 
 
 def _p3(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     pid = esc.get("period_id")
-    m = esc.get("metrics") or {}
-    if verdict == "restore_wanted" and _period_match(row, pid, snap_pid):
-        row["cat_id"] = m.get("wanted_cat_id", row["cat_id"])
+    if verdict == "drop" and _period_match(row, pid, snap_pid):
+        row["_drop"] = True
+    elif verdict == "reassign" and _period_match(row, pid, snap_pid):
+        row["cat_id"] = review.get("chosen_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    elif verdict == "mark_unknown" and _period_match(row, pid, snap_pid):
-        row["cat_id"] = None
-        _touch(row, name, verdict)
-    elif verdict == "confirm_reassign" and _period_match(row, pid, snap_pid):
+    elif verdict == "confirm" and _period_match(row, pid, snap_pid):
         _touch(row, name, verdict)
 
 
@@ -470,13 +572,18 @@ def _p5(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
         _touch(row, name, verdict)
     elif verdict == "keep" and _period_match(row, pid, snap_pid):
         _touch(row, name, verdict)
-    # trim_core: kept span lives in free text; keep rows.
 
 
 def _p6_p7(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     m = esc.get("metrics") or {}
-    if verdict == "merge" and _period_match(row, esc.get("period_id"), snap_pid):
+    # Skip rows a T7 split already moved: the merge judged the original
+    # visit, not the new post-gap visit.
+    if verdict == "merge" and _period_match(row, esc.get("period_id"), snap_pid) and row.get("period_id") == snap_pid:
         row["period_id"] = m.get("prev_period_id", row["period_id"])
+        _touch(row, name, verdict)
+    elif verdict == "different_cats" and esc.get("code") == "P6" and _period_match(row, esc.get("period_id"), snap_pid):
+        # The new visit wears the wrong label; the previous (established) visit keeps its own.
+        row["cat_id"] = review.get("chosen_cat_id", row["cat_id"])
         _touch(row, name, verdict)
 
 
@@ -486,10 +593,21 @@ def _p8(row, esc, review, verdict, name, when, snap_cat, snap_pid) -> None:
     if verdict == "relabel_to_vote" and _period_match(row, pid, snap_pid):
         row["cat_id"] = m.get("voted_cat_id", row["cat_id"])
         _touch(row, name, verdict)
-    elif verdict == "mark_unknown" and _period_match(row, pid, snap_pid):
-        row["cat_id"] = None
-        _touch(row, name, verdict)
     elif verdict == "keep_tracked" and _period_match(row, pid, snap_pid):
+        _touch(row, name, verdict)
+    elif verdict == "split_mixed" and _period_match(row, pid, snap_pid):
+        # Mixed visit: frames up to the cut keep the tracked label; frames
+        # after take chosen_cat_id under a fresh period id (one cat per visit).
+        cut = _parse_ts(review.get("cut_time"))
+        chosen = review.get("chosen_cat_id")
+        split_pid = m.get("split_period_id")
+        if cut is None or not isinstance(chosen, int) or not isinstance(split_pid, int):
+            _touch(row, name, verdict, note="split_mixed needs cut_time + chosen_cat_id; rows kept as-is")
+            return
+        ts = _row_time(row)
+        if ts is not None and ts > cut:
+            row["cat_id"] = chosen
+            row["period_id"] = split_pid
         _touch(row, name, verdict)
 
 

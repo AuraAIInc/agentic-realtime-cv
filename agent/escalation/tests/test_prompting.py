@@ -164,7 +164,8 @@ CASES = {
             },
         },
         ["visit 4", "2.1", "3 original frames", "vote points", "x0.2 penalty",
-         "Box [10.0, 20.0, 100.0, 200.0]", "period_id 4", "real sighting"],
+         "Box [10.0, 20.0, 100.0, 200.0]", "period_id 4", "real sighting",
+         "reassign to another cat"],
     ),
     "P3": (
         {
@@ -281,7 +282,8 @@ CASES = {
             },
         },
         ["visit 4", "labeled cat 26", "vote awards it to cat 25", "cat 25: 9.0 pts (772 frames)",
-         "stole 772 frames", "vote points", "Box [10.0, 20.0, 100.0, 200.0]", "period_id 4"],
+         "stole 772 frames", "vote points", "Box [10.0, 20.0, 100.0, 200.0]", "period_id 4",
+         "split the mixed visit", "judge only the cat inside the listed box"],
     ),
     "H1": (
         {
@@ -492,6 +494,44 @@ def test_build_prompt_inserts_cats_before_resources():
     assert "- cat 25 (Qb)" in prompt
     prompt = build_prompt(_esc("T2", cat_id=25, metrics={"original_cat_id": 26, "rule": "distance"}), profiles={})
     assert "Cats:" not in prompt
+
+
+def test_p5_carries_both_cat_profiles_and_three_actions():
+    profiles = {25: {"name": "Qb", "summary": "White short-hair."}, 26: {"name": "Qbo", "summary": "Cream long-hair."}}
+    prompt = build_prompt(
+        _esc(
+            "P5",
+            scope="period",
+            end_time=T0,
+            cat_id=26,
+            period_id=1,
+            metrics={"detect_conf": 0.54, "detect_rate": 0.14, "runner_up_cat_id": 25},
+        ),
+        profiles=profiles,
+    )
+    assert prompt.index("Cats:\n- cat 26 (Qbo)") < prompt.index("\nResources")
+    assert "- cat 25 (Qb)" in prompt
+    assert "1) IDENTITY" in prompt and "QUOTE the cues" in prompt
+    assert "consistent sightings prove a real visit, not the right label" in prompt
+    assert "change the label to the right cat (say which)" in prompt
+
+
+def test_p6_offers_different_cats_with_all_profiles():
+    profiles = {25: {"name": "Qb", "summary": "White short-hair."}, 26: {"name": "Qbo", "summary": "Cream long-hair."}}
+    prompt = build_prompt(
+        _esc(
+            "P6",
+            scope="period",
+            end_time=T0,
+            cat_id=25,
+            period_id=4,
+            metrics={"prev_period_id": 3, "gap_seconds": 39.2, "distance_px": 152.0},
+        ),
+        profiles=profiles,
+    )
+    assert "or are they different cats?" in prompt
+    assert "or different cats (say which cat the new visit is)" in prompt
+    assert "- cat 25 (Qb)" in prompt and "- cat 26 (Qbo)" in prompt
 
 
 def test_unknown_code_falls_back():
