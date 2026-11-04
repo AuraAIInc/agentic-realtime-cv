@@ -49,7 +49,7 @@ from collections import Counter
 from pathlib import Path
 
 from agent.escalation import Escalation, EscalationConfig, emit as emit_escalation
-from agent.tracking import FileSink, PeriodCorrector, RunStore, TrackCorrector, plot_detection_charts, plot_validated_chart, resolve_cat_ids
+from agent.tracking import FileSink, PeriodCorrector, RunStore, TrackCorrector, plot_detection_charts, plot_validated_chart, resolve_cat_ids, resolve_view_size
 from agent.tracking.decoys import load_decoys, match_decoy
 from agent.tracking.process_viz import init_frame_dir, render_process_frame, stitch_mp4
 from agent.tracking.report import REPORT_FILE, write_session_report
@@ -470,6 +470,7 @@ class TrackingRun:
         heartbeat_seconds: float | None = None,  # None: from ESCALATION_HEARTBEAT_SECONDS (0 disables)
         heartbeat_at_end: bool | None = None,  # None: from ESCALATION_HEARTBEAT_AT_END
         decoys: list | None = None,  # None: zones.yaml kind=decoy for this view; [] disables
+        img_size: tuple | None = None,  # None: resolve the view's frame size from zones.yaml
     ):
         self.started_at = datetime.datetime.now()
         self._t0 = time.perf_counter()
@@ -483,7 +484,13 @@ class TrackingRun:
         self.store = store
         self.sink = FileSink(store)
         self._esc_seq = itertools.count(1)  # run-wide escalation numbering, shared by both correctors
-        self.track = TrackCorrector(cat_ids=self.cat_ids, escalation_seq=self._esc_seq)
+        self.img_size = tuple(img_size) if img_size is not None else resolve_view_size(self.view_id)
+        self.track = TrackCorrector(
+            cat_ids=self.cat_ids,
+            escalation_seq=self._esc_seq,
+            img_width=self.img_size[0],
+            img_height=self.img_size[1],
+        )
         self.period = PeriodCorrector(cat_ids=self.cat_ids, escalation_seq=self._esc_seq)
         self.min_conf = min_conf
         self.decoys = load_decoys(self.view_id) if decoys is None else list(decoys)
@@ -1109,6 +1116,7 @@ class TrackingRun:
             "view_id": self.view_id,
             "cat_ids": self.cat_ids,
             "cat_names": self.id_to_name,
+            "img_size": list(self.img_size),
             "window": {
                 "start": self.start.isoformat(timespec="minutes"),
                 "end": end_minute.isoformat(timespec="minutes"),

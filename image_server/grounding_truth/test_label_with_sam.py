@@ -162,9 +162,10 @@ def test_payload_requests_compact_masks():
 
 
 def test_cost_math():
-    assert label_with_sam.estimate_cost_usd(0) == 0.0
-    assert label_with_sam.estimate_cost_usd(1000) == 2.5
-    assert label_with_sam.estimate_cost_usd(1000, 1_000_000, 1_000_000) == 2.5 + 1.25 + 4.25
+    std = {"input": 1.25, "output": 4.25}
+    assert label_with_sam.estimate_cost_usd(0, 0, 0, std) == 0.0
+    assert label_with_sam.estimate_cost_usd(1000, 0, 0, std) == 2.5
+    assert label_with_sam.estimate_cost_usd(1000, 1_000_000, 1_000_000, std) == 2.5 + 1.25 + 4.25
 
 
 def test_classify_defaults_to_contributor():
@@ -178,6 +179,18 @@ def test_classify_standard_flag_uses_regular_spark():
     assert model == "muse-spark-1.3"
     assert pricing == {"input": 1.25, "output": 4.25}
     assert label_with_sam.standard_spark_pricing() == {"input": 1.25, "output": 4.25}
+
+
+def test_missing_model_pricing_logs_and_continues(tmp_path, caplog):
+    cfg = tmp_path / "models.json"
+    cfg.write_text(json.dumps({"base_url": "https://x", "roles": {"agent": {"model": "muse-spark-1.3"}},
+                               "pricing_usd_per_1m_tokens": {}}))
+    model, _, _, pricing = label_with_sam.load_spark_settings(str(cfg))
+    assert model == "muse-spark-1.3-contributor" and pricing is None
+    assert label_with_sam.standard_spark_pricing(str(cfg)) is None
+    assert "no input/output entry for muse-spark-1.3-contributor" in caplog.text
+    assert label_with_sam.estimate_cost_usd(10, 100, 100, None) is None
+    assert label_with_sam.fmt_usd(None) == "n/a"
 
 
 def test_contributor_report_shows_standard_equivalent(tmp_path):

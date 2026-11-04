@@ -471,10 +471,16 @@ def _header_lines(meta: dict, run_dir: Path) -> list[str]:
         except (ValueError, TypeError):
             elapsed = None
     started_note = " (~estimated from file times)" if meta.get("_started_estimated") else ""
+    img_size = meta.get("img_size")
+    frame_note = (
+        f" · frame: {img_size[0]}x{img_size[1]} (detection coords)"
+        if isinstance(img_size, (list, tuple)) and len(img_size) == 2
+        else ""
+    )
     return [
         f"# Session report — {meta.get('run_name', run_dir.name)}",
         "",
-        f"- mode: {meta.get('mode', 'n/a')} · view {meta.get('view_id', 'n/a')} · cats: {who}",
+        f"- mode: {meta.get('mode', 'n/a')} · view {meta.get('view_id', 'n/a')} · cats: {who}{frame_note}",
         f"- window: {window.get('start', '?')} → {window.get('end', '?')} (rule: {window.get('rule', 'n/a')})",
         f"- started: {_fmt_ts(meta.get('started_at') or meta.get('created_at'))}{started_note} · "
         f"finished: {_fmt_ts(meta.get('finished_at') or meta.get('created_at'))} · "

@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from agent.escalation import Escalation
-from agent.tracking.cat_config import resolve_cat_ids
-from agent.tracking.charts import plot_detection_charts, plot_validated_chart
+from agent.tracking.cat_config import resolve_cat_ids, resolve_view_size
+from agent.tracking.charts import plot_detection_charts, plot_strip_chart, plot_validated_chart
 from agent.tracking.store import DEFAULT_RUNS_DIR, FileSink, RunStore
 
 T0 = datetime.datetime(2026, 10, 30, 12, 0, 0)
@@ -251,6 +251,26 @@ def test_charts_handle_empty_input(tmp_path):
     assert orig.stat().st_size > 0 and rev.stat().st_size > 0
 
 
+def test_plot_strip_chart_writes_custom_path_and_title(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    real_subplots = plt.subplots
+    axes = []
+
+    def spy_subplots(*a, **k):
+        fig, ax = real_subplots(*a, **k)
+        axes.append(ax)
+        return fig, ax
+
+    monkeypatch.setattr(plt, "subplots", spy_subplots)
+    out = tmp_path / "custom" / "gt.png"
+    path = plot_strip_chart(
+        _synth_rows(10, [25, 26]), out, "Ground truth detections", [25, 26], cat_names={25: "Qb", 26: "Qbo"}
+    )
+    assert path == out and out.stat().st_size > 0
+    assert axes[0].get_title() == "Ground truth detections"
+
+
 def test_resolve_cat_ids_real_view():
     cat_ids, id_to_name = resolve_cat_ids(3)
     assert cat_ids == [25, 26]
@@ -262,3 +282,21 @@ def test_resolve_cat_ids_real_view():
 def test_resolve_cat_ids_unknown_view():
     with pytest.raises(ValueError, match="known views"):
         resolve_cat_ids(999)
+
+
+def test_resolve_view_size_real_view():
+    assert resolve_view_size(3) == (800, 600)
+
+
+def test_resolve_view_size_falls_back_to_legacy(tmp_path):
+    assert resolve_view_size(3, config_dir=tmp_path) == (640, 480)  # no zones.yaml
+    (tmp_path / "zones.yaml").write_text("version: 1\nviews: {}\n", encoding="utf-8")
+    assert resolve_view_size(999, config_dir=tmp_path) == (640, 480)  # view missing
+    (tmp_path / "zones.yaml").write_text(
+        "version: 1\nviews:\n  '3':\n    size: [0, -1]\n", encoding="utf-8"
+    )
+    assert resolve_view_size(3, config_dir=tmp_path) == (640, 480)  # malformed size
+    (tmp_path / "zones.yaml").write_text(
+        "version: 1\nviews:\n  '3':\n    size: [800, 600]\n", encoding="utf-8"
+    )
+    assert resolve_view_size(3, config_dir=tmp_path) == (800, 600)

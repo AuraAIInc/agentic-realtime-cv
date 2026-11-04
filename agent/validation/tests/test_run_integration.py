@@ -25,7 +25,7 @@ class FakeValidator:
         return self.ops
 
 
-def _run(tmp_path, validator):
+def _run(tmp_path, validator, **kw):
     store = RunStore("run1", base_dir=tmp_path)
     return TrackingRun(
         view_id=3,
@@ -36,6 +36,7 @@ def _run(tmp_path, validator):
         store=store,
         plot=False,
         validator=validator,
+        **kw,
     )
 
 
@@ -69,6 +70,23 @@ def test_no_validator_no_validated_outputs(tmp_path):
     run_dir = run.finish()
     assert not (run_dir / "validated.jsonl").exists()
     assert not (run_dir / "validated.db").exists()
+
+
+def test_tracking_run_resolves_view_size_into_tracker_and_meta(tmp_path):
+    import json
+
+    run = _run(tmp_path, None)
+    assert run.img_size == (800, 600)
+    assert (run.track.img_width, run.track.img_height) == (800, 600)
+    run_dir = run.finish()
+    meta = json.loads((run_dir / "run.json").read_text())
+    assert meta["img_size"] == [800, 600]
+
+
+def test_tracking_run_explicit_img_size_overrides_resolve(tmp_path):
+    run = _run(tmp_path, None, img_size=(640, 480))
+    assert run.img_size == (640, 480)
+    assert (run.track.img_width, run.track.img_height) == (640, 480)
 
 
 def test_validated_chart_written_with_plot(tmp_path):

@@ -139,6 +139,16 @@ def test_report_covers_all_sections_and_links(tmp_path, monkeypatch):
     assert "run.json" in text  # artifact list
 
 
+def test_report_header_notes_frame_size_when_present(tmp_path, monkeypatch):
+    run_dir = _seed_run(tmp_path, monkeypatch, with_traces=False)
+    meta = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    assert "(detection coords)" not in write_session_report(run_dir).read_text(encoding="utf-8")
+    meta["img_size"] = [800, 600]
+    (run_dir / "run.json").write_text(json.dumps(meta), encoding="utf-8")
+    text = write_session_report(run_dir).read_text(encoding="utf-8")
+    assert "frame: 800x600 (detection coords)" in text
+
+
 def test_report_degrades_without_traces_charts_or_validate(tmp_path, monkeypatch):
     run_dir = _seed_run(tmp_path, monkeypatch, with_traces=False)
     (run_dir / "original.png").unlink()

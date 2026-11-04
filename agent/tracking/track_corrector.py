@@ -23,7 +23,15 @@ logger = logging.getLogger(__name__)
 
 
 class TrackCorrector:
-    def __init__(self, cat_ids: list[int], escalation_config=None, period_id_factory=None, escalation_seq=None):
+    def __init__(
+        self,
+        cat_ids: list[int],
+        escalation_config=None,
+        period_id_factory=None,
+        escalation_seq=None,
+        img_width: int = 640,
+        img_height: int = 480,
+    ):
         self.cat_ids = list(cat_ids)
         self.escalation_config = escalation_config or EscalationConfig.from_env()
         self._period_ids = period_id_factory if period_id_factory is not None else itertools.count(1)
@@ -34,8 +42,10 @@ class TrackCorrector:
         self.min_conf = 0.4
         self.buffer_range = 15  # sec
         self.max_undetected_gap = 60  # sec
-        self.img_width = 640
-        self.img_height = 480
+        # Frame size in detection-box pixels. Production callers (TrackingRun)
+        # resolve the view's true size; 640x480 is the legacy fallback.
+        self.img_width = img_width
+        self.img_height = img_height
         self.number_of_cats = len(self.cat_ids)
         self.idx_to_id = {i: cat_id for i, cat_id in enumerate(self.cat_ids)}
         self.id_to_idx = {cat_id: i for i, cat_id in enumerate(self.cat_ids)}

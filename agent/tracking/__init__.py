@@ -1,6 +1,6 @@
 """Tracking correctors with decoupled persistence (Phase 2 of 5) + run store (Phase 3 of 5)."""
 
-from agent.tracking.cat_config import resolve_cat_ids
+from agent.tracking.cat_config import resolve_cat_ids, resolve_view_size
 from agent.tracking.charts import plot_detection_charts, plot_validated_chart
 from agent.tracking.period_corrector import PeriodCorrector
 from agent.tracking.report import REPORT_FILE, write_session_report
@@ -18,6 +18,7 @@ __all__ = [
     "plot_detection_charts",
     "plot_validated_chart",
     "resolve_cat_ids",
+    "resolve_view_size",
     "REPORT_FILE",
     "write_session_report",
 ]

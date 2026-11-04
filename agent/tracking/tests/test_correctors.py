@@ -232,6 +232,17 @@ def test_nearness_source_reports_reference_position():
     assert tc._nearness_source(0, [400, 20, 490, 200])["source_box"] == [350.0, 25.0, 440.0, 205.0]
 
 
+def test_img_size_params_default_and_explicit():
+    legacy = TrackCorrector(cat_ids=[0])
+    assert (legacy.img_width, legacy.img_height) == (640, 480)
+    assert legacy._nearness_source(0, [400, 20, 490, 200]) == {}
+    tc = TrackCorrector(cat_ids=[25, 26], img_width=800, img_height=600)
+    assert (tc.img_width, tc.img_height) == (800, 600)
+    tc.last_detection[0] = [T0, 350, 25, 440, 205, 25, 0.9, 25]
+    src = tc._nearness_source(0, [400, 20, 490, 200])
+    assert src["source_threshold_px"] == 200.0  # img_width / 4 follows the size
+
+
 def test_p6_carries_prev_span_and_boundary_boxes():
     pc = PeriodCorrector(cat_ids=[25])
     prev_start = T0 - datetime.timedelta(minutes=2)

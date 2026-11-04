@@ -5,6 +5,8 @@ import json
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from evaluate import (  # noqa: E402
@@ -150,3 +152,166 @@ def test_collect_cost_without_validations(tmp_path):
     cost = collect_cost(str(tmp_path), {"elapsed_s": 12.5})
     assert cost["validations"] == 0 and cost["est_cost_usd"] == 0.0
     assert cost["elapsed_s"] == 12.5
+
+
+def _fake_stage(present=True):
+    return {
+        "present": present,
+        "metrics": {
+            "iou_0.5": {
+                "precision": 0.9,
+                "recall": 0.4,
+                "f1": 0.55,
+                "agnostic": {"precision": 0.95, "recall": 0.42, "f1": 0.58},
+                "mean_matched_iou": 0.77,
+                "class_accuracy_on_matched": 0.93,
+                "tp": 10,
+                "fp": 1,
+                "fn": 15,
+                "per_class": {
+                    25: {"precision": 1.0, "recall": 0.5, "f1": 0.667, "tp": 5, "fp": 0, "fn": 5},
+                },
+            }
+        },
+    }
+
+
+def _col_counts(table_text):
+    return [len(line.strip().strip("|").split("|")) for line in table_text.splitlines()]
+
+
+def test_md_table_pads_and_aligns():
+    from evaluate import md_table
+
+    text = md_table(["name", "P"], [["muse", "0.936"], ["s", "1"]])
+    lines = text.splitlines()
+    assert _col_counts(text) == [2, 2, 2, 2]
+    assert lines[1].startswith("| :") and lines[1].rstrip().endswith(": |")
+    assert all(len(line) == len(lines[0]) for line in [lines[0]] + lines[2:])
+
+
+def test_report_tables_have_matching_column_counts():
+    from evaluate import delta_table, label_table, per_class_table, stage_table
+
+    res = {
+        "stages": {"raw": _fake_stage(), "revised": _fake_stage(), "validated": _fake_stage(False)},
+        "label_sets": {"muse": _fake_stage(), "spark": _fake_stage(False)},
+    }
+    tables = [
+        (label_table(res, "iou_0.5", "0.5"), 12),
+        (stage_table(res, "iou_0.5", "0.5"), 12),
+        (delta_table(res, "iou_0.5"), 9),
+        (per_class_table(res, "iou_0.5", {"25": "Qb"}), 8),
+    ]
+    for text, ncols in tables:
+        assert _col_counts(text) == [ncols] * len(text.splitlines())
+
+
+def test_chart_lines_embeds_copied_charts():
+    from evaluate import chart_lines
+
+    res = {
+        "charts": {
+            "original": {"present": True, "file": "r1_original.png", "src": "/x/original.png"},
+            "revised": {"present": False, "file": None, "src": None},
+            "validated": {"present": True, "file": None, "src": "/x/validated.png"},
+            "gt": {"present": True, "file": "r1_gt.png", "src": "/x/r1_gt.png"},
+        }
+    }
+    text = "\n".join(chart_lines(res))
+    assert "## Detection charts" in text
+    assert "![Original detections](r1_original.png)" in text
+    assert "![Validated detections](/x/validated.png)" in text
+    assert "![Ground truth detections](r1_gt.png)" in text
+    assert "Revised" not in text
+
+
+def test_chart_lines_no_charts_note_and_absent_key():
+    from evaluate import chart_lines
+
+    res = {"charts": {k: {"present": False} for k in ("original", "revised", "validated")}}
+    assert "(no charts" in "\n".join(chart_lines(res))
+    assert chart_lines({}) == []
+
+
+def test_discover_and_copy_charts(tmp_path):
+    from evaluate import copy_charts, discover_charts
+
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "original.png").write_bytes(b"fake-png")
+    out = tmp_path / "out"
+    out.mkdir()
+    charts = discover_charts(str(run))
+    assert charts["original"]["present"] and not charts["revised"]["present"]
+    assert charts["validated"]["src"] is None
+    assert charts["gt"]["present"] is False  # rendered, not discovered
+    copy_charts(charts, str(out), "r1")
+    assert (out / "r1_original.png").read_bytes() == b"fake-png"
+    assert charts["original"]["file"] == "r1_original.png"
+    assert charts["revised"]["file"] is None
+
+
+def _write_eval_fixture(tmp_path):
+    run = tmp_path / "r1"
+    run.mkdir()
+    (run / "run.json").write_text(
+        json.dumps({"mode": "replay_db", "window": {"start": "2026-10-28T16:33"}})
+    )
+    (run / "images.jsonl").write_text(
+        json.dumps({"create_time": "2026-10-28T16:33:00.304643"}) + "\n"
+    )
+    hour = tmp_path / "hour"
+    (hour / "labels").mkdir(parents=True)
+    (hour / "classes_map.json").write_text(
+        json.dumps({"order": [25, 26], "names": {"25": "Qb", "26": "Qbo"}})
+    )
+    (hour / "labels" / "1_2026-10-28-16-33-00-304643.txt").write_text("0 0.5 0.5 0.2 0.2\n")
+    return run, hour
+
+
+def test_render_gt_chart_writes_png(tmp_path):
+    pytest.importorskip("matplotlib")
+    from evaluate import render_gt_chart
+
+    t = datetime.datetime(2026, 10, 28, 16, 33, 0, 304643)
+    gt = {t: [Box(320, 240, 480, 360, 25, 1.0)]}
+    dest = tmp_path / "r1_gt.png"
+    assert render_gt_chart(gt, [t], 800, [25, 26], {"25": "Qb"}, str(dest)) is True
+    assert dest.stat().st_size > 0
+
+
+def test_evaluate_run_renders_gt_chart_and_embeds_it(tmp_path):
+    pytest.importorskip("matplotlib")
+    from evaluate import evaluate_run, render_report
+
+    run, hour = _write_eval_fixture(tmp_path)
+    out = tmp_path / "out"
+    out.mkdir()
+    dest = str(out / "r1_gt.png")
+    res = evaluate_run(str(run), str(hour), "labels", [0.5], gt_chart_path=dest)
+    assert res["eval_frames"] == 1
+    assert res["charts"]["gt"] == {"present": True, "src": dest, "file": "r1_gt.png"}
+    assert (out / "r1_gt.png").stat().st_size > 0
+    report = render_report(res, [0.5])
+    assert "### Ground truth detections" in report
+    assert "![Ground truth detections](r1_gt.png)" in report
+
+
+def test_evaluate_run_without_gt_chart_path_skips_gt(tmp_path):
+    from evaluate import evaluate_run
+
+    run, hour = _write_eval_fixture(tmp_path)
+    res = evaluate_run(str(run), str(hour), "labels", [0.5])
+    assert res["charts"]["gt"]["present"] is False
+
+
+def test_load_run_escalations_missing_and_present(tmp_path):
+    from evaluate import load_run_escalations
+
+    assert load_run_escalations(str(tmp_path)) is None
+    (tmp_path / "escalations.jsonl").write_text(
+        json.dumps({"name": "E1-T6", "time": "2026-10-28T16:34:05", "scope": "frame"}) + "\n"
+    )
+    rows = load_run_escalations(str(tmp_path))
+    assert rows and rows[0]["name"] == "E1-T6"

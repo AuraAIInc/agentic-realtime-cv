@@ -153,6 +153,31 @@ def plot_detection_charts(
     return original_path, revised_path
 
 
+def plot_strip_chart(
+    rows,
+    path,
+    title,
+    cat_ids,
+    cat_names=None,
+    escalations=None,
+    width=640,
+):
+    """Write one timeline strip chart to an arbitrary ``path``.
+
+    Same format as :func:`plot_detection_charts` but with a caller-chosen
+    destination and title, for charts that do not belong to a tracking run
+    (e.g. the evaluation report's ground-truth chart). Returns the chart path.
+    """
+    cat_ids = list(cat_ids)
+    if cat_names is None:
+        names = {}
+    elif isinstance(cat_names, dict):
+        names = dict(cat_names)
+    else:
+        names = dict(zip(cat_ids, cat_names))
+    return _plot_strip(list(rows), Path(path), title, cat_ids, names, escalations, width)
+
+
 def plot_validated_chart(
     validated_rows,
     out_dir,
@@ -180,4 +205,4 @@ def plot_validated_chart(
     )
 
 
-__all__ = ["plot_detection_charts", "plot_validated_chart"]
+__all__ = ["plot_detection_charts", "plot_strip_chart", "plot_validated_chart"]

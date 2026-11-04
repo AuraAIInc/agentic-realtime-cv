@@ -9,13 +9,21 @@ size), so the view id is taken from the ``view_<id>_`` key prefix.
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
 import yaml
 
+logger = logging.getLogger(__name__)
+
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "agent_data" / "config"
 CATS_FILE = "cats.yaml"
+ZONES_FILE = "zones.yaml"
+# Pre-view-size legacy default (640x480 camera assumption). Production runs
+# resolve the real size via resolve_view_size; this only covers views missing
+# from zones.yaml.
+LEGACY_IMG_SIZE = (640, 480)
 
 _VIEW_KEY_RE = re.compile(r"^view_(\d+)_")
 
@@ -65,6 +73,37 @@ def resolve_cat_ids(view_id: int, config_dir=None) -> tuple:
     return cat_ids, id_to_name
 
 
+def resolve_view_size(view_id: int, config_dir=None) -> tuple:
+    """Return ``(width, height)`` frame size for camera view ``view_id``.
+
+    Source is ``zones.yaml`` (``views.<id>.size``), the same pixel space the
+    view's detection boxes use. Views missing from zones.yaml (or an unreadable
+    file) fall back to the legacy 640x480 size with a warning, preserving the
+    pre-view-size behavior.
+    """
+    view_id = int(view_id)
+    try:
+        with open(_config_dir(config_dir) / ZONES_FILE, encoding="utf-8") as fh:
+            views = (yaml.safe_load(fh) or {}).get("views") or {}
+    except OSError:
+        views = {}
+    entry = views.get(str(view_id), views.get(view_id, {})) or {}
+    size = entry.get("size")
+    if (
+        isinstance(size, (list, tuple))
+        and len(size) == 2
+        and all(isinstance(v, (int, float)) and v > 0 for v in size)
+    ):
+        return (int(size[0]), int(size[1]))
+    logger.warning(
+        "view %s has no size in %s; falling back to legacy %sx%s",
+        view_id,
+        ZONES_FILE,
+        *LEGACY_IMG_SIZE,
+    )
+    return LEGACY_IMG_SIZE
+
+
 def appearance_for_tracking_id(view_id: int, tracking_id: int, config_dir=None) -> str | None:
     """One-line appearance text for a tracker label, e.g. ``"Qbo: long-haired ..."``.
 
@@ -83,4 +122,12 @@ def appearance_for_tracking_id(view_id: int, tracking_id: int, config_dir=None) 
     return None
 
 
-__all__ = ["resolve_cat_ids", "known_views", "load_cat_profiles", "appearance_for_tracking_id", "CONFIG_DIR"]
+__all__ = [
+    "resolve_cat_ids",
+    "resolve_view_size",
+    "known_views",
+    "load_cat_profiles",
+    "appearance_for_tracking_id",
+    "CONFIG_DIR",
+    "LEGACY_IMG_SIZE",
+]

@@ -146,10 +146,7 @@ def load_cats(path=None):
 SAM_CONCEPTS = ["animal", "a cat"]
 DEDUP_IOU = 0.5
 
-SPARK_FALLBACK_MODEL = "muse-spark-1.3"
-SPARK_FALLBACK_PRICING = {"input": 1.25, "output": 4.25}  # USD per 1M tokens
 CONTRIBUTOR_MODEL = "muse-spark-1.3-contributor"
-CONTRIBUTOR_FALLBACK_PRICING = {"input": 0.10, "output": 0.20}  # USD per 1M tokens
 
 
 def short_concept(cat):
@@ -375,52 +372,58 @@ def call_responses_with_retry(base_url, api_key, payload, timeout=240, attempts=
     raise AssertionError("unreachable")  # pragma: no cover
 
 
+def _load_models_json(model_config=None):
+    cfg_path = model_config or os.getenv("MODEL_CONFIG") or DEFAULT_MODELS
+    with open(cfg_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _agent_model(data):
+    """The agent-role model from models.json, or None (logged) if it is not set."""
+    model = ((data.get("roles") or {}).get("agent") or {}).get("model")
+    if not model:
+        logger.error("models.json has no roles.agent.model")
+        return None
+    return str(model)
+
+
+def _model_pricing(data, model):
+    """USD per 1M tokens for `model` from models.json, or None (logged) if missing."""
+    pricing = (data.get("pricing_usd_per_1m_tokens") or {}).get(model) if model else None
+    if not pricing or "input" not in pricing or "output" not in pricing:
+        logger.error(f"models.json pricing_usd_per_1m_tokens has no input/output entry "
+                     f"for {model}; Spark cost will be reported as n/a")
+        return None
+    return {"input": float(pricing["input"]), "output": float(pricing["output"])}
+
+
 def load_spark_settings(model_config=None, *, contributor=True):
     """Return (model, base_url, api_key, pricing) for the classify stage.
 
     Contributor tier by default (dev cost); pass contributor=False (via
-    --standard) for the regular agent-role model. Pricing comes from
-    models.json when the model has an entry, else the tier fallback.
+    --standard) for the regular agent-role model. There is no fallback: a
+    missing model or pricing entry is logged and returned as None.
     """
-    cfg_path = model_config or os.getenv("MODEL_CONFIG") or DEFAULT_MODELS
-    with open(cfg_path, encoding="utf-8") as f:
-        data = json.load(f)
+    data = _load_models_json(model_config)
     if contributor:
         model = CONTRIBUTOR_MODEL
         base_url = (data.get("base_url", "") or "").rstrip("/")
         api_key = os.getenv(data.get("api_key_env", "MODEL_API_KEY"), "")
-        pricing = ((data.get("pricing_usd_per_1m_tokens") or {}).get(model)
-                   or dict(CONTRIBUTOR_FALLBACK_PRICING))
         return (model, base_url, api_key.strip().strip("\"'"),
-                {"input": float(pricing.get("input", 0.10)),
-                 "output": float(pricing.get("output", 0.20))})
-    roles = data.get("roles", {})
-    role_cfg = dict(roles.get("agent") or {})
-    model = role_cfg.get("model") or SPARK_FALLBACK_MODEL
+                _model_pricing(data, model))
+    role_cfg = dict((data.get("roles") or {}).get("agent") or {})
+    model = _agent_model(data)
     base_url = (role_cfg.get("base_url") or data.get("base_url", "")).rstrip("/")
     api_key = os.getenv(role_cfg.get("api_key_env")
                         or data.get("api_key_env", "MODEL_API_KEY"), "")
-    pricing = ((data.get("pricing_usd_per_1m_tokens") or {}).get(model)
-               or dict(SPARK_FALLBACK_PRICING))
-    return (str(model), base_url, api_key.strip().strip("\"'"),
-            {"input": float(pricing.get("input", 1.25)),
-             "output": float(pricing.get("output", 4.25))})
+    return (model, base_url, api_key.strip().strip("\"'"),
+            _model_pricing(data, model))
 
 
 def standard_spark_pricing(model_config=None):
     """Standard-tier Spark pricing, for converting Contributor bills in reports."""
-    try:
-        cfg_path = model_config or os.getenv("MODEL_CONFIG") or DEFAULT_MODELS
-        with open(cfg_path, encoding="utf-8") as f:
-            data = json.load(f)
-        roles = data.get("roles", {})
-        model = (roles.get("agent") or {}).get("model") or SPARK_FALLBACK_MODEL
-        pricing = ((data.get("pricing_usd_per_1m_tokens") or {}).get(model)
-                   or dict(SPARK_FALLBACK_PRICING))
-    except (OSError, ValueError):
-        pricing = dict(SPARK_FALLBACK_PRICING)
-    return {"input": float(pricing.get("input", 1.25)),
-            "output": float(pricing.get("output", 4.25))}
+    data = _load_models_json(model_config)
+    return _model_pricing(data, _agent_model(data))
 
 
 def resolve_bounds(hour, start, end):
@@ -583,12 +586,22 @@ def sam_boxes_to_yolo(boxes, img_w, img_h):
     return kept
 
 
-def estimate_cost_usd(sam_calls, input_tokens=0, output_tokens=0, spark_pricing=None):
-    """Total USD: SAM per-image billing + Spark per-token billing."""
-    pricing = spark_pricing or SPARK_FALLBACK_PRICING
+def estimate_cost_usd(sam_calls, input_tokens, output_tokens, spark_pricing):
+    """Total USD: SAM per-image billing + Spark per-token billing (None without pricing)."""
+    if spark_pricing is None:
+        return None
     return (sam_calls * SAM_USD_PER_1000_IMAGES / 1000.0
-            + input_tokens / 1_000_000 * pricing["input"]
-            + output_tokens / 1_000_000 * pricing["output"])
+            + input_tokens / 1_000_000 * spark_pricing["input"]
+            + output_tokens / 1_000_000 * spark_pricing["output"])
+
+
+def fmt_usd(value):
+    """0.01234 -> '$0.0123'; None (pricing unavailable) -> 'n/a'."""
+    return "n/a" if value is None else f"${value:.4f}"
+
+
+def _round_usd(value):
+    return None if value is None else round(value, 4)
 
 
 def format_duration(seconds):
@@ -700,25 +713,29 @@ def _spark_tier(session) -> str:
     return "contributor" if "contributor" in str(session.get("spark_model", "")) else "standard"
 
 
+def _rate(pricing) -> str:
+    if not pricing:
+        return "n/a (missing from models.json)"
+    return f"${pricing['input']:.2f}/${pricing['output']:.2f}"
+
+
 def _pricing_line(s) -> str:
-    billed = s["spark_pricing"]
     line = (f"- Pricing: SAM ${SAM_USD_PER_1000_IMAGES:.2f}/1K images, Spark "
-            f"${billed['input']:.2f}/${billed['output']:.2f} per 1M in/out tokens "
+            f"{_rate(s.get('spark_pricing'))} per 1M in/out tokens "
             f"([official pricing]({SAM_PRICING_URL})")
     if _spark_tier(s) == "contributor":
-        std = s.get("spark_pricing_standard") or dict(SPARK_FALLBACK_PRICING)
         line += (f", Contributor billed; Standard equivalent "
-                 f"${std['input']:.2f}/${std['output']:.2f})")
+                 f"{_rate(s.get('spark_pricing_standard'))})")
     else:
         line += ", Standard)"
     return line
 
 
 def _cost_line(s) -> str:
-    per = s["cost_usd"] / max(s["processed"], 1)
-    line = (f"- Estimated cost: ${s['cost_usd']:.4f} "
-            f"(SAM ${s['sam_cost_usd']:.4f} + Spark ${s['spark_cost_usd']:.4f}; "
-            f"${per:.4f} per processed image)")
+    per = None if s["cost_usd"] is None else s["cost_usd"] / max(s["processed"], 1)
+    line = (f"- Estimated cost: {fmt_usd(s['cost_usd'])} "
+            f"(SAM ${s['sam_cost_usd']:.4f} + Spark {fmt_usd(s['spark_cost_usd'])}; "
+            f"{fmt_usd(per)} per processed image)")
     if _spark_tier(s) == "contributor" and s.get("cost_standard_usd") is not None:
         std_per = s["cost_standard_usd"] / max(s["processed"], 1)
         line += (f"  ·  Standard equivalent: ${s['cost_standard_usd']:.4f} "
@@ -854,6 +871,8 @@ def main():
     spark_model, spark_base_url, spark_api_key, spark_pricing = load_spark_settings(args.models, contributor=not args.standard)
     spark_tier = "standard" if args.standard else "contributor"
     std_pricing = standard_spark_pricing(args.models)
+    if not spark_model:
+        sys.exit("models.json has no roles.agent.model; nothing to classify with under --standard")
     if spark_tier == "contributor":
         print("WARNING: Contributor tier - classify images and replies may be used "
               "to train future Meta models. Pass --standard for customer footage.")
@@ -927,8 +946,8 @@ def main():
         print(f"DRY RUN: {len(targets)} images, {est_sam} SAM requests planned "
               f"(~${est_sam * SAM_USD_PER_1000_IMAGES / 1000.0:.4f}) plus one Spark "
               f"call per image with proposed boxes "
-              f"(~${each:.4f} each at ${spark_pricing['input']:.2f}/"
-              f"${spark_pricing['output']:.2f} per 1M tokens, {spark_tier}; {SAM_PRICING_URL}). "
+              f"(~{fmt_usd(each)} each at {_rate(spark_pricing)} per 1M tokens, "
+              f"{spark_tier}; {SAM_PRICING_URL}). "
               f"Time estimate unavailable without API calls.")
 
     session_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -955,8 +974,8 @@ def main():
         print(f"ESTIMATE for {total} images (pilot: {pilot['seconds']:.1f}s, "
               f"{per_call.get('input', 0)}/{per_call.get('output', 0)} in/out tokens, "
               f"{per_call_src}): ~{est_sam} SAM + up to {total} Spark calls, "
-              f"~${est_cost:.4f} billed ({spark_tier})"
-              f"{'' if spark_tier == 'standard' else f', ~${est_std:.4f} at Standard'}, "
+              f"~{fmt_usd(est_cost)} billed ({spark_tier})"
+              f"{'' if spark_tier == 'standard' else f', ~{fmt_usd(est_std)} at Standard'}, "
               f"~{format_duration(est_wall)} wall at {args.workers} "
               f"workers (rough: assumes linear scaling; Spark assumes every image "
               f"needs classification).")
@@ -998,12 +1017,10 @@ def main():
             per_hour[r["hour"]]["processed"] += 1
     processed = len(results)
     sam_cost = sam_calls * SAM_USD_PER_1000_IMAGES / 1000.0
-    spark_cost = (tokens["input"] / 1_000_000 * spark_pricing["input"]
-                  + tokens["output"] / 1_000_000 * spark_pricing["output"])
-    spark_cost_std = (tokens["input"] / 1_000_000 * std_pricing["input"]
-                      + tokens["output"] / 1_000_000 * std_pricing["output"])
-    cost_usd = sam_cost + spark_cost
-    cost_standard_usd = sam_cost + spark_cost_std
+    spark_cost = estimate_cost_usd(0, tokens["input"], tokens["output"], spark_pricing)
+    spark_cost_std = estimate_cost_usd(0, tokens["input"], tokens["output"], std_pricing)
+    cost_usd = None if spark_cost is None else sam_cost + spark_cost
+    cost_standard_usd = None if spark_cost_std is None else sam_cost + spark_cost_std
 
     # copy classes.txt beside the new labels for labelImg (per touched hour)
     if not args.dry_run:
@@ -1044,10 +1061,10 @@ def main():
         "sam_calls": sam_calls, "spark_calls": spark_calls, "proposed": proposed,
         "boxes_total": boxes_total, "boxes_by_class": boxes_by_class,
         "dropped": dropped, "rejected": rejected,
-        "tokens": tokens, "cost_usd": round(cost_usd, 4),
-        "sam_cost_usd": round(sam_cost, 4), "spark_cost_usd": round(spark_cost, 4),
-        "cost_standard_usd": round(cost_standard_usd, 4),
-        "spark_cost_standard_usd": round(spark_cost_std, 4),
+        "tokens": tokens, "cost_usd": _round_usd(cost_usd),
+        "sam_cost_usd": round(sam_cost, 4), "spark_cost_usd": _round_usd(spark_cost),
+        "cost_standard_usd": _round_usd(cost_standard_usd),
+        "spark_cost_standard_usd": _round_usd(spark_cost_std),
         "pricing_usd_per_1000_images": SAM_USD_PER_1000_IMAGES,
         "pricing_url": SAM_PRICING_URL,
         "queries": queries_all,
@@ -1062,13 +1079,13 @@ def main():
         os.path.join(report_dir, f"session-{session_id}.json"), session)
 
     std_note = ("" if spark_tier == "standard"
-                else f" [Standard equivalent ${cost_standard_usd:.4f}]")
+                else f" [Standard equivalent {fmt_usd(cost_standard_usd)}]")
     print(f"Done: {processed} images processed, {skipped} skipped, {len(failed)} failed, "
           f"{sam_calls} SAM + {spark_calls} Spark calls, {proposed} proposed, "
           f"{boxes_total} boxes ({rejected} rejected), "
           f"{tokens['total']} tokens ({tokens['input']} in / {tokens['output']} out), "
-          f"{wall_seconds:.1f}s wall, estimated cost ${cost_usd:.4f} "
-          f"(SAM ${sam_cost:.4f} + Spark ${spark_cost:.4f}, {spark_tier}){std_note}.")
+          f"{wall_seconds:.1f}s wall, estimated cost {fmt_usd(cost_usd)} "
+          f"(SAM ${sam_cost:.4f} + Spark {fmt_usd(spark_cost)}, {spark_tier}){std_note}.")
     print(f"Session report: {md_path} (+ .json)")
 
 
