@@ -245,7 +245,59 @@ def score_frames(preds: dict, gt: dict, frame_set: list, order: list, iou_thrs: 
     return metrics, outside
 
 
-def evaluate_run(run_dir: str, hour_dir: str, gt_source: str, iou_thrs: list) -> dict:
+def _audit_time(value) -> datetime.datetime:
+    return value if isinstance(value, datetime.datetime) else datetime.datetime.fromisoformat(str(value))
+
+
+def load_audit(path: str | None, hour: str) -> dict:
+    """The gt_audit.yaml entry for one hour ({} when no audit or no entry)."""
+    if not path:
+        return {}
+    import yaml
+
+    with open(path) as f:
+        return ((yaml.safe_load(f) or {}).get("hours") or {}).get(hour) or {}
+
+
+def apply_audit(gt: dict, audit: dict, view_id: int = 3) -> tuple[dict, dict]:
+    """Apply window / drop_decoys / relabel corrections; returns (gt, change counts).
+
+    GT keys may be datetimes or ISO strings; audit times are ISO strings.
+    """
+    if not audit:
+        return gt, {}
+    changes = {"frames_outside_window": 0, "decoy_boxes_dropped": 0, "boxes_relabeled": 0}
+    window = audit.get("window")
+    lo, hi = (_audit_time(window[0]), _audit_time(window[1])) if window else (None, None)
+    relabels = [(_audit_time(r["from"]), _audit_time(r["to"]), r["cls_from"], r["cls_to"])
+                for r in audit.get("relabel") or []]
+    decoys = []
+    if audit.get("drop_decoys"):
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from agent.tracking.decoys import load_decoys, match_decoy
+
+        decoys = load_decoys(view_id)
+    out = {}
+    for t, boxes in gt.items():
+        when = _audit_time(t)
+        if lo is not None and not (lo <= when < hi):
+            changes["frames_outside_window"] += 1
+            continue
+        kept = []
+        for b in boxes:
+            if decoys and match_decoy((b.x1, b.y1, b.x2, b.y2), decoys):
+                changes["decoy_boxes_dropped"] += 1
+                continue
+            for r_lo, r_hi, c_from, c_to in relabels:
+                if r_lo <= when < r_hi and b.cls == c_from:
+                    b = Box(b.x1, b.y1, b.x2, b.y2, c_to, b.conf)
+                    changes["boxes_relabeled"] += 1
+            kept.append(b)
+        out[t] = kept
+    return out, changes
+
+
+def evaluate_run(run_dir: str, hour_dir: str, gt_source: str, iou_thrs: list, audit_path: str | None = None) -> dict:
     run_dir = os.path.normpath(os.path.abspath(run_dir))
     with open(os.path.join(run_dir, "run.json")) as f:
         meta = json.load(f)
@@ -260,6 +312,7 @@ def evaluate_run(run_dir: str, hour_dir: str, gt_source: str, iou_thrs: list) ->
     img_w, img_h = size if size else (800, 600)
 
     gt = load_yolo_labels(label_dir, order, img_w, img_h)
+    gt, audit_changes = apply_audit(gt, load_audit(audit_path, os.path.basename(os.path.normpath(hour_dir))))
     run_frames = [parse_time(r.get("create_time")) for r in load_jsonl(os.path.join(run_dir, "images.jsonl"))]
     run_frames = [t for t in run_frames if t is not None]
     frame_set = [t for t in run_frames if t in gt]
@@ -279,6 +332,7 @@ def evaluate_run(run_dir: str, hour_dir: str, gt_source: str, iou_thrs: list) ->
         "run_frames": len(run_frames),
         "eval_frames": len(frame_set),
         "frames_without_gt": len(missing_gt),
+        "audit": audit_changes,
         "stages": {},
         "label_sets": {},
         "cost": collect_cost(run_dir, meta),
@@ -462,6 +516,7 @@ def render_report(res: dict, iou_thrs: list) -> str:
         f"image size {res['image_size'][0]}x{res['image_size'][1]}",
         f"- Frames: {res['eval_frames']} evaluated "
         f"({res['run_frames']} in run, {res['frames_without_gt']} without GT)",
+        *([f"- GT audit applied: {res['audit']}"] if res.get("audit") else []),
         "",
     ]
     parts += headline(res, iou_thrs[0])
@@ -500,6 +555,7 @@ def main() -> None:
     ap.add_argument("--gt-source", choices=sorted(GT_SOURCES), default="labels")
     ap.add_argument("--iou", type=float, action="append", default=[0.5, 0.75])
     ap.add_argument("--out", default=None, help="Report dir (default: e2e output dir).")
+    ap.add_argument("--audit", default=None, help="Apply documented GT corrections (e.g. evaluation/gt_audit.yaml).")
     args = ap.parse_args()
 
     with open(os.path.join(args.run_dir, "run.json")) as f:
@@ -511,7 +567,7 @@ def main() -> None:
     out_dir = args.out or DEFAULT_OUT_DIR
     os.makedirs(out_dir, exist_ok=True)
 
-    res = evaluate_run(args.run_dir, hour_dir, args.gt_source, args.iou)
+    res = evaluate_run(args.run_dir, hour_dir, args.gt_source, args.iou, args.audit)
     with open(os.path.join(out_dir, f"{res['run']}_metrics.json"), "w") as f:
         json.dump(res, f, indent=2)
     report = render_report(res, args.iou)
