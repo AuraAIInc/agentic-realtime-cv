@@ -1,0 +1,19 @@
+Agentic Realtime Computer Vision: AI gives the camera a brain, and the camera gives AI eyes.
+
+PROBLEM
+Computer vision is split into two halves that fail in opposite ways. A small detector on cheap hardware sees every frame but makes mistakes: a Raspberry Pi 5 CPU runs only YOLO nano at about 3 frames per second, confuses our two look-alike cats, misses a sleeping cat, and once tracked an exercise ball as a cat for 26 minutes. A large vision AI understands a frame but cannot afford to see them all: labeling 8 minutes of video took over an hour and $24.65, about $1.2 million a year per camera, and it still missed a sleeping cat. A bigger detector needs GPUs this hardware does not have.
+
+SOLUTION
+We keep the small model and make its output trustworthy with AI, spending intelligence only where doubt exists. The tracker names its own doubts at the moment they arise. Only those moments, about 1% of frames, become plain-English questions for Meta's Muse Spark agent. The agent gathers the evidence it needs with tools and answers in a strict format that rewrites the record. A spatial-temporal memory learns what is normal for each cat, in each place, at each hour.
+
+RESULT
+On 8 minutes with both cats, against hand-validated ground truth: false alarms fell 93% (107 to 8), precision rose from 0.895 to 0.992, identity accuracy rose from 0.934 to 0.993, and 99% of what the camera saw ended up with the right cat. Only 12 doubts needed review, in 5 calls, for $0.39, about 63 times cheaper than AI on every frame. In the hardest two minutes, precision rose from 0.53 to 0.97.
+
+TECHNOLOGY INNOVATION
+Doubt as an interface: 15 typed doubt codes report why the tracker is unsure, not just a confidence score, so only about 1% of frames escalate and each question arrives already explained. A language bridge with contracts: every doubt leaves as prose and returns as a schema-checked verdict that code applies to the record. Joint review: related doubts share one agent call, so 12 questions took 5 calls. An agent with tools and skills fetches only the frames and crops it needs, cheapest evidence first. Spatial-temporal memory: a short-term day log and a long-term store organized by place (cells, zones, view) and time (5 minutes to weeks), with rules that keep one-off noise out.
+
+IMPACT
+Cats hide illness, and changes in routine are an early warning sign. This system gives owners a trustworthy, private, around-the-clock record of each pet's routine on a $100 device, without sending every frame to the cloud. It turns a cheap, imperfect model into a record people can rely on.
+
+BIGGER SCOPE
+Any small model watching for rare moments on limited hardware has the same gap: look-alike lab mice, tiny drones and birds, vehicles in fog, production lines, robots and wildlife cameras. Run locally with Muse Glimmer, the same loop can give a personal AI agent eyes on the physical things people care about, and its verdicts can teach the small model to make fewer mistakes over time.

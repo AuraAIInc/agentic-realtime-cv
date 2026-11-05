@@ -77,7 +77,7 @@ will not close this gap, because the gap comes from **scale**, not intelligence.
 
 **What we measured.** On the demo window (view 3, 2026-10-28 16:33–16:41, both cats on
 camera, 1,319 frames), scored against audited ground truth at IoU 0.5
-([final-model-performance-20261104.md](final-model-performance-20261104.md)):
+([final-model-performance-20261104.md](../final-model-performance-20261104.md)):
 
 | | Raw detector (Pi) | After agent review | Change |
 | --- | --- | --- | --- |
@@ -237,7 +237,7 @@ it, §10 and §11 measure it, and §12 prices it.
 
 The whole system on one page. Section 8 then follows a single doubt through it, step by step.
 
-<p align="center"><img src="demo/assets/slides/s07_loop_diagram.png" alt="The loop: the Pi handles 99% of frames; the agent sees only the doubts" width="720"></p>
+<p align="center"><img src="../demo/assets/slides/s07_loop_diagram.png" alt="The loop: the Pi handles 99% of frames; the agent sees only the doubts" width="720"></p>
 <sub>The three shaded boxes are the three new ideas: (1) escalation, (2) an agent with tools and skills, (3) spatial-temporal memory.</sub>
 
 ```
@@ -279,7 +279,7 @@ The whole system on one page. Section 8 then follows a single doubt through it, 
   each tool call and result, the evidence images, tokens, cost and time. Every memory LLM call
   writes its own trace. Every agent and tool invocation is logged to the project database.
 
-The full data path, with code pointers, is in [end-to-end-flow.md](end-to-end-flow.md). §7
+The full data path, with code pointers, is in [end-to-end-flow.md](../end-to-end-flow.md). §7
 separates what existed before the hackathon from what we built; §8 then walks the loop in order.
 
 ---
@@ -365,7 +365,7 @@ duplicate boxes (IoU > 0.7), keeps or relabels each box against each cat's histo
 interpolates toward a trusted future box and commits older rows. A jump over 300 px starts a
 new visit. **PeriodCorrector** votes on each whole visit using certainty, frame count,
 detection rate and spread, and enforces that **one cat cannot be in two overlapping visits**.
-How both work is explained in [how-track-correctors-work.md](how-track-correctors-work.md).
+How both work is explained in [how-track-correctors-work.md](../how-track-correctors-work.md).
 
 The hackathon contribution is that both correctors now **report their uncertainty at the
 exact decision point** where it arises:
@@ -404,7 +404,7 @@ demo run, exactly as the Pi wrote it to `escalations.jsonl`:
 A low-confidence box does **not** trigger a review by itself. These rules fire on conflicts in
 the tracker's *decisions*, which is why the escalation rate stays near 1%, and why each
 question arrives with its own explanation. One real example per code, with the full prompt
-and schema, is in [escalation-prompt-examples-20261101.md](escalation-prompt-examples-20261101.md).
+and schema, is in [escalation-prompt-examples-20261101.md](../escalation-prompt-examples-20261101.md).
 
 ### 8.3 From numbers to a question, and back
 
@@ -470,7 +470,7 @@ and keep the camera's label unless appearance rules it out.
 
 The agent is a tool-calling loop over the three MCP servers and local helpers, running on
 **Muse Spark 1.3**. Its system prompt sets working rules that come straight from our trace
-reviews ([agent-trace-review-20261101-003501.md](agent-trace-review-20261101-003501.md)):
+reviews ([agent-trace-review-20261101-003501.md](../agent-trace-review-20261101-003501.md)):
 
 - Check cheap sources before pixels, and **stop once the evidence settles the case**.
 - Say only what is actually visible, and never invent detections.
@@ -522,7 +522,7 @@ from the union of the cases' verdict sets. Parsing is **isolated per case**: one
 item becomes an `error` for that case only, and its siblings still apply. In the demo run the
 12 doubts became 5 calls: {E1-T6, E2-P5, E3-T2}, {E4-T2, E5-T2, E6-T4, E7-P6},
 {E8-T4, E9-P6, E10-P2}, {E11-P2}, {E12-P8}. Design:
-[escalation-merge-design.md](escalation-merge-design.md).
+[escalation-merge-design.md](../escalation-merge-design.md).
 
 ### 8.6 Verdicts become data
 
@@ -632,7 +632,7 @@ LEVEL: L1 (cap 100 words)   ROLLED-UP STATS: {'visits': 33, 'by_cat': {'25': 14,
 wait in a 5-item recent buffer. Stable text flips only after **3 consecutive contradictions**,
 and word caps force each summary to keep only its strongest patterns.
 
-<p align="center"><img src="demo/assets/slides/s16_memory_pyramid.png" alt="Spatial and temporal memory levels with real stored entries" width="720"></p>
+<p align="center"><img src="../demo/assets/slides/s16_memory_pyramid.png" alt="Spatial and temporal memory levels with real stored entries" width="720"></p>
 
 **Spatial memory: where.** 48 cells of 100 px roll up into 12 zones and one whole-view
 summary. Real entries from `agent/memory/data/view_3_long_term.yaml`, following the green bed
@@ -676,8 +676,8 @@ now, and P6/P7 ask whether this is the usual nap spot. The answer is a brief of 
 characters, appended to the prompt and marked *"may help, may be stale"*, as in the E5-T2
 question above (§8.3). Memory informs the agent but **never overrides the image**.
 
-Designs: [short-term-memory-design.md](short-term-memory-design.md),
-[spatial-temporal-memory-design.md](spatial-temporal-memory-design.md).
+Designs: [short-term-memory-design.md](../short-term-memory-design.md),
+[spatial-temporal-memory-design.md](../spatial-temporal-memory-design.md).
 
 ---
 
@@ -690,7 +690,7 @@ built the system itself inside Muse Code.
 ### 9.0 Why this project needs Muse
 
 A one-page summary of all Muse usage, in the product and in development, is in
-[muse-usage.md](muse-usage.md).
+[muse-usage.md](../muse-usage.md).
 
 The loop in §8 only works if the model on the other end of a doubt can do five things at
 once. Each one maps to a Muse capability we depend on, and each one is something the small
@@ -764,7 +764,7 @@ runtime from the union of scenario verdicts, and cached input pricing: across th
 
 ### 9.4 What we learned about the API
 
-From a controlled probe on Oct 31 ([model-api-chaining-probe.md](model-api-chaining-probe.md)):
+From a controlled probe on Oct 31 ([model-api-chaining-probe.md](../model-api-chaining-probe.md)):
 chained turns that carry images sometimes return `400 referenced response not found or
 expired`. The probe ruled out the root `instructions` parameter, image size and payload size,
 and concluded the failure is intermittent on the gateway side. We folded instructions into
@@ -791,7 +791,7 @@ so all costs in this report are at **Standard** rates.
   deleted and interpolated rows. **Only real detections are scored; nothing invented counts.**
 - **Determinism:** tracking replays bit-identically, so runs differ only in the agent stage.
 - **Cost:** counted once per agent call. (An earlier report double-counted merged calls; the
-  correction is documented in [final-model-performance-20261104.md §6](final-model-performance-20261104.md).)
+  correction is documented in [final-model-performance-20261104.md §6](../final-model-performance-20261104.md).)
 
 ### 10.2 Headline: the demo window
 
@@ -803,7 +803,7 @@ Run `view3_20261028-1633_1640_replay_db_20261104-140502-443911`, 1,319 frames, b
 | Tracker corrections only | 0.919 | 0.362 | 0.519 | 0.920 | 893 | 79 | 1,573 |
 | **After agent review** | **0.992** | **0.391** | **0.561** | **0.993** | **964** | **8** | 1,502 |
 
-<p align="center"><img src="assets/final-performance-20261104/headline_dumbbell.png" alt="Raw vs after review, full window and showcase window" width="680"></p>
+<p align="center"><img src="../assets/final-performance-20261104/headline_dumbbell.png" alt="Raw vs after review, full window and showcase window" width="680"></p>
 
 - **The agent does the lifting, not the rules.** Tracker rules alone leave F1 flat and lower
   identity accuracy. The agent's 12 verdicts take precision to 0.992 and identity accuracy to
@@ -817,7 +817,7 @@ Run `view3_20261028-1633_1640_replay_db_20261104-140502-443911`, 1,319 frames, b
 The same 8 minutes before and after review. In each lane a frame is one vertical tick spanning
 the cat's box from left to right edge; yellow lines mark where the Pi escalated:
 
-<p align="center"><img src="demo/assets/slides/s17a_timeline_eval.png" alt="Raw detector vs after agent review, same 8 minutes" width="720"></p>
+<p align="center"><img src="../demo/assets/slides/s17a_timeline_eval.png" alt="Raw detector vs after agent review, same 8 minutes" width="720"></p>
 <sub>Raw: the sleeping cat is filed as Qbo and labels flip. After review: Qb sleeps throughout (her undetected stretch is bridged, drawn faint, never scored) and Qbo walks in and out.</sub>
 
 ### 10.3 Where the gain lives: showcase windows
@@ -862,7 +862,7 @@ because they bound the claim honestly.
 The doubts differ between the two code versions, so this is a comparison of practice, not a
 controlled ablation. An earlier controlled pair on identical doubts (`012059` vs `231613`) cut
 tokens by 56%, cost by 57% and time by 60%
-([session-report-20261102-012059.md](session-report-20261102-012059.md)). Merging also makes
+([session-report-20261102-012059.md](../session-report-20261102-012059.md)). Merging also makes
 the agent *consistent*: cases that share a frame get one coherent reading of who is who.
 
 ### 10.6 What the agent decided (run 140502)
@@ -900,7 +900,7 @@ rule.
 ### 10.8 Fleet-wide statistics (124 agent runs, 1,058 tool calls)
 
 Every agent and tool invocation from Oct 27 to Nov 3 is logged in the project database
-([agent-tool-invoke-report-20261103.md](agent-tool-invoke-report-20261103.md)):
+([agent-tool-invoke-report-20261103.md](../agent-tool-invoke-report-20261103.md)):
 
 | Metric | Value |
 | --- | --- |
@@ -918,7 +918,7 @@ fetches did.** Instrumentation turned a vague failure rate into a one-line fix.
 
 To evaluate honestly and to retrain the edge model, we need labels that are not the
 detector's own output. We built two labelers and compared them on the same 1,318 frames
-([labeling-sam-vs-spark-20261103.md](labeling-sam-vs-spark-20261103.md)):
+([labeling-sam-vs-spark-20261103.md](../labeling-sam-vs-spark-20261103.md)):
 
 | | SAM 3.1 → Spark classify | Spark 1.3 single call |
 | --- | --- | --- |
@@ -1022,7 +1022,7 @@ rate down further.
 
 Measuring against ground truth exposed failures that no demo would have shown. Each was
 traced to a root cause and fixed in code, with before/after numbers
-([e2e-identity-fix-20261104.md](e2e-identity-fix-20261104.md)).
+([e2e-identity-fix-20261104.md](../e2e-identity-fix-20261104.md)).
 
 ### 13.1 The decoy: a ball that steals a cat's identity
 
@@ -1201,12 +1201,12 @@ physical things a person cares about, all year round, with nothing leaving the h
 ## 20. Demo
 
 The 3-minute demo is fully produced from real frames and measured numbers. Everything is in
-[`demo/`](demo/):
+[`demo/`](../demo/):
 
-- **Video:** [`demo/assets/video/final_demo_v2.mp4`](demo/assets/video/final_demo_v2.mp4),
+- **Video:** [`agentic-realtime-cv-demo.mp4`](agentic-realtime-cv-demo.mp4),
   plus the generated clips `v01_cost_counter.mp4`, `v02_ball_push_in.mp4` and
   `v03_replay_tracker.mp4`.
-- **Script:** [`demo/demo-script.md`](demo/demo-script.md): every
+- **Script:** [`demo/demo-script.md`](../demo/demo-script.md): every
   beat with its narration, format, asset, data source and motion notes.
 - **Narration and captions:** `demo/assets/text/narration.txt` and `captions.srt`.
 - **Slides:** 22 slides in `demo/assets/slides/`, rendered from HTML by
@@ -1283,41 +1283,41 @@ this report. Start with the first group.
 
 | Document | What it covers |
 | --- | --- |
-| [final-model-performance-20261104.md](final-model-performance-20261104.md) | The headline numbers: raw vs reviewed against ground truth, showcase windows, three runs, cost |
-| [e2e-identity-fix-20261104.md](e2e-identity-fix-20261104.md) | Why the flow mislabeled the cats, each root cause and its fix, and the ground-truth audit |
-| [evaluation-report-20261104.md](evaluation-report-20261104.md) | Three replay runs end to end: doubt burden, verdict balance, issues (its costs are superseded, see the performance report §6) |
-| [labeling-sam-vs-spark-20261103.md](labeling-sam-vs-spark-20261103.md) | SAM 3.1 vs Spark 1.3 for ground-truth labeling: accuracy, time and cost of AI on every frame |
-| [agent-tool-invoke-report-20261103.md](agent-tool-invoke-report-20261103.md) | Fleet statistics over 124 agent runs and 1,058 tool calls |
-| [session-report-20261102-012059.md](session-report-20261102-012059.md) | The first full-loop run, one call per doubt; the baseline for merged review |
+| [final-model-performance-20261104.md](../final-model-performance-20261104.md) | The headline numbers: raw vs reviewed against ground truth, showcase windows, three runs, cost |
+| [e2e-identity-fix-20261104.md](../e2e-identity-fix-20261104.md) | Why the flow mislabeled the cats, each root cause and its fix, and the ground-truth audit |
+| [evaluation-report-20261104.md](../evaluation-report-20261104.md) | Three replay runs end to end: doubt burden, verdict balance, issues (its costs are superseded, see the performance report §6) |
+| [labeling-sam-vs-spark-20261103.md](../labeling-sam-vs-spark-20261103.md) | SAM 3.1 vs Spark 1.3 for ground-truth labeling: accuracy, time and cost of AI on every frame |
+| [agent-tool-invoke-report-20261103.md](../agent-tool-invoke-report-20261103.md) | Fleet statistics over 124 agent runs and 1,058 tool calls |
+| [session-report-20261102-012059.md](../session-report-20261102-012059.md) | The first full-loop run, one call per doubt; the baseline for merged review |
 
 **Architecture and design**
 
 | Document | What it covers |
 | --- | --- |
-| [end-to-end-flow.md](end-to-end-flow.md) | Detection → tracking → escalation → validation → memory, with code pointers |
-| [how-track-correctors-work.md](how-track-correctors-work.md) | How TrackCorrector and PeriodCorrector clean up flickering, jumping, swapping detections |
-| [escalation-prompt-examples-20261101.md](escalation-prompt-examples-20261101.md) | One real escalation per code, with its full prompt and output schema |
-| [escalation-merge-design.md](escalation-merge-design.md) | The batching queue that merges related doubts into joint calls |
-| [short-term-memory-design.md](short-term-memory-design.md) | The daily activity log |
-| [spatial-temporal-memory-design.md](spatial-temporal-memory-design.md) | The long-term memory: spatial and temporal pyramids, trust gate, promotion rules |
-| [tracking-viz.md](tracking-viz.md) | The tracker visualization and replay renderer |
+| [end-to-end-flow.md](../end-to-end-flow.md) | Detection → tracking → escalation → validation → memory, with code pointers |
+| [how-track-correctors-work.md](../how-track-correctors-work.md) | How TrackCorrector and PeriodCorrector clean up flickering, jumping, swapping detections |
+| [escalation-prompt-examples-20261101.md](../escalation-prompt-examples-20261101.md) | One real escalation per code, with its full prompt and output schema |
+| [escalation-merge-design.md](../escalation-merge-design.md) | The batching queue that merges related doubts into joint calls |
+| [short-term-memory-design.md](../short-term-memory-design.md) | The daily activity log |
+| [spatial-temporal-memory-design.md](../spatial-temporal-memory-design.md) | The long-term memory: spatial and temporal pyramids, trust gate, promotion rules |
+| [tracking-viz.md](../tracking-viz.md) | The tracker visualization and replay renderer |
 
 **Experiments and reviews**
 
 | Document | What it covers |
 | --- | --- |
-| [experiment-20261031-191639-cat-false-negative.md](experiment-20261031-191639-cat-false-negative.md) | The audit where a plainly visible sleeping cat went undetected |
-| [agent-trace-review-20261101-003501.md](agent-trace-review-20261101-003501.md) | The review that found the ball validated as a cat, and the fixes it led to |
-| [trace-review-20261101-003501.md](trace-review-20261101-003501.md) | The companion review of tools, prompts and skills for the same run |
-| [model-api-chaining-probe.md](model-api-chaining-probe.md) | The controlled probe of the API's chained-image 400 errors |
+| [experiment-20261031-191639-cat-false-negative.md](../experiment-20261031-191639-cat-false-negative.md) | The audit where a plainly visible sleeping cat went undetected |
+| [agent-trace-review-20261101-003501.md](../agent-trace-review-20261101-003501.md) | The review that found the ball validated as a cat, and the fixes it led to |
+| [trace-review-20261101-003501.md](../trace-review-20261101-003501.md) | The companion review of tools, prompts and skills for the same run |
+| [model-api-chaining-probe.md](../model-api-chaining-probe.md) | The controlled probe of the API's chained-image 400 errors |
 
 **Project and event**
 
 | Document | What it covers |
 | --- | --- |
-| [hackathon-guide.md](hackathon-guide.md) | Event rules, dates and judging criteria |
-| [project-plan.md](project-plan.md) · [project-plan.zh.md](project-plan.zh.md) | The team's plan for the event (English and Chinese) |
-| [demo/demo-script.md](demo/demo-script.md) | The produced 3-minute demo: beats, assets, sources |
+| [hackathon-guide.md](../hackathon-guide.md) | Event rules, dates and judging criteria |
+| [project-plan.md](../project-plan.md) · [project-plan.zh.md](../project-plan.zh.md) | The team's plan for the event (English and Chinese) |
+| [demo/demo-script.md](../demo/demo-script.md) | The produced 3-minute demo: beats, assets, sources |
 
 ---
 

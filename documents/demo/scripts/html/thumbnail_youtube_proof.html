@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 1280px; height: 720px; overflow: hidden; background: #121211; color: #f7f6f1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .scene { position: absolute; left: 0; top: 0; width: 690px; height: 720px; overflow: hidden; background: #252522; }
+    .scene img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 100%; filter: contrast(1.08) saturate(1.12); }
+    .scene::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 45%, rgba(0,0,0,.46)), linear-gradient(180deg, rgba(0,0,0,.04) 40%, rgba(0,0,0,.25)); }
+    .side-fade { position: absolute; z-index: 2; left: 560px; top: 0; width: 175px; height: 720px; background: linear-gradient(90deg, rgba(18,18,17,0), #121211 72%); }
+    .wrong { position: absolute; z-index: 4; left: 96px; bottom: 69px; padding: 10px 16px; border-radius: 11px; color: #111; background: #d95926; font-size: 31px; font-weight: 950; transform: rotate(-5deg); }
+    .wrong::after { content: "WRONG"; margin-left: 12px; padding-left: 12px; border-left: 3px solid rgba(0,0,0,.35); font-size: 22px; letter-spacing: .06em; }
+    .correct { position: absolute; z-index: 4; left: 294px; bottom: 150px; padding: 9px 15px; border-radius: 11px; color: #111; background: #3987e5; font-size: 31px; font-weight: 950; transform: rotate(3deg); }
+    .correct::after { content: "✓"; margin-left: 10px; }
+    .copy { position: absolute; z-index: 3; top: 56px; left: 710px; width: 530px; }
+    .eyebrow { color: #c7c6bd; font-size: 22px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin-top: 15px; font-size: 73px; line-height: .91; letter-spacing: -.055em; font-weight: 950; }
+    h1 span { color: #a394ff; }
+    .stamp { display: inline-block; margin-top: 27px; padding: 8px 18px 9px; border: 5px solid #a394ff; border-radius: 13px; color: #a394ff; font-size: 39px; font-weight: 950; letter-spacing: .045em; transform: rotate(-4deg); }
+    .metrics { position: absolute; z-index: 3; left: 710px; bottom: 65px; display: grid; gap: 12px; width: 500px; }
+    .metric { display: flex; align-items: baseline; gap: 13px; padding: 13px 17px 14px; border: 2px solid #4a485b; border-radius: 14px; background: #25242b; }
+    .metric b { color: #35da9f; font-size: 37px; line-height: .85; letter-spacing: -.04em; }
+    .metric span { color: #f2f1ed; font-size: 23px; font-weight: 800; }
+    .brand { position: absolute; z-index: 3; left: 710px; bottom: 25px; color: #aaa9a2; font-size: 16px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <section class="scene" aria-label="Real Pi camera frame showing Qb and Qbo">
+    <img src="../../assets/frames/2026-10-28-16-34-36-154433_E5.jpg" alt="Indoor camera frame showing two cats">
+    <span class="wrong">Qbo</span>
+    <span class="correct">Qb</span>
+  </section>
+  <div class="side-fade"></div>
+  <main class="copy">
+    <div class="eyebrow">A cheap camera made mistakes</div>
+    <h1>The AI agent <span>caught them.</span></h1>
+    <div class="stamp">OVERTURNED</div>
+  </main>
+  <section class="metrics" aria-label="Key results">
+    <div class="metric"><b>99%</b><span>right cat</span></div>
+    <div class="metric"><b>1%</b><span>of frames call the AI</span></div>
+  </section>
+  <footer class="brand">Agentic Realtime Computer Vision</footer>
+</body>
+</html>

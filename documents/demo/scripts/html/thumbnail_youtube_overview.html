@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 1280px; height: 720px; overflow: hidden; background: #111110; color: #f7f6f1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .copy { position: absolute; z-index: 3; left: 54px; top: 52px; width: 630px; }
+    .eyebrow { color: #c7c6bd; font-size: 24px; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin-top: 18px; font-size: 79px; line-height: .93; letter-spacing: -.055em; font-weight: 950; }
+    h1 span { color: #a394ff; }
+    .sub { margin-top: 22px; color: #d2d0c8; font-size: 31px; line-height: 1.15; font-weight: 700; }
+    .numbers { position: absolute; z-index: 4; left: 54px; bottom: 62px; display: flex; gap: 14px; }
+    .metric { min-width: 254px; padding: 15px 18px 16px; border: 2px solid #4a485b; border-radius: 16px; background: rgba(35, 34, 42, .96); }
+    .value { display: block; color: #35da9f; font-size: 44px; line-height: .9; font-weight: 950; letter-spacing: -.04em; }
+    .label { display: block; margin-top: 8px; color: #f2f1ed; font-size: 20px; font-weight: 800; letter-spacing: .025em; text-transform: uppercase; }
+    .cats { position: absolute; z-index: 1; right: 0; top: 0; width: 550px; height: 720px; display: flex; background: #2d2c2a; }
+    .cat { position: relative; width: 50%; overflow: hidden; }
+    .cat img { width: 100%; height: 100%; object-fit: cover; filter: saturate(1.08) contrast(1.06); }
+    .cat.qb img { object-position: 50% 30%; }
+    .cat.qbo img { object-position: 50% 41%; }
+    .cat::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.05) 35%, rgba(0,0,0,.5)); }
+    .tag { position: absolute; z-index: 2; left: 18px; bottom: 24px; padding: 8px 18px 9px; border-radius: 12px; color: #121212; font-size: 37px; font-weight: 950; letter-spacing: -.045em; }
+    .qb .tag { background: #3987e5; }
+    .qbo .tag { background: #d95926; }
+    .divider { position: absolute; z-index: 4; right: 252px; top: 290px; width: 96px; height: 96px; display: grid; place-items: center; border: 7px solid #111110; border-radius: 50%; background: #fab219; color: #111110; font-size: 62px; font-weight: 950; box-shadow: 0 9px 28px rgba(0,0,0,.48); }
+    .fade { position: absolute; z-index: 2; top: 0; right: 500px; width: 170px; height: 720px; background: linear-gradient(90deg, #111110 8%, rgba(17,17,16,0)); }
+    .brand { position: absolute; z-index: 4; left: 54px; bottom: 24px; color: #aaa9a2; font-size: 17px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <section class="cats" aria-label="Qb and Qbo">
+    <div class="cat qb"><img src="../../assets/reference/qb_standing_front.jpg" alt="Qb"><span class="tag">Qb</span></div>
+    <div class="cat qbo"><img src="../../assets/reference/qbo_on_back_face.jpg" alt="Qbo"><span class="tag">Qbo</span></div>
+  </section>
+  <div class="fade"></div>
+  <main class="copy">
+    <div class="eyebrow">My Raspberry Pi mixed them up</div>
+    <h1>My camera got the <span>cats</span> wrong.</h1>
+    <p class="sub">So I gave it an AI agent.</p>
+  </main>
+  <div class="divider">?</div>
+  <section class="numbers" aria-label="Key results">
+    <div class="metric"><span class="value">−93%</span><span class="label">False alarms</span></div>
+    <div class="metric"><span class="value">99%</span><span class="label">Right cat</span></div>
+  </section>
+  <footer class="brand">Agentic Realtime Computer Vision</footer>
+</body>
+</html>

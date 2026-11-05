@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <clipPath id="scene"><rect width="690" height="720"/></clipPath>
+    <linearGradient id="scene-fade" x1="0" x2="1"><stop offset="0" stop-color="#121211" stop-opacity="0"/><stop offset=".92" stop-color="#121211"/><stop offset="1" stop-color="#121211"/></linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="#121211"/>
+  <g clip-path="url(#scene)">
+    <image href="file:///Users/muyang/Documents/Personal/Github/agentic-realtime-cv/documents/demo/assets/frames/2026-10-28-16-34-36-154433_E5.jpg" x="-135" y="0" width="960" height="720" preserveAspectRatio="none"/>
+    <rect width="690" height="720" fill="#000" opacity=".07"/>
+  </g>
+  <rect x="520" width="220" height="720" fill="url(#scene-fade)"/>
+  <rect x="50" y="582" width="166" height="54" rx="11" fill="#d95926"/>
+  <text x="68" y="620" fill="#111110" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="900">Qbo</text>
+  <line x1="67" y1="599" x2="132" y2="623" stroke="#111110" stroke-width="4"/>
+  <text x="148" y="618" fill="#111110" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="900" letter-spacing="1">WRONG</text>
+  <rect x="255" y="473" width="102" height="52" rx="11" fill="#3987e5"/>
+  <text x="271" y="511" fill="#111110" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="900">Qb</text>
+  <text x="322" y="511" fill="#111110" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="900">✓</text>
+  <text x="710" y="78" fill="#c7c6bd" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="800" letter-spacing="2.6">A CHEAP CAMERA MADE MISTAKES</text>
+  <text x="710" y="160" fill="#f7f6f1" font-family="Arial, Helvetica, sans-serif" font-size="62" font-weight="900">THE AI AGENT</text>
+  <text x="710" y="225" fill="#a394ff" font-family="Arial, Helvetica, sans-serif" font-size="62" font-weight="900">CAUGHT THEM.</text>
+  <rect x="710" y="265" width="355" height="68" rx="13" fill="none" stroke="#a394ff" stroke-width="5"/>
+  <text x="732" y="314" fill="#a394ff" font-family="Arial, Helvetica, sans-serif" font-size="39" font-weight="900" letter-spacing="2">OVERTURNED</text>
+  <g transform="translate(710 504)">
+    <rect width="500" height="62" rx="14" fill="#25242b" stroke="#4a485b" stroke-width="2"/>
+    <text x="17" y="44" fill="#35da9f" font-family="Arial, Helvetica, sans-serif" font-size="37" font-weight="900">99%</text>
+    <text x="120" y="42" fill="#f2f1ed" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="800">RIGHT CAT</text>
+  </g>
+  <g transform="translate(710 579)">
+    <rect width="500" height="62" rx="14" fill="#25242b" stroke="#4a485b" stroke-width="2"/>
+    <text x="17" y="44" fill="#35da9f" font-family="Arial, Helvetica, sans-serif" font-size="37" font-weight="900">1%</text>
+    <text x="100" y="42" fill="#f2f1ed" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="800">OF FRAMES CALL THE AI</text>
+  </g>
+  <text x="710" y="698" fill="#aaa9a2" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="800" letter-spacing="1.5">AGENTIC REALTIME COMPUTER VISION</text>
+</svg>

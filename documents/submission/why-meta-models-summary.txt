@@ -1,0 +1,25 @@
+Why we need Meta's models
+
+THE GAP ONLY A MODEL LIKE THIS CAN CLOSE
+Our camera's small detector, YOLO nano on a Raspberry Pi 5 CPU, handles about 99% of frames on its own and raises a typed doubt on the rest. Those doubts need somewhere to go. Without a capable model on the other end, the cheap detector stays cheap and wrong, or every frame goes to AI and the system stops being cheap. Labeling every frame of 8 minutes cost $24.65, about $1.2 million a year per camera. Meta's Muse Spark is what lets us spend intelligence only where doubt exists.
+
+1. IT TELLS LOOK-ALIKES APART, AND SAYS WHY
+Our two white cats differ in subtle cues: fur tone, outline, paws and tail. The small detector confuses them, and the tracker's rules alone lowered identity accuracy from 0.934 to 0.920. Muse Spark compares crops against each cat's written profile and must quote the cues it sees, for example "cool white, smooth sharp outline, no fluffy halo = Qb". After review, identity accuracy reached 0.993.
+
+2. IT CHOOSES ITS OWN EVIDENCE
+Sending everything is unaffordable, and a single fixed frame is often the wrong one. Through multi-turn tool calling with images returned inside tool results, the agent reads the tracker history first, then fetches a few frames, then crops into the disputed boxes, and stops when the case is settled.
+
+3. IT ANSWERS WITH AN OPERATION, NOT AN ESSAY
+Strict structured output, including schemas built at runtime for merged calls, means every verdict can be applied directly to the tracked record, and each changed row records which doubt changed it. All 12 verdicts in the demo were parsed and applied.
+
+4. IT COSTS CENTS PER DOUBT
+Everyday Spark pricing and cached input (52% of input tokens cached) kept the demo's 12 doubts at $0.39, about 63 times cheaper than AI on every frame. Across 65 minutes of footage, review cost $3.77 versus about $205.
+
+5. IT WRITES MEMORY PEOPLE CAN READ
+Muse Spark labels each visit's activity, judges whether new observations contradict what memory already knows, and writes word-capped summaries by place and time. "Unusual" can then mean unusual for this cat, in this spot, at this hour.
+
+THE FAMILY COMPLETES THE SOLUTION
+Muse SAM 3.1 produced the ground truth that proves the gain (F1 0.794 vs 0.612). Muse Wonder made the design right before any code existed. Muse Glimmer keeps footage on the device for private deployment. One family, matched to each job, keeps prompts, schemas, pricing and behavior consistent.
+
+WHAT THIS DELIVERS
+Because of these models: false alarms fell 93% (107 to 8), precision rose from 0.895 to 0.992, 99% of what the camera saw got the right cat, and only about 1% of frames ever called the AI. None of this gain comes from the small detector or the tracker's rules. It comes from Muse Spark's verdicts.
