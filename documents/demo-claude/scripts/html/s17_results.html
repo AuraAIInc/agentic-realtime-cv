@@ -25,20 +25,32 @@ h2{font-size:56px;line-height:1.1;font-weight:700;letter-spacing:-.015em}
 .foot{position:absolute;left:112px;right:112px;bottom:48px;font-size:20px;color:var(--t3);display:flex;justify-content:space-between}
 .stamp{display:inline-block;padding:10px 26px;border:4px solid;border-radius:14px;font-size:40px;font-weight:800;letter-spacing:.06em;transform:rotate(-4deg)}
 
-    .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:28px;margin-top:50px}
-    .tile{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:34px 36px}
-    .v{font-size:84px;font-weight:800;letter-spacing:-.03em;line-height:1}
-    .l{font-size:25px;color:var(--t2);margin-top:14px;line-height:1.35}
-    .bars{margin-top:56px}
-    .r{display:grid;grid-template-columns:420px 1fr;align-items:center;margin-bottom:20px;font-size:27px;color:var(--t2)}
-    .bar{height:44px;border-radius:0 10px 10px 0;display:flex;align-items:center}
-    .bar span{margin-left:16px;font-weight:700;color:var(--t1);white-space:nowrap;position:relative}
+    .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;margin-top:38px}
+    .tile{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:28px 30px}
+    .v{font-size:76px;font-weight:800;letter-spacing:-.03em;line-height:1}
+    .l{font-size:23px;color:var(--t2);margin-top:12px;line-height:1.35}
+    .l b{color:var(--t1)}
+    .low{display:grid;grid-template-columns:1.15fr 1fr;gap:24px;margin-top:24px}
+    .pan{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:22px 30px}
+    .ph{font-size:19px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);font-weight:600;margin-bottom:10px}
+    .db{display:grid;grid-template-columns:270px 1fr;align-items:center;font-size:21px;color:var(--t2);height:44px}
+    .db svg{display:block}
+    .pt{font-size:22px;color:var(--t2);line-height:1.6}
+    .pt b{color:var(--t1)}
     </style></head>
-<body><div class="slide"><div class="kicker">Results · 8 real minutes, both cats</div>
+<body><div class="slide"><div class="kicker">Did it work? 8 real minutes, both cats</div><h2 style="margin-top:14px">93% fewer false alarms, for 39 cents.</h2>
       <div class="tiles">
-        <div class="tile"><div class="v">12</div><div class="l">doubts raised<br>0.9% of 1,319 frames</div></div>
-        <div class="tile"><div class="v">12/12</div><div class="l">verdicts returned,<br>each with a reason</div></div>
-        <div class="tile"><div class="v">$0.26</div><div class="l">to review them all<br>≈5× cheaper than all frames</div></div>
-        <div class="tile"><div class="v">~1%</div><div class="l">of frames ever<br>leave the home</div></div>
+        <div class="tile"><div class="v" style="color:var(--agent)">−93%</div><div class="l">false alarms<br><b>107 → 8</b></div></div>
+        <div class="tile"><div class="v">99%</div><div class="l">of what the camera saw<br>gets the <b>right cat</b> (was 93%)</div></div>
+        <div class="tile"><div class="v">$0.39</div><div class="l">to review 12 doubts<br><b>63× cheaper</b> than AI on every frame</div></div>
+        <div class="tile"><div class="v">~1%</div><div class="l">of frames raise a doubt:<br><b>the only time AI is called</b></div></div>
       </div>
-      <div class="bars"><div class="kicker" style="font-size:22px;margin-bottom:22px">Review cost for the same window</div><div class="r"><span>Every frame to the LLM</span><div class="bar" style="width:1100px;background:#4a4944"><span style="left:1100px">$1.32 · 100%</span></div></div><div class="r"><span>One call per doubt</span><div class="bar" style="width:500px;background:#6d6b64"><span style="left:500px">$0.60 · 45%</span></div></div><div class="r"><span>Merged review (ours)</span><div class="bar" style="width:217px;background:var(--agent)"><span style="left:217px">$0.26 · 19%</span></div></div></div></div><div class="foot"><span>Run 231613 vs 012059; all-frames baseline = 1,319 frames × $0.001 · memory adds ~$0.14 (activity labels, store, promote)</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>
+      <div class="low">
+        <div class="pan"><div class="ph">Raw detector → after agent review</div>
+          <div class="db"><span>precision</span><svg width="520" height="40" font-family="SF Mono,Menlo,monospace"><line x1="367" y1="22" x2="436" y2="22" stroke="#8e8d84" stroke-width="2"/><circle cx="367" cy="22" r="8" fill="#199e70" stroke="#232321" stroke-width="2"/><circle cx="436" cy="22" r="8" fill="#9085e9" stroke="#232321" stroke-width="2"/><text x="355" y="28" font-size="17" fill="#c3c2b7" text-anchor="end">0.895</text><text x="450" y="28" font-size="18" font-weight="700" fill="#f2f1ed">0.992</text></svg></div><div class="db"><span>identity accuracy</span><svg width="520" height="40" font-family="SF Mono,Menlo,monospace"><line x1="395" y1="22" x2="437" y2="22" stroke="#8e8d84" stroke-width="2"/><circle cx="395" cy="22" r="8" fill="#199e70" stroke="#232321" stroke-width="2"/><circle cx="437" cy="22" r="8" fill="#9085e9" stroke="#232321" stroke-width="2"/><text x="383" y="28" font-size="17" fill="#c3c2b7" text-anchor="end">0.934</text><text x="451" y="28" font-size="18" font-weight="700" fill="#f2f1ed">0.993</text></svg></div>
+          <div class="db"><span>precision, hardest 2 min</span><svg width="520" height="40" font-family="SF Mono,Menlo,monospace"><line x1="104" y1="22" x2="421" y2="22" stroke="#8e8d84" stroke-width="2"/><circle cx="104" cy="22" r="8" fill="#199e70" stroke="#232321" stroke-width="2"/><circle cx="421" cy="22" r="8" fill="#9085e9" stroke="#232321" stroke-width="2"/><text x="92" y="28" font-size="17" fill="#c3c2b7" text-anchor="end">0.529</text><text x="435" y="28" font-size="18" font-weight="700" fill="#f2f1ed">0.971</text></svg></div></div>
+        <div class="pan"><div class="ph">Holds beyond this window</div>
+          <div class="pt">• hardest 2 min (case E2): false alarms <b>65 → 4</b><br>
+          • 3 runs, 65 min: doubts stay at <b>~1%</b> of frames<br>
+          • all 3 runs reviewed for <b>$3.77</b> (vs ~$205)</div></div>
+      </div></div><div class="foot"><span>documents/final-model-performance-20261104.md · run 140502 vs audited GT, IoU 0.5 · hardest 2 min = largest-gain window (≥300 frames)</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>

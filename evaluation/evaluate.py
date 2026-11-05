@@ -1,7 +1,7 @@
 """Evaluate one tracking run: label sets + raw/revised/validated vs GT, cost, time.
 
 Ground truth: <hour>/labels/*.txt by default (validated YOLO labels).
---gt-source selects the label directory: labels | muse | spark.
+--gt-source selects the label directory: labels | "MUSE SAM 3.1" | "MUSE SPARK 1.3".
 
 Positional input is a single tracking-run directory (absolute path fine):
 
@@ -14,8 +14,8 @@ this repo's image_server/retrieved_images tree.
 
 Stages scored (IoU 0.5 and 0.75 unless --iou says otherwise):
 
-- muse / spark: <hour>/muse_labels (SAM 3.1) and <hour>/spark_labels
-  (Spark 1.3) against GT, when present. No cost attached (labeled offline).
+- MUSE SAM 3.1 / MUSE SPARK 1.3: <hour>/muse_labels and
+  <hour>/spark_labels against GT, when present. No cost attached (labeled offline).
 - raw: run stream.jsonl (raw detector replay, incl. DB detections).
 - revised: run revised.jsonl minus tombstones and interpolated guesses.
 - validated: run validated.jsonl minus interpolated guesses.
@@ -49,8 +49,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from metrics import Box, evaluate_frames  # noqa: E402
 
-GT_SOURCES = {"muse": "muse_labels", "spark": "spark_labels", "labels": "labels"}
-LABEL_STAGES = (("muse", "muse_labels"), ("spark", "spark_labels"))
+GT_SOURCES = {"MUSE SAM 3.1": "muse_labels", "MUSE SPARK 1.3": "spark_labels", "labels": "labels"}
+LABEL_STAGES = (("MUSE SAM 3.1", "muse_labels"), ("MUSE SPARK 1.3", "spark_labels"))
 PIPE_STAGES = (("raw", "stream.jsonl"), ("revised", "revised.jsonl"), ("validated", "validated.jsonl"))
 # Detection strip charts written by the tracking run (agent/tracking/charts.py).
 CHART_FILES = (
@@ -64,6 +64,8 @@ GT_CHART_TITLE = "Ground truth detections"
 REPORT_CHART_ORDER = tuple([k for k, _f, _t in CHART_FILES] + [GT_CHART_KEY])
 CHART_TITLES = {k: t for k, _f, t in CHART_FILES} | {GT_CHART_KEY: GT_CHART_TITLE}
 MISSING = "—"
+DEFAULT_IOUS = (0.5, 0.75)
+FALLBACK_SIZE = (800, 600)  # agent/memory/memory_config.py frame_width x frame_height
 STEM_RE = re.compile(r"^\d+_(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d+)$")
 
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -224,6 +226,41 @@ def resolve_hour_dir(run_dir: str, meta: dict, hour_override: str | None, data_r
     return os.path.join(data_root, start.strftime("%Y-%m-%d-%H"))
 
 
+def image_size(meta: dict, hour_dir: str) -> tuple[int, int]:
+    """Frame (width, height): run.json img_size, else the hour's first JPEG.
+
+    Falls back to the camera's configured 800x600 with a stderr warning, so
+    a wrong size never skews every GT box silently.
+    """
+    size = meta.get("img_size")
+    if isinstance(size, (list, tuple)) and len(size) == 2 and all(isinstance(v, int) and v > 0 for v in size):
+        return int(size[0]), int(size[1])
+    for path in sorted(glob.glob(os.path.join(hour_dir, "images", "*.jpg"))):
+        found = jpeg_size(path)
+        if found:
+            return found
+    print(f"warning: no img_size in run.json and no readable JPEG under {hour_dir}/images; "
+          f"assuming {FALLBACK_SIZE[0]}x{FALLBACK_SIZE[1]}", file=sys.stderr)
+    return FALLBACK_SIZE
+
+
+def window_hour_dirs(meta: dict, hour_dir: str) -> list:
+    """hour_dir plus sibling hour dirs the run window also covers (existing only)."""
+    dirs = [hour_dir]
+    window = meta.get("window") or {}
+    start, end = parse_time(window.get("start")), parse_time(window.get("end_exclusive"))
+    if start is None or end is None:
+        return dirs
+    parent = os.path.dirname(os.path.normpath(hour_dir))
+    t = start.replace(minute=0, second=0, microsecond=0)
+    while t < end:
+        cand = os.path.join(parent, t.strftime("%Y-%m-%d-%H"))
+        if os.path.normpath(cand) != os.path.normpath(hour_dir) and os.path.isdir(cand):
+            dirs.append(cand)
+        t += datetime.timedelta(hours=1)
+    return dirs
+
+
 def collect_cost(run_dir: str, meta: dict) -> dict:
     """Wall time + supervisor $/token/image cost from run artifacts."""
     cost = {
@@ -238,15 +275,24 @@ def collect_cost(run_dir: str, meta: dict) -> dict:
         "usage_tokens": {},
         "llm_ms": 0.0,
         "tools_ms": 0.0,
+        "agent_calls": 0,
     }
     path = os.path.join(run_dir, "validations.jsonl")
     if not os.path.exists(path):
         return cost
+    seen_calls = set()
     for row in load_jsonl(path):
         review = row.get("review") or {}
         cost["validations"] += 1
         cost["verdicts"][review.get("verdict")] = cost["verdicts"].get(review.get("verdict"), 0) + 1
         run = row.get("agent_run") or {}
+        # Merged review: one agent call answers several doubts and every one of their rows
+        # carries the same agent_run, so count each call's cost/usage once.
+        call = run.get("run_dir") or run.get("trace")
+        if call is not None:
+            if call in seen_calls:
+                continue
+            seen_calls.add(call)
         cost["est_cost_usd"] += run.get("est_cost_usd") or 0.0
         cost["images_used"] += run.get("images_used") or 0
         cost["tool_calls"] += run.get("tool_calls") or 0
@@ -255,6 +301,7 @@ def collect_cost(run_dir: str, meta: dict) -> dict:
                 cost["usage_tokens"][k] = cost["usage_tokens"].get(k, 0) + v
         cost["llm_ms"] += run.get("llm_ms") or 0.0
         cost["tools_ms"] += run.get("tools_ms") or 0.0
+    cost["agent_calls"] = len(seen_calls)
     cost["est_cost_usd"] = round(cost["est_cost_usd"], 6)
     return cost
 
@@ -342,11 +389,17 @@ def render_gt_chart(
     return os.path.isfile(dest_path)
 
 
-def score_frames(preds: dict, gt: dict, frame_set: list, order: list, iou_thrs: list) -> tuple:
-    """(metrics_by_iou, preds_outside_gt) over the joined frame set."""
+def score_frames(preds: dict, gt: dict, frame_set: list, order: list, iou_thrs: list, run_frames=None) -> tuple:
+    """(metrics_by_iou, preds_outside_gt) over the joined frame set.
+
+    preds_outside_gt counts predictions that fall on run frames without GT
+    (never scored). Offline label sets cover the whole hour, so without
+    run_frames they would also count frames outside the run window.
+    """
     frames = {t: (preds.get(t, []), gt[t]) for t in frame_set}
     metrics = {f"iou_{t}": evaluate_frames(frames, t, classes=order) for t in iou_thrs}
-    outside = sum(len(v) for t, v in preds.items() if t not in gt)
+    in_run = set(run_frames) if run_frames is not None else None
+    outside = sum(len(v) for t, v in preds.items() if t not in gt and (in_run is None or t in in_run))
     return metrics, outside
 
 
@@ -397,6 +450,7 @@ def apply_audit(gt: dict, audit: dict, view_id: int = 3) -> tuple[dict, dict]:
                 if r_lo <= when < r_hi and b.cls == c_from:
                     b = Box(b.x1, b.y1, b.x2, b.y2, c_to, b.conf)
                     changes["boxes_relabeled"] += 1
+                    break
             kept.append(b)
         out[t] = kept
     return out, changes
@@ -419,12 +473,19 @@ def evaluate_run(
     order = [int(v) for v in cmap["order"]]
     names = {str(k): v for k, v in cmap["names"].items()}
 
-    images = sorted(glob.glob(os.path.join(hour_dir, "images", "*.jpg")))
-    size = jpeg_size(images[0]) if images else None
-    img_w, img_h = size if size else (800, 600)
+    img_w, img_h = image_size(meta, hour_dir)
 
-    gt = load_yolo_labels(label_dir, order, img_w, img_h)
-    gt, audit_changes = apply_audit(gt, load_audit(audit_path, os.path.basename(os.path.normpath(hour_dir))))
+    # A run window can cross an hour boundary: GT comes from every hour dir it
+    # touches (siblings of hour_dir that exist), each with its own audit entry.
+    hour_dirs = window_hour_dirs(meta, hour_dir)
+    gt: dict = {}
+    audit_changes: dict = {}
+    for hd in hour_dirs:
+        part = load_yolo_labels(os.path.join(hd, GT_SOURCES[gt_source]), order, img_w, img_h)
+        part, changes = apply_audit(part, load_audit(audit_path, os.path.basename(os.path.normpath(hd))))
+        gt.update(part)
+        for k, v in changes.items():
+            audit_changes[k] = audit_changes.get(k, 0) + v
     run_frames = [parse_time(r.get("create_time")) for r in load_jsonl(os.path.join(run_dir, "images.jsonl"))]
     run_frames = [t for t in run_frames if t is not None]
     frame_set = [t for t in run_frames if t in gt]
@@ -437,6 +498,7 @@ def evaluate_run(
         "window": meta.get("window"),
         "hour": os.path.basename(os.path.normpath(hour_dir)),
         "hour_dir": hour_dir,
+        "hour_dirs": hour_dirs,
         "gt_source": gt_source,
         "gt_dir": label_dir,
         "class_names": names,
@@ -452,7 +514,7 @@ def evaluate_run(
     }
     for stage, fname in PIPE_STAGES:
         preds = load_stage(run_dir, fname)
-        metrics, outside = score_frames(preds, gt, frame_set, order, iou_thrs)
+        metrics, outside = score_frames(preds, gt, frame_set, order, iou_thrs, run_frames)
         result["stages"][stage] = {
             "file": fname,
             "present": os.path.exists(os.path.join(run_dir, fname)),
@@ -460,12 +522,14 @@ def evaluate_run(
             "metrics": metrics,
         }
     for stage, dirname in LABEL_STAGES:
-        label_path = os.path.join(hour_dir, dirname)
-        if not os.path.isdir(label_path):
+        if not any(os.path.isdir(os.path.join(hd, dirname)) for hd in hour_dirs):
             result["label_sets"][stage] = {"dir": dirname, "present": False}
             continue
-        preds = load_yolo_labels(label_path, order, img_w, img_h)
-        metrics, outside = score_frames(preds, gt, frame_set, order, iou_thrs)
+        preds = {}
+        for hd in hour_dirs:
+            if os.path.isdir(os.path.join(hd, dirname)):
+                preds.update(load_yolo_labels(os.path.join(hd, dirname), order, img_w, img_h))
+        metrics, outside = score_frames(preds, gt, frame_set, order, iou_thrs, run_frames)
         result["label_sets"][stage] = {
             "dir": dirname,
             "present": True,
@@ -500,7 +564,7 @@ def md_table(headers: list, rows: list, aligns: list | None = None) -> str:
     left-aligned, the rest to right-aligned (numeric).
     """
     str_rows = [[str(c) for c in r] for r in rows]
-    widths = [len(h) for h in headers]
+    widths = [max(len(h), 4) for h in headers]  # room for ":---"
     for r in str_rows:
         for i, c in enumerate(r):
             widths[i] = max(widths[i], len(c))
@@ -513,8 +577,8 @@ def md_table(headers: list, rows: list, aligns: list | None = None) -> str:
     header_line = "| " + " | ".join(pad(h, i) for i, h in enumerate(headers)) + " |"
     sep_cells = []
     for i, a in enumerate(aligns):
-        dashes = "-" * max(widths[i], 3)
-        sep_cells.append(f":{dashes}" if a == "l" else f"{dashes}:" if a == "r" else f":{dashes}:")
+        n = max(widths[i] - (2 if a == "c" else 1), 3)
+        sep_cells.append(f":{'-' * n}" if a == "l" else f"{'-' * n}:" if a == "r" else f":{'-' * n}:")
     sep_line = "| " + " | ".join(sep_cells) + " |"
     body = ["| " + " | ".join(pad(c, i) for i, c in enumerate(r)) + " |" for r in str_rows]
     return "\n".join([header_line, sep_line] + body)
@@ -568,7 +632,7 @@ def headline(res: dict, iou_thr: float) -> list:
     elapsed = cost.get("elapsed_s")
     lines.append(
         f"- Cost: **${cost.get('est_cost_usd', 0.0):.4f}** supervisor spend over "
-        f"{cost.get('validations', 0)} validations ({cost.get('images_used', 0)} images, "
+        f"{cost.get('validations', 0)} validations in {cost.get('agent_calls', 0)} agent calls ({cost.get('images_used', 0)} images, "
         f"{cost.get('tool_calls', 0)} tool calls)"
         + (f"; wall time **{elapsed:.1f} s**" if isinstance(elapsed, (int, float)) else "")
         + "."
@@ -678,7 +742,7 @@ def cost_block(res: dict) -> list:
         f"- Wall time: {cost.get('elapsed_s')} s "
         f"({cost.get('started_at')} → {cost.get('finished_at')})",
         f"- Supervisor spend: **${cost.get('est_cost_usd', 0.0):.4f}** over "
-        f"{cost.get('validations', 0)} validations ({verdicts or 'none'})",
+        f"{cost.get('validations', 0)} validations in {cost.get('agent_calls', 0)} agent calls ({verdicts or 'none'})",
         f"- Images sent: {cost.get('images_used', 0)}; tool calls: {cost.get('tool_calls', 0)}; "
         f"tokens: {int(total_tokens)} total {tokens if tokens else ''}",
         f"- LLM time: {cost.get('llm_ms', 0.0):.0f} ms; tools time: {cost.get('tools_ms', 0.0):.0f} ms",
@@ -706,6 +770,22 @@ def chart_lines(res: dict) -> list:
     return lines
 
 
+def unscored_lines(res: dict) -> list:
+    """Warn when predictions fall on run frames that have no GT label file.
+
+    Those frames are not scored at all, so detections there count as
+    neither TP nor FP; a large number means precision is optimistic.
+    """
+    counts = [
+        f"{stage} {s['preds_outside_gt_frames']}"
+        for stage, s in res["stages"].items()
+        if s.get("present") and s.get("preds_outside_gt_frames")
+    ]
+    if not counts:
+        return []
+    return [f"- Unscored predictions on frames without GT: {', '.join(counts)} (not counted as FP)"]
+
+
 def render_report(res: dict, iou_thrs: list) -> str:
     names = res["class_names"]
     parts = [
@@ -717,6 +797,7 @@ def render_report(res: dict, iou_thrs: list) -> str:
         f"image size {res['image_size'][0]}x{res['image_size'][1]}",
         f"- Frames: {res['eval_frames']} evaluated "
         f"({res['run_frames']} in run, {res['frames_without_gt']} without GT)",
+        *unscored_lines(res),
         *([f"- GT audit applied: {res['audit']}"] if res.get("audit") else []),
         "",
     ]
@@ -759,10 +840,14 @@ def main() -> None:
     ap.add_argument("--hour", default=None, help="retrieved_images/<hour> dir (default: auto from run).")
     ap.add_argument("--data-root", default=DEFAULT_DATA_ROOT, help="retrieved_images tree for hour lookup.")
     ap.add_argument("--gt-source", choices=sorted(GT_SOURCES), default="labels")
-    ap.add_argument("--iou", type=float, action="append", default=[0.5, 0.75])
+    ap.add_argument(
+        "--iou", type=float, action="append", default=None,
+        help="IoU threshold; repeat for several (default: 0.5 and 0.75). The first one drives the headline.",
+    )
     ap.add_argument("--out", default=None, help="Report dir (default: <repo>/output/evaluation_runs/).")
     ap.add_argument("--audit", default=None, help="Apply documented GT corrections (e.g. evaluation/gt_audit.yaml).")
     args = ap.parse_args()
+    args.iou = list(dict.fromkeys(args.iou or DEFAULT_IOUS))
 
     with open(os.path.join(args.run_dir, "run.json")) as f:
         meta = json.load(f)

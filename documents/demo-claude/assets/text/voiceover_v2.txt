@@ -1,0 +1,26 @@
+# Voice-over v2: one paragraph per beat, complete sentences, smooth hand-offs between slides.
+# Tone: soft, friendly, easygoing, a little excited. Spoken names: "Q-B" = Qb, "Q-bo" = Qbo.
+[01] Hi! These are my two cats, Q-B and Q-bo, and they look so alike that my camera can't tell them apart.
+[02] I'm at work all day, and I want to know whether they ate, slept, and played, because cats hide illness and small changes in their routine matter.
+[03] But my camera makes mistakes. Last week, it decided this exercise ball was Q-bo, and it believed that for twenty-six minutes.
+[04] So why not send every frame to a big AI model? We tried it, and eight minutes of video took an hour and twenty-five dollars, and it still missed a sleeping cat.
+[05] A bigger model on the device won't fit either, because a Raspberry Pi only runs YOLO nano, at about three frames a second. That model is almost free, but it makes mistakes.
+[06] Training a larger detector is out of scope for us, so we keep the small model and make it smarter with AI. So we built both.
+[07] We call it Agentic Realtime Computer Vision. The AI gives the camera a brain, and the camera gives the AI eyes.
+[08] Here's how it works. The Pi watches every frame, and when it's unsure, our bridge asks Meta's Muse Spark about that moment and remembers what's normal. Only those few moments ever reach the agent.
+[09] Those doubts are rare. In eight minutes of footage, the Pi raised only twelve, and it handled the last five minutes completely on its own.
+[10] Each doubt has a name, and there are fifteen kinds, like "I relabeled this cat by distance alone."
+[11] Every doubt then becomes a plain-English question, with its evidence and a strict answer format.
+[12] The agent does the work itself. It pulls the frames it needs, zooms into each cat, and answers with a reason. In this call, it settled four related doubts at once.
+[13] Related doubts are reviewed together, so twelve questions took only five calls.
+[14] Each verdict rewrites the record, and every change points back to its trace.
+[15] The system also keeps a memory, written as a diary. For example, Q-B slept in the green bed from four thirty-four to four forty.
+[16] Over the weeks, it learns what normal looks like for each cat, in each spot. That way, every new question arrives with useful context.
+[17] So does it work? Here, the tracker called the sleeping cat Q-bo, but the agent saw white fur and white paws and overturned it to Q-B.
+[18] Here, two cats walked close together and the tracker swapped them, so the agent checked both and swapped them right back.
+[19] And when the detector itself is wrong, the cat gets relabeled, and the ball is saved as a known decoy.
+[20] Put together, the same eight minutes now tell the true story. Q-B slept the whole time, while Q-bo walked in and out.
+[21] Here are the numbers. About one percent of frames call the AI, false alarms drop by ninety-three percent, and ninety-nine percent of what the camera saw gets the right cat, for just thirty-nine cents.
+[22] Cats are just the start, because lab mice, tiny drones, cars in fog, and production lines all have the same gap. Any small model watching for rare moments could use a smarter second opinion.
+[23] Next, we'll run Muse Glimmer locally, so your own agent can use these eyes and its verdicts can teach the Pi.
+[24] This is Agentic Realtime Computer Vision, built this week on Meta's Muse Spark. Thanks so much for watching!

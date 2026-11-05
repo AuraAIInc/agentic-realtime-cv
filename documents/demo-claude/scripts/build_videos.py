@@ -2,7 +2,7 @@
 
     v01_cost_counter.mp4   frames/day and $/year counting up (s04 beat)
     v02_ball_push_in.mp4   slow push-in onto the ball tracked as "Qbo" (s02 beat)
-    v03_replay_tracker.mp4 real frames 16:34:25-16:35:45 at ~3x, the Pi tracker's boxes,
+    v03_replay_tracker.mp4 first 10 s (16:34:25-16:34:54) at ~3x, the Pi tracker's boxes on the walking cat, Qb asleep from review,
                            doubts popping up as they fire, verdicts listed on the right
 
     python documents/demo-claude/scripts/build_videos.py [v01 v02 v03]
@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 DEMO = HERE.parent
 REPO = DEMO.parents[1]
 OUT = DEMO / "assets" / "video"
-RUN = REPO / "output/tracking_runs/view3_20261028-1633_1640_replay_db_20261102-231613-423659"
+RUN = REPO / "output/tracking_runs/view3_20261028-1633_1640_replay_db_20261104-140502-443911"  # replay run 140502
 HOUR = REPO / "image_server/retrieved_images/2026-10-28-16/images"
 
 BG = (26, 26, 25)
@@ -73,11 +73,13 @@ def v01_cost_counter() -> Path:
             e = ease(t)
             im = Image.new("RGB", (W, H), BG)
             d = ImageDraw.Draw(im)
-            d.text((112, 250), "ONE CAMERA · 2 FRAMES A SECOND · EVERY FRAME TO A VISION LLM", font=font(26, "Semibold"), fill=T3)
+            # Rate measured in documents/labeling-sam-vs-spark-20261103.md: SAM 3.1 + Muse Spark labeled
+            # 1,318 frames for $24.65 ($0.0187/frame, Standard pricing) -> 172,800 x 365 x 0.0187.
+            d.text((112, 250), "ONE CAMERA · 2 FRAMES A SECOND · EVERY FRAME LABELED BY AI", font=font(26, "Semibold"), fill=T3)
             d.text((112, 330), f"{int(172800 * e):,}", font=font(170, "Bold"), fill=T1)
             d.text((112, 530), "frames a day", font=font(38), fill=T2)
-            d.text((1000, 330), f"${int(63072 * e):,}", font=font(170, "Bold"), fill=BAD)
-            d.text((1000, 530), "a year, at $0.001 a frame", font=font(38), fill=T2)
+            d.text((860, 340), f"${int(1179446 * e):,}", font=font(150, "Bold"), fill=BAD)
+            d.text((860, 530), "a year, at the $0.019 a frame we measured", font=font(38), fill=T2)
             # progress hairline
             d.rectangle((112, 640, 112 + int(1696 * e), 643), fill=BAD)
             if i > fps * 4.3:
@@ -150,9 +152,31 @@ def v03_replay_tracker() -> Path:
     corrected = {"keep_original", "cut_at_gap_start"}
 
     fw, fh = 1280, 960
-    sx, sy = fw / 800, fh / 600
     out = OUT / "v03_replay_tracker.mp4"
     fps = 8  # ~2.8 source fps -> ~3x real time
+    times = times[: fps * 10]  # first 10 s of output only
+
+    # The walking cat keeps the tracker's own labels (mistakes included). The cat asleep in the
+    # bed is shown as Qb on every frame from the reviewed rows (validated.jsonl), linearly
+    # interpolated where the detector missed her (dashed) - the same bridge disclosed on s17a.
+    def in_scope(r):  # tracker rows for the walking cat only
+        return r.get("box_x1") is not None and r["box_y2"] < 575
+
+    bed = sorted((json.loads(l) for l in (RUN / "validated.jsonl").open()), key=lambda r: r["create_time"])
+    bed = [r for r in bed if not r.get("deleted") and r.get("orig_cat_id") is not None and r.get("box_y2", 0) >= 575]
+
+    def qb_box(t):
+        """(box, interpolated?) for the sleeping Qb at time t, from the nearest real bed boxes."""
+        before = [r for r in bed if _ts(r["create_time"]) <= t]
+        after = [r for r in bed if _ts(r["create_time"]) >= t]
+        a, b = (before[-1] if before else after[0]), (after[0] if after else before[-1])
+        ta, tb = _ts(a["create_time"]), _ts(b["create_time"])
+        f = 0 if tb == ta else (t - ta).total_seconds() / (tb - ta).total_seconds()
+        box = [a[k] + f * (b[k] - a[k]) for k in ("box_x1", "box_y1", "box_x2", "box_y2")]
+        return box, not (abs((t - ta).total_seconds()) < 0.01 or abs((t - tb).total_seconds()) < 0.01)
+
+    cx0 = cy0 = 0
+    sx, sy = fw / 800, fh / 600
     f_lbl, f_small, f_mono = font(26, "Bold"), font(24), font(24, "Semibold", mono=True)
     with tempfile.TemporaryDirectory() as td:
         for i, t in enumerate(times):
@@ -160,9 +184,13 @@ def v03_replay_tracker() -> Path:
             fr = Image.open(files[t]).convert("RGB").resize((fw, fh), Image.LANCZOS)
             d = ImageDraw.Draw(fr)
             key = t.isoformat()
-            for r in rows.get(key, []):
+            qb, qb_guess = qb_box(t)
+            frame_rows = [r for r in rows.get(key, []) if in_scope(r)]
+            frame_rows.append({"cat_id": 25, "box_x1": qb[0], "box_y1": qb[1], "box_x2": qb[2], "box_y2": qb[3],
+                               "orig_cat_id": None if qb_guess else 25, "_label": "Qb · asleep"})
+            for r in frame_rows:
                 col = QB if r["cat_id"] == 25 else QBO
-                b = (r["box_x1"] * sx, r["box_y1"] * sy, r["box_x2"] * sx, r["box_y2"] * sy)
+                b = ((r["box_x1"] - cx0) * sx, (r["box_y1"] - cy0) * sy, (r["box_x2"] - cx0) * sx, (r["box_y2"] - cy0) * sy)
                 guessed = r.get("orig_cat_id") is None
                 if guessed:  # dashed outline for interpolated rows
                     x1, y1, x2, y2 = b
@@ -174,7 +202,7 @@ def v03_replay_tracker() -> Path:
                         d.line((x2, y, x2, min(y + 12, y2)), fill=col, width=4)
                 else:
                     d.rectangle(b, outline=col, width=4)
-                name = ("Qb" if r["cat_id"] == 25 else "Qbo") + (" (guess)" if guessed else "")
+                name = r.get("_label") or (("Qb" if r["cat_id"] == 25 else "Qbo") + (" (guess)" if guessed else ""))
                 tw = d.textlength(name, font=f_lbl)
                 d.rounded_rectangle((b[0], b[1] - 40, b[0] + tw + 20, b[1] - 4), radius=8, fill=col)
                 d.text((b[0] + 10, b[1] - 38), name, font=f_lbl, fill=(17, 17, 17))
@@ -197,7 +225,7 @@ def v03_replay_tracker() -> Path:
             c.text((px, 236), "DOUBTS RAISED", font=font(22, "Semibold"), fill=T3)
             y = 272
             for e in esc:
-                if _ts(e["time"]) > t or _ts(e["time"]) < t_start:
+                if _ts(e["time"]) > t or _ts(e["time"]) < t_start or _ts(e["time"]) > times[-1]:
                     continue
                 v = verdicts.get(e["name"], "")
                 tag_col = AGENT if v in corrected else T3
@@ -206,8 +234,9 @@ def v03_replay_tracker() -> Path:
                 c.text((px + 92, y + 4), e["code"], font=f_mono, fill=T1)
                 c.text((px + 142, y + 4), "→ " + v.replace("_", " "), font=f_small, fill=tag_col)
                 y += 50
-            c.text((px, 60 + fh - 124), "boxes = the Pi's own labels,", font=f_small, fill=T3)
-            c.text((px, 60 + fh - 92), "mistakes included", font=f_small, fill=T3)
+            c.text((px, 60 + fh - 156), "walking cat = the Pi's own labels,", font=f_small, fill=T3)
+            c.text((px, 60 + fh - 124), "mistakes included", font=f_small, fill=T3)
+            c.text((px, 60 + fh - 92), "Qb asleep = after review (dashed: bridged)", font=f_small, fill=T3)
             c.text((px, 60 + fh - 52), "verdicts: returned later by Muse Spark", font=f_small, fill=AGENT)
             canvas.save(Path(td) / f"{i:05d}.png")
         encode(Path(td), out, fps)

@@ -1,0 +1,152 @@
+{
+ "voice": "af_heart",
+ "blend": "af_nicole:0.2",
+ "speed": 1.2,
+ "length": 173.602,
+ "beats": [
+  {
+   "beat": 1,
+   "start": 0.3,
+   "end": 6.095,
+   "text": "Hi! These are my two cats, Q-B and Q-bo, and they look so alike that my camera can't tell them apart."
+  },
+  {
+   "beat": 2,
+   "start": 6.375,
+   "end": 13.755,
+   "text": "I'm at work all day, and I want to know whether they ate, slept, and played, because cats hide illness and small changes in their routine matter."
+  },
+  {
+   "beat": 3,
+   "start": 14.035,
+   "end": 20.916,
+   "text": "But my camera makes mistakes. Last week, it decided this exercise ball was Q-bo, and it believed that for twenty-six minutes."
+  },
+  {
+   "beat": 4,
+   "start": 21.196,
+   "end": 29.369,
+   "text": "So why not send every frame to a big AI model? We tried it, and eight minutes of video took an hour and twenty-five dollars, and it still missed a sleeping cat."
+  },
+  {
+   "beat": 5,
+   "start": 29.649,
+   "end": 39.275,
+   "text": "A bigger model on the device won't fit either, because a Raspberry Pi only runs YOLO nano, at about three frames a second. That model is almost free, but it makes mistakes."
+  },
+  {
+   "beat": 6,
+   "start": 39.555,
+   "end": 46.406,
+   "text": "Training a larger detector is out of scope for us, so we keep the small model and make it smarter with AI. So we built both."
+  },
+  {
+   "beat": 7,
+   "start": 46.686,
+   "end": 52.999,
+   "text": "We call it Agentic Realtime Computer Vision. The AI gives the camera a brain, and the camera gives the AI eyes."
+  },
+  {
+   "beat": 8,
+   "start": 53.279,
+   "end": 63.582,
+   "text": "Here's how it works. The Pi watches every frame, and when it's unsure, our bridge asks Meta's Muse Spark about that moment and remembers what's normal. Only those few moments ever reach the agent."
+  },
+  {
+   "beat": 9,
+   "start": 63.862,
+   "end": 70.914,
+   "text": "Those doubts are rare. In eight minutes of footage, the Pi raised only twelve, and it handled the last five minutes completely on its own."
+  },
+  {
+   "beat": 10,
+   "start": 71.194,
+   "end": 76.275,
+   "text": "Each doubt has a name, and there are fifteen kinds, like \"I relabeled this cat by distance alone.\""
+  },
+  {
+   "beat": 11,
+   "start": 76.555,
+   "end": 81.478,
+   "text": "Every doubt then becomes a plain-English question, with its evidence and a strict answer format."
+  },
+  {
+   "beat": 12,
+   "start": 81.758,
+   "end": 90.398,
+   "text": "The agent does the work itself. It pulls the frames it needs, zooms into each cat, and answers with a reason. In this call, it settled four related doubts at once."
+  },
+  {
+   "beat": 13,
+   "start": 90.678,
+   "end": 94.962,
+   "text": "Related doubts are reviewed together, so twelve questions took only five calls."
+  },
+  {
+   "beat": 14,
+   "start": 95.242,
+   "end": 99.126,
+   "text": "Each verdict rewrites the record, and every change points back to its trace."
+  },
+  {
+   "beat": 15,
+   "start": 99.406,
+   "end": 106.469,
+   "text": "The system also keeps a memory, written as a diary. For example, Q-B slept in the green bed from four thirty-four to four forty."
+  },
+  {
+   "beat": 16,
+   "start": 106.749,
+   "end": 113.652,
+   "text": "Over the weeks, it learns what normal looks like for each cat, in each spot. That way, every new question arrives with useful context."
+  },
+  {
+   "beat": 17,
+   "start": 113.932,
+   "end": 121.265,
+   "text": "So does it work? Here, the tracker called the sleeping cat Q-bo, but the agent saw white fur and white paws and overturned it to Q-B."
+  },
+  {
+   "beat": 18,
+   "start": 121.545,
+   "end": 127.337,
+   "text": "Here, two cats walked close together and the tracker swapped them, so the agent checked both and swapped them right back."
+  },
+  {
+   "beat": 19,
+   "start": 127.617,
+   "end": 133.102,
+   "text": "And when the detector itself is wrong, the cat gets relabeled, and the ball is saved as a known decoy."
+  },
+  {
+   "beat": 20,
+   "start": 133.382,
+   "end": 139.276,
+   "text": "Put together, the same eight minutes now tell the true story. Q-B slept the whole time, while Q-bo walked in and out."
+  },
+  {
+   "beat": 21,
+   "start": 139.556,
+   "end": 150.748,
+   "text": "Here are the numbers. About one percent of frames call the AI, false alarms drop by ninety-three percent, and ninety-nine percent of what the camera saw gets the right cat, for just thirty-nine cents."
+  },
+  {
+   "beat": 22,
+   "start": 151.028,
+   "end": 161.671,
+   "text": "Cats are just the start, because lab mice, tiny drones, cars in fog, and production lines all have the same gap. Any small model watching for rare moments could use a smarter second opinion."
+  },
+  {
+   "beat": 23,
+   "start": 161.951,
+   "end": 167.567,
+   "text": "Next, we'll run Muse Glimmer locally, so your own agent can use these eyes and its verdicts can teach the Pi."
+  },
+  {
+   "beat": 24,
+   "start": 167.847,
+   "end": 173.602,
+   "text": "This is Agentic Realtime Computer Vision, built this week on Meta's Muse Spark. Thanks so much for watching!"
+  }
+ ]
+}

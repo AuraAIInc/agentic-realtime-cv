@@ -1,0 +1,252 @@
+1
+00:00:00,500 --> 00:00:00,704
+Hi!
+
+2
+00:00:00,704 --> 00:00:02,673
+Meet Qb and Qbo, my two cats.
+
+3
+00:00:02,673 --> 00:00:06,475
+They look so alike that my camera can't tell them apart.
+
+4
+00:00:06,795 --> 00:00:07,997
+I'm at work all day.
+
+5
+00:00:07,997 --> 00:00:09,199
+I just want to know:
+
+6
+00:00:09,199 --> 00:00:10,761
+did they eat, sleep, play?
+
+7
+00:00:10,761 --> 00:00:13,345
+Cats hide illness, so small changes matter.
+
+8
+00:00:13,995 --> 00:00:15,412
+But here's the catch:
+
+9
+00:00:15,412 --> 00:00:19,193
+last week, my camera decided this exercise ball was Qbo.
+
+10
+00:00:19,193 --> 00:00:20,745
+For twenty-six minutes!
+
+11
+00:00:21,065 --> 00:00:23,321
+Why not send every frame to a big AI?
+
+12
+00:00:23,321 --> 00:00:23,869
+We tried:
+
+13
+00:00:23,869 --> 00:00:28,990
+eight minutes of video took an hour and twenty-five dollars, and still missed a cat.
+
+14
+00:00:30,810 --> 00:00:32,456
+A bigger model on the Pi?
+
+15
+00:00:32,456 --> 00:00:35,681
+It only runs YOLO nano, at three frames a second:
+
+16
+00:00:35,681 --> 00:00:37,985
+almost free, but it makes mistakes.
+
+17
+00:00:38,635 --> 00:00:40,805
+A bigger detector is out of scope.
+
+18
+00:00:40,805 --> 00:00:44,186
+We keep the small model, and make it smarter with AI.
+
+19
+00:00:44,186 --> 00:00:45,335
+So, we built both.
+
+20
+00:00:45,655 --> 00:00:48,423
+This is Agentic Realtime Computer Vision:
+
+21
+00:00:48,423 --> 00:00:52,880
+the AI gives the camera a brain, and the camera gives the AI eyes.
+
+22
+00:00:54,530 --> 00:00:55,776
+Here's how it works.
+
+23
+00:00:55,776 --> 00:00:57,458
+The Pi watches every frame.
+
+24
+00:00:57,458 --> 00:01:02,505
+When it's unsure, our bridge asks Meta's Muse Spark, and remembers what's normal.
+
+25
+00:01:05,155 --> 00:01:06,394
+And doubts are rare:
+
+26
+00:01:06,394 --> 00:01:07,880
+twelve in eight minutes.
+
+27
+00:01:10,700 --> 00:01:12,072
+Each doubt has a name.
+
+28
+00:01:12,072 --> 00:01:13,943
+There are fifteen kinds, like:
+
+29
+00:01:13,943 --> 00:01:16,375
+I relabeled this cat by distance alone.
+
+30
+00:01:16,695 --> 00:01:21,420
+It becomes a plain-English question, with evidence and a strict answer format.
+
+31
+00:01:22,070 --> 00:01:27,086
+Then the agent pulls the frames it needs, zooms into each cat, and answers with a
+
+32
+00:01:27,086 --> 00:01:27,520
+reason.
+
+33
+00:01:27,840 --> 00:01:29,669
+Related doubts share a call:
+
+34
+00:01:29,669 --> 00:01:31,890
+twelve questions, just five calls.
+
+35
+00:01:32,210 --> 00:01:36,285
+Every verdict rewrites the record, and every change is traceable.
+
+36
+00:01:36,935 --> 00:01:38,241
+Then there's memory.
+
+37
+00:01:38,241 --> 00:01:40,722
+Not boxes and timestamps, but a diary:
+
+38
+00:01:40,722 --> 00:01:44,835
+Qb slept in the green bed, from four thirty-four to four forty.
+
+39
+00:01:45,155 --> 00:01:49,505
+Over weeks, it learns what normal looks like, for each cat, in each spot.
+
+40
+00:01:51,655 --> 00:01:52,763
+So, does it work?
+
+41
+00:01:52,763 --> 00:01:55,369
+The tracker called the sleeping cat Qbo.
+
+42
+00:01:55,369 --> 00:01:58,237
+The agent saw cool white fur and white paws:
+
+43
+00:01:58,237 --> 00:01:58,888
+that's Qb.
+
+44
+00:01:58,888 --> 00:01:59,605
+Overturned!
+
+45
+00:01:59,925 --> 00:02:03,247
+Here, the tracker swapped two cats walking close together.
+
+46
+00:02:03,247 --> 00:02:06,225
+The agent checked both, and swapped them right back.
+
+47
+00:02:06,545 --> 00:02:11,626
+When the detector itself is wrong, the cat gets relabeled, and that ball becomes a
+
+48
+00:02:11,626 --> 00:02:12,370
+known decoy.
+
+49
+00:02:12,690 --> 00:02:16,107
+Put together, the same eight minutes tell the true story:
+
+50
+00:02:16,107 --> 00:02:19,165
+Qb slept the whole time, and Qbo walked in and out.
+
+51
+00:02:21,485 --> 00:02:22,235
+The numbers?
+
+52
+00:02:22,235 --> 00:02:27,110
+One percent of frames call the AI, false alarms drop ninety-three percent, and
+
+53
+00:02:27,110 --> 00:02:30,985
+ninety-nine percent of what the camera saw gets the right cat.
+
+54
+00:02:30,985 --> 00:02:32,610
+All for thirty-nine cents!
+
+55
+00:02:35,260 --> 00:02:37,144
+And cats are just the start:
+
+56
+00:02:37,144 --> 00:02:40,710
+lab mice, tiny drones, cars in fog, production lines.
+
+57
+00:02:40,710 --> 00:02:44,410
+Any small model watching for rare moments has this gap.
+
+58
+00:02:45,730 --> 00:02:46,039
+Next:
+
+59
+00:02:46,039 --> 00:02:50,853
+run Muse Glimmer locally, give your own agent these eyes, and let its verdicts
+
+60
+00:02:50,853 --> 00:02:51,655
+teach the Pi.
+
+61
+00:02:51,975 --> 00:02:54,096
+Agentic Realtime Computer Vision.
+
+62
+00:02:54,096 --> 00:02:56,539
+Built this week, on Meta's Muse Spark.
+
+63
+00:02:56,539 --> 00:02:57,825
+Thanks for watching!
+

@@ -31,21 +31,21 @@ h2{font-size:56px;line-height:1.1;font-weight:700;letter-spacing:-.015em}
     .del{background:rgba(230,103,103,.16);color:#f2b0b0;border-radius:6px;padding:0 6px}
     .add{background:rgba(144,133,233,.2);color:#d6d0ff;border-radius:6px;padding:0 6px}
     </style></head>
-<body><div class="slide"><div class="kicker">Every verdict rewrites the record</div>
-      <h2 style="margin-top:16px">…and every change points back to its trace.</h2>
+<body><div class="slide"><div class="kicker">What happens to a verdict?</div>
+      <h2 style="margin-top:16px">It rewrites the record, and every change points back to its trace.</h2>
       <div class="cols"><div class="card"><div class="lbl">Tracker row (revised.jsonl)</div><pre>{
-  "create_time": "16:34:36.154",
-  "box": [296, 369, 371, 531],
-  "conf": 0.758,
-  "orig_cat_id": 25,
+  "create_time": "16:33:06.797",
+  "box": [209, 505, 311, 599],
+  "conf": 0.511,
+  "orig_cat_id": 26,
   <span class="del">"cat_id": 26</span>
 }</pre></div>
       <div class="card" style="border-color:var(--agent)"><div class="lbl">After review (validated.db)</div><pre>{
-  "create_time": "16:34:36.154",
-  "box": [296, 369, 371, 531],
-  "conf": 0.758,
-  "orig_cat_id": 25,
+  "create_time": "16:33:06.797",
+  "box": [209, 505, 311, 599],
+  "conf": 0.511,
+  "orig_cat_id": 26,
   <span class="add">"cat_id": 25</span>,
-  <span class="add">"validated_by": "E5-T2"</span>,
-  <span class="add">"verdict": "keep_original"</span>
-}</pre></div></div></div><div class="foot"><span>Real row from run 231613 · production MySQL is read-only; validated rows go to a per-run SQLite file</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>
+  <span class="add">"validated_by": "E2-P5"</span>,
+  <span class="add">"verdict": "reassign"</span>
+}</pre></div></div></div><div class="foot"><span>Real row from run 140502 (revised.jsonl → validated.jsonl) · production MySQL is read-only; validated rows go to a per-run SQLite file</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>
