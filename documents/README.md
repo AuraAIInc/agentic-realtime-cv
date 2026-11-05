@@ -37,6 +37,7 @@ have since moved to the repo-root `output/`.
 | Doc | What it covers |
 |---|---|
 | [report.md](report.md) | Project report |
+| [muse-usage.md](muse-usage.md) | How Muse is used across the project: in the product and in development |
 | [demo/](demo/), [demo-muse/](demo-muse/) | Demo video script, slides, narration and build scripts |
 | [project-plan.md](project-plan.md) ([中文](project-plan.zh.md)) | Original plan |
 | [hackathon-guide.md](hackathon-guide.md) | Team guide and submission checklist |
