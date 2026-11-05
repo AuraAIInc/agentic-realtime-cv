@@ -5,16 +5,16 @@ screen, which format to use, the exact asset file, where that asset's data came 
 to animate it. Every asset listed here is already in this folder (`assets/`), except the items
 under [To record or source](#to-record-or-source).
 
-- Narration: the final cut is **voice first**: `assets/text/voiceover.txt` is read as one
-  continuous take (Kokoro neural TTS, voice `af_heart`, friendly and upbeat, 446 words) and the
-  video is timed to it (`assets/audio/voiceover_timings.json`), 179.8 s in total. The beat
+- Narration: the final cut is **voice first**: `assets/text/voiceover_v2.txt` is read as one
+  continuous take (Kokoro neural TTS, voice `af_heart` blended 20% with `af_nicole`, soft and friendly, 572 words) and the
+  video is timed to it (`assets/audio/voiceover_timings.json`), 175.1 s in total. The beat
   timecodes below are the planning grid; the voice track's timings are what the video uses.
 - Canvas: **1920×1080, 30 fps**, dark theme throughout.
 - Numbers: all from replay run `20261104-140502` (view 3, 2026-10-28 16:33–16:41, 1,319
   frames, current code, merged review) unless a beat says otherwise. Every slide's footer names its source.
 - The narration-only text for voice recording is `assets/text/narration.txt`. Burned-in or
   sidecar captions are in `assets/text/captions.srt`.
-- The earlier version of this script is kept as `demo-script-claude.original.md`.
+- The earlier version of this script is kept as `demo-script.original.md`.
   [Changes from the original](#changes-from-the-original-script) lists what changed and why.
 
 ## Positioning and scope
@@ -512,7 +512,7 @@ Never recolor them for emphasis.
 | `assets/slides/s19_beyond_cats.png` | photo cards (other domains) | beat 22 |
 | `assets/slides/s18_roadmap.png` | blocks (personal agent first) | beat 23 |
 | `assets/slides/s20_end_card.png` | end card | beat 24 |
-| `assets/video/final_demo.mp4` | **the final cut**: 3:00, 1080p30, voice-over, captions track | all |
+| `assets/video/final_demo_v2.mp4` | **the final cut**: 2:55, 1080p30, voice-over, captions track | all |
 | `assets/video/v02_ball_push_in.mp4` | 5 s push-in | beat 3 |
 | `assets/video/v01_cost_counter.mp4` | 6 s counter | beat 4 |
 | `assets/video/v03_replay_tracker.mp4` | 10 s replay, 16:34:25–16:34:54 at ~3×, full frame | beat 9 |
@@ -596,7 +596,7 @@ editor can screen-capture it with CSS animation or re-layer it.
 - **Slide structure.** Content slides now use: kicker = the question or problem, headline =
   the conclusion, details small underneath (`HEAD()` in `build_slides.py`).
 
-- **The hackathon report still cites run 231613** (`documents/hackathon-project-report-claude.md`
+- **The hackathon report still cites run 231613** (`documents/report.md`
   §1, §9, §10: 3 calls, $0.26, case E5 "overturned"). Run 140502's agent reached the opposite
   verdict on that 16:34:36 cat (Qbo), consistent with the diary. Update the report before
   anyone compares it with the video.
@@ -611,15 +611,15 @@ editor can screen-capture it with CSS animation or re-layer it.
 
 ```bash
 # slides (headless Chrome renders scripts/html/*.html -> assets/slides/*.png)
-.venv/bin/python documents/demo-claude/scripts/build_slides.py          # all
-.venv/bin/python documents/demo-claude/scripts/build_slides.py s11 s13  # some
+.venv/bin/python documents/demo/scripts/build_slides.py          # all
+.venv/bin/python documents/demo/scripts/build_slides.py s11 s13  # some
 # clips (PIL frames + ffmpeg)
-.venv/bin/python documents/demo-claude/scripts/build_videos.py          # v01 v02 v03
+.venv/bin/python documents/demo/scripts/build_videos.py          # v01 v02 v03
 # narration + captions from this script's timecodes
-.venv/bin/python documents/demo-claude/scripts/build_text.py
+.venv/bin/python documents/demo/scripts/build_text.py
 # final video, voice first: 1) one continuous voice-over (Kokoro neural TTS, voice af_heart,
-#    speed 1.1; script in assets/text/voiceover.txt) -> assets/audio/voiceover.wav + timings
-.tts/bin/python documents/demo-claude/scripts/build_voice.py          # needs: brew install espeak-ng
+#    blended 20% with af_nicole, speed 1.2; script assets/text/voiceover_v2.txt) -> assets/audio/voiceover_v2.wav
+.tts/bin/python documents/demo/scripts/build_voice.py          # needs: brew install espeak-ng
 # 2) video timed to that track: still slides + 0.4 s cross-fades, clips inside their beats
-.venv/bin/python documents/demo-claude/scripts/build_final_video.py   # -> assets/video/final_demo.mp4
+.venv/bin/python documents/demo/scripts/build_final_video.py   # -> assets/video/final_demo_v2.mp4
 ```

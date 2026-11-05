@@ -4,8 +4,8 @@ Each slide is a small HTML page (shared dark theme, real frames, inline SVG char
 headless Chrome renders at 1920x1080. All numbers come from replay run 140502 (merged review)
 unless a slide says otherwise; boxes are read from the run's jsonl files, not typed in.
 
-    python documents/demo-claude/scripts/build_slides.py            # all slides
-    python documents/demo-claude/scripts/build_slides.py s11 s13    # just these
+    python documents/demo/scripts/build_slides.py            # all slides
+    python documents/demo/scripts/build_slides.py s11 s13    # just these
 """
 
 from __future__ import annotations
