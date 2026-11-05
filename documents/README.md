@@ -36,7 +36,7 @@ have since moved to the repo-root `output/`.
 
 | Doc | What it covers |
 |---|---|
-| [report.md](report.md) | Project report |
+| [submission/](submission/) | Hackathon submission: project report, demo video, project description, Meta products, why Meta models |
 | [muse-usage.md](muse-usage.md) | How Muse is used across the project: in the product and in development |
 | [demo/](demo/), [demo-muse/](demo-muse/) | Demo video script, slides, narration and build scripts |
 | [project-plan.md](project-plan.md) ([中文](project-plan.zh.md)) | Original plan |

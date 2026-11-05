@@ -7,7 +7,7 @@
    and writes captions from the same timings. Hard limit: 180 s.
 
     .venv/bin/python documents/demo/scripts/build_final_video.py
-    -> documents/demo/assets/video/final_demo_v2.mp4 (+ assets/text/captions_final_v2.srt)
+    -> documents/submission/agentic-realtime-cv-demo.mp4 (+ assets/text/captions_final_v2.srt)
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DEMO = HERE.parent
 SL, VID, TXT, AUD = (DEMO / "assets" / d for d in ("slides", "video", "text", "audio"))
-OUT = VID / "final_demo_v2.mp4"
+OUT = DEMO.parent / "submission" / "agentic-realtime-cv-demo.mp4"  # the final cut
 FPS, W, H = 30, 1920, 1080
 XF = 0.4         # cross-fade between segments
 LEAD = 0.25      # a slide appears this long before its sentence starts
@@ -107,10 +107,10 @@ def segment(asset: str, secs: float, offset: float, out: Path) -> None:
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tag", default="_v2", help='voice/output suffix, e.g. "_v2": voiceover_v2.wav -> final_demo_v2.mp4')
+    ap.add_argument("--tag", default="_v2", help='voice suffix: "_v2" (default) reads voiceover_v2.wav and writes documents/submission/agentic-realtime-cv-demo.mp4')
     ap.add_argument("--end-hold", type=float, default=END_HOLD)
     args = ap.parse_args()
-    out = VID / f"final_demo{args.tag}.mp4"
+    out = OUT if args.tag == "_v2" else VID / f"final_demo{args.tag}.mp4"
     tim = json.loads((AUD / f"voiceover{args.tag}_timings.json").read_text())
     beats = tim["beats"]
     total = round(tim["length"] + args.end_hold, 3)

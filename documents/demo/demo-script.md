@@ -512,7 +512,7 @@ Never recolor them for emphasis.
 | `assets/slides/s19_beyond_cats.png` | photo cards (other domains) | beat 22 |
 | `assets/slides/s18_roadmap.png` | blocks (personal agent first) | beat 23 |
 | `assets/slides/s20_end_card.png` | end card | beat 24 |
-| `assets/video/final_demo_v2.mp4` | **the final cut**: 2:55, 1080p30, voice-over, captions track | all |
+| `../submission/agentic-realtime-cv-demo.mp4` | **the final cut**: 2:55, 1080p30, voice-over, captions track | all |
 | `assets/video/v02_ball_push_in.mp4` | 5 s push-in | beat 3 |
 | `assets/video/v01_cost_counter.mp4` | 6 s counter | beat 4 |
 | `assets/video/v03_replay_tracker.mp4` | 10 s replay, 16:34:25–16:34:54 at ~3×, full frame | beat 9 |
@@ -596,7 +596,7 @@ editor can screen-capture it with CSS animation or re-layer it.
 - **Slide structure.** Content slides now use: kicker = the question or problem, headline =
   the conclusion, details small underneath (`HEAD()` in `build_slides.py`).
 
-- **The hackathon report still cites run 231613** (`documents/report.md`
+- **The hackathon report still cites run 231613** (`documents/submission/agentic-realtime-cv-report.md`
   §1, §9, §10: 3 calls, $0.26, case E5 "overturned"). Run 140502's agent reached the opposite
   verdict on that 16:34:36 cat (Qbo), consistent with the diary. Update the report before
   anyone compares it with the video.
@@ -621,5 +621,5 @@ editor can screen-capture it with CSS animation or re-layer it.
 #    blended 20% with af_nicole, speed 1.2; script assets/text/voiceover_v2.txt) -> assets/audio/voiceover_v2.wav
 .tts/bin/python documents/demo/scripts/build_voice.py          # needs: brew install espeak-ng
 # 2) video timed to that track: still slides + 0.4 s cross-fades, clips inside their beats
-.venv/bin/python documents/demo/scripts/build_final_video.py   # -> assets/video/final_demo_v2.mp4
+.venv/bin/python documents/demo/scripts/build_final_video.py   # -> documents/submission/agentic-realtime-cv-demo.mp4
 ```

@@ -1,7 +1,7 @@
 # How we use Muse in this project
 
 **Project:** Agentic Realtime Computer Vision · Meta Global AI Developer Hackathon 2026 ·
-Summary date: 2026-11-04 · Details and measurements: [report.md](report.md) (§9 and §10)
+Summary date: 2026-11-04 · Details and measurements: [agentic-realtime-cv-report.md](submission/agentic-realtime-cv-report.md) (§9 and §10)
 
 Muse is both the **model family the product runs on** and the **toolchain we built it with**.
 This page summarizes both, with the numbers we measured.
@@ -51,7 +51,7 @@ and the system stops being cheap ($24.65 to label 8 minutes, about $1.2M a year 
 alone and raised `T2` → the question went to Spark with both cats' profiles and a memory brief →
 Spark pulled 4 frames, then 4 crops → answered `keep_original` ("cool white, smooth sharp
 outline … = Qb") → the rows were rewritten with `validated_by: E5-T2` → the visit entered the
-day log. Full walkthrough: [report.md §8.0](report.md#80-follow-one-doubt-through-the-loop).
+day log. Full walkthrough: [report §8.0](submission/agentic-realtime-cv-report.md#80-follow-one-doubt-through-the-loop).
 
 **What it delivered on the demo window** (8 minutes, both cats, audited ground truth):
 
