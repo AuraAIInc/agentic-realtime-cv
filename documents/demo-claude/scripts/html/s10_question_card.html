@@ -29,17 +29,16 @@ h2{font-size:56px;line-height:1.1;font-weight:700;letter-spacing:-.015em}
     .k{color:var(--doubt)} .h{color:var(--t1);font-weight:700}
     </style></head>
 <body><div class="slide">
-      <div class="kicker">Doubt becomes a plain-English question</div>
-      <div class="card" style="margin-top:44px;padding:48px 56px"><pre><span class="h">[E5-T2] A box was relabeled by nearness alone.</span>
+      <div class="kicker">How does a doubt reach the agent?</div>
+      <h2 style="margin-top:14px">As a plain-English question with a strict answer form.</h2>
+      <div class="card" style="margin-top:44px;padding:48px 56px"><pre><span class="h">[E5-T2] Identity switched on nearness alone, no overlap.</span>
 
 <span class="k">Validate:</span>  is the photo really cat 26 (Qbo)?
-<span class="k">Context:</span>   the detector's first guess was cat 25 (Qb). Qbo's last box
-           was 129 px away, and that nearness is the entire basis
-           for the switch. Nearness can steal a neighbor.
-<span class="k">Look at:</span>   2026-10-28-16-34-36-154433.jpg  box [296,369,371,531]
-<span class="k">Note:</span>      the Pi's YOLO is a hint, not evidence. Trust the images
-           and cat profiles.
+<span class="k">Conflict:</span>  the camera said cat 25 (Qb); the tracker re-labeled the box
+           to 26 because Qbo was last seen 92 px away. No overlap.
+<span class="k">Look at:</span>   16:35:21.976  box [174,457,279,585]  + both cat profiles
+<span class="k">Memory:</span>    recent: "qbo appears once in period 4 …"
 
 <span class="k">Answer:</span>    {"verdict": confirm | keep_original | reassign_other | drop,
             "rationale": "…"}</pre></div>
-    </div><div class="foot"><span>Condensed from the real E5-T2 prompt and T2 schema (agent run 20261102-231717, agent/escalation/review_schema.py)</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>
+    </div><div class="foot"><span>Condensed from the real E5-T2 prompt (agent run 20261104-140629, trace.md) · schema: agent/escalation/review_schema.py</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>

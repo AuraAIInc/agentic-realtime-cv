@@ -183,7 +183,7 @@ def _col_counts(table_text):
 def test_md_table_pads_and_aligns():
     from evaluate import md_table
 
-    text = md_table(["name", "P"], [["muse", "0.936"], ["s", "1"]])
+    text = md_table(["name", "P"], [["MUSE SAM 3.1", "0.936"], ["s", "1"]])
     lines = text.splitlines()
     assert _col_counts(text) == [2, 2, 2, 2]
     assert lines[1].startswith("| :") and lines[1].rstrip().endswith(": |")
@@ -195,7 +195,7 @@ def test_report_tables_have_matching_column_counts():
 
     res = {
         "stages": {"raw": _fake_stage(), "revised": _fake_stage(), "validated": _fake_stage(False)},
-        "label_sets": {"muse": _fake_stage(), "spark": _fake_stage(False)},
+        "label_sets": {"MUSE SAM 3.1": _fake_stage(), "MUSE SPARK 1.3": _fake_stage(False)},
     }
     tables = [
         (label_table(res, "iou_0.5", "0.5"), 12),
@@ -205,6 +205,7 @@ def test_report_tables_have_matching_column_counts():
     ]
     for text, ncols in tables:
         assert _col_counts(text) == [ncols] * len(text.splitlines())
+    assert "MUSE SAM 3.1" in tables[0][0] and "MUSE SPARK 1.3" in tables[0][0]
 
 
 def test_chart_lines_embeds_copied_charts():

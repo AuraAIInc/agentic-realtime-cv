@@ -6,7 +6,7 @@ where it came from, and when it last moved.
 
 It runs **inside `detection_ingest_server.py`**. That is the only process holding the
 TrackCorrector / PeriodCorrector state that isn't in MySQL yet (see
-[how-it-works.md](../../documents/how-it-works.md)):
+[how-track-correctors-work.md](../../documents/how-track-correctors-work.md)):
 
 | Data | Where it lives | Reaches MySQL |
 |---|---|---|

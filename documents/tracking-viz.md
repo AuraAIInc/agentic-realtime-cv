@@ -5,7 +5,7 @@ and renders one frame per image, plus an MP4.
 
 Read-only: DB writes from the correctors are stubbed out in the script.
 
-For how the two correctors work, see [how-it-works.md](how-it-works.md).
+For how the two correctors work, see [how-track-correctors-work.md](how-track-correctors-work.md).
 
 ## Run
 
@@ -56,4 +56,4 @@ bottom band = y range (`y / 480 + 1`, mostly clipped by `ylim(0, 1)`).
   vote, weak winner, forced reassignment, long unknown track, low quality) or gaps
   where a new period may connect to the previous one (merge candidate, static /
   sleeping-cat link). See "Escalation points" in
-  [how-it-works.md](how-it-works.md) and `model/README.md` for the full catalog.
+  [how-track-correctors-work.md](how-track-correctors-work.md) and `model/README.md` for the full catalog.

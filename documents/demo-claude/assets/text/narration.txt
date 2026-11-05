@@ -1,22 +1,26 @@
-# Narration · 341 words · read at ~2.5 words/s, ~1 s pause between beats
+# Narration · 446 words · read at ~2.5 words/s, ~1 s pause between beats
 
-[01 · 0:00] These are Qb and Qbo. My camera can't tell them apart.
-[02 · 0:05] Last week, it decided this ball was Qbo, for twenty-six minutes.
-[03 · 0:11] I work all day. I just want to know simple things: did my cats eat, sleep, play? Cats hide illness, so small changes matter.
-[04 · 0:22] Why not send every frame to an AI? One camera makes over a hundred and seventy thousand frames a day. That's about sixty-three thousand dollars a year.
-[05 · 0:34] A tiny model on a Raspberry Pi is almost free, but it makes mistakes.
-[06 · 0:41] So we built both.
-[07 · 0:44] The Pi watches every frame. When it's unsure, it says exactly why.
-[08 · 0:55] It knows fourteen kinds of doubt, like: I relabeled this cat by distance alone.
-[09 · 1:03] That doubt becomes a plain-English question for Meta's Muse Spark.
-[10 · 1:08] The agent pulls the frames it needs, compares the cats, and answers with a reason.
-[11 · 1:15] Watch. Cool white, thin upright tail. This is Qb, not Qbo. Overturned.
-[12 · 1:24] Related doubts get reviewed together, fetching each image once. Twelve questions, three calls.
-[13 · 1:32] Here, the tracker kept painting Qbo onto Qb's spot after Qbo had walked away. The agent saw no Qbo there, and cut the guesses.
-[14 · 1:46] Every verdict rewrites the record, and every change is traceable.
-[15 · 1:51] Then memory. Not boxes and timestamps, but a diary: Qb slept in the green bed, four thirty-four to four forty.
-[16 · 2:02] Over weeks, it learns what normal looks like for each cat, in each spot.
-[17 · 2:09] The numbers: twelve doubts in eight minutes, less than one percent of frames. Twenty-six cents to review them, about a fifth of the cost of sending every frame to the AI. And only those frames ever leave my home.
-[18 · 2:29] Next: catch more errors, run full days, and teach the Pi from what the agent learns.
-[19 · 2:37] Cats are just the start. Any camera watching for rare moments, like an elderly parent, wildlife or a factory line, has the same gap.
-[20 · 2:48] Our answer: cheap eyes on every frame, a smart brain only when it matters, and a memory that keeps growing. Built this week, on Meta's Muse Spark.
+[01 · 0:00] Hi! Meet Qb and Qbo, my two cats. They look so alike that my camera can't tell them apart.
+[02 · 0:05] I'm at work all day. I just want to know: did they eat, sleep, play? Cats hide illness, so small changes matter.
+[03 · 0:15] But here's the catch: last week, my camera decided this exercise ball was Qbo. For twenty-six minutes!
+[04 · 0:20] Why not send every frame to a big AI? We tried: eight minutes of video took an hour and twenty-five dollars, and still missed a cat.
+[05 · 0:31] A bigger model on the Pi? It only runs YOLO nano, at three frames a second: almost free, but it makes mistakes.
+[06 · 0:41] A bigger detector is out of scope. We keep the small model, and make it smarter with AI. So, we built both.
+[07 · 0:52] This is Agentic Realtime Computer Vision: the AI gives the camera a brain, and the camera gives the AI eyes.
+[08 · 1:00] Here's how it works. The Pi watches every frame. When it's unsure, our bridge asks Meta's Muse Spark, and remembers what's normal.
+[09 · 1:10] And doubts are rare: twelve in eight minutes.
+[10 · 1:15] Each doubt has a name. There are fifteen kinds, like: I relabeled this cat by distance alone.
+[11 · 1:21] It becomes a plain-English question, with evidence and a strict answer format.
+[12 · 1:26] Then the agent pulls the frames it needs, zooms into each cat, and answers with a reason.
+[13 · 1:32] Related doubts share a call: twelve questions, just five calls.
+[14 · 1:37] Every verdict rewrites the record, and every change is traceable.
+[15 · 1:42] Then there's memory. Not boxes and timestamps, but a diary: Qb slept in the green bed, from four thirty-four to four forty.
+[16 · 1:50] Over weeks, it learns what normal looks like, for each cat, in each spot.
+[17 · 1:56] So, does it work? The tracker called the sleeping cat Qbo. The agent saw cool white fur and white paws: that's Qb. Overturned!
+[18 · 2:02] Here, the tracker swapped two cats walking close together. The agent checked both, and swapped them right back.
+[19 · 2:09] When the detector itself is wrong, the cat gets relabeled, and that ball becomes a known decoy.
+[20 · 2:15] Put together, the same eight minutes tell the true story: Qb slept the whole time, and Qbo walked in and out.
+[21 · 2:22] The numbers? One percent of frames call the AI, false alarms drop ninety-three percent, and ninety-nine percent of what the camera saw gets the right cat. All for thirty-nine cents!
+[22 · 2:36] And cats are just the start: lab mice, tiny drones, cars in fog, production lines. Any small model watching for rare moments has this gap.
+[23 · 2:47] Next: run Muse Glimmer locally, give your own agent these eyes, and let its verdicts teach the Pi.
+[24 · 2:55] Agentic Realtime Computer Vision. Built this week, on Meta's Muse Spark. Thanks for watching!

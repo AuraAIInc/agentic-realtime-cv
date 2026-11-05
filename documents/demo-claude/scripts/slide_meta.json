@@ -1,0 +1,152 @@
+[
+ {
+  "name": "s01_meet_qb_qbo",
+  "kicker": "",
+  "title": "",
+  "foot": ""
+ },
+ {
+  "name": "s03_simple_questions",
+  "kicker": "While I'm at work",
+  "title": "Did my cats…",
+  "foot": "Background: real camera frame, 2026-11-03 16:30 UTC · AAFP: cats are “masters of hiding signs of disease”"
+ },
+ {
+  "name": "s02_ball_decoy",
+  "kicker": "What the camera believed",
+  "title": "26 min",
+  "foot": "Real frame 2026-11-01 07:35 · box [351,47,407,104] from trace review 2026-11-01"
+ },
+ {
+  "name": "s04_cost_math",
+  "kicker": "Why not send every frame to an AI? We measured it.",
+  "title": "Too slow, too costly, and it still misses.",
+  "foot": "Labeling shootout 2026-11-03 · Standard pricing (Contributor tier excluded: it trains on your footage)"
+ },
+ {
+  "name": "s05_two_halves",
+  "kicker": "Why not use just one of them?",
+  "title": "Each fails where the other is strong.",
+  "foot": "Pi 5 CPU: YOLO nano ~3 frames/s (camera captures 2 fps) · power: Sixfab Pi 5 benchmark · AI column: labeling shootout 2026-11-03 (s04)"
+ },
+ {
+  "name": "s05b_scope",
+  "kicker": "Built for limited compute",
+  "title": "A high-performance workflow for hardware that can only run a small model.",
+  "foot": ""
+ },
+ {
+  "name": "s06_title_built_both",
+  "kicker": "So we built both",
+  "title": "Cheap eyes on every frame . A smart brain only when it’s unsure .",
+  "foot": ""
+ },
+ {
+  "name": "s06b_bridge",
+  "kicker": "Agentic Realtime Computer Vision",
+  "title": "AI gives the camera a brain . The camera gives AI eyes .",
+  "foot": ""
+ },
+ {
+  "name": "s07_loop_diagram",
+  "kicker": "How does it work?",
+  "title": "The Pi handles 99% of frames; the agent sees only the doubts.",
+  "foot": ""
+ },
+ {
+  "name": "s08_timeline",
+  "kicker": "How often does the cheap tracker need help?",
+  "title": "Rarely: 12 doubts in 8 minutes, reviewed in 5 calls.",
+  "foot": "Run 20261104-140502 · lanes = the Pi’s raw detections and labels, before any review · yellow = when it escalated"
+ },
+ {
+  "name": "s09_doubt_taxonomy",
+  "kicker": "When should the Pi ask for help?",
+  "title": "Only when it can name why it’s unsure: 15 typed doubts.",
+  "foot": ""
+ },
+ {
+  "name": "s10_question_card",
+  "kicker": "How does a doubt reach the agent?",
+  "title": "As a plain-English question with a strict answer form.",
+  "foot": "Condensed from the real E5-T2 prompt (agent run 20261104-140629, trace.md) · schema: agent/escalation/review_schema.py"
+ },
+ {
+  "name": "s10b_agent_work",
+  "kicker": "What does the agent actually do?",
+  "title": "It looks for itself: frames, then crops, then a verdict.",
+  "foot": "Agent run 20261104-140629 · Muse Spark 1.3 · 3 turns, 8 tool calls · images = the exact frames and crops it fetched"
+ },
+ {
+  "name": "s12_batching",
+  "kicker": "Does every doubt need its own call?",
+  "title": "No: related doubts share one. 12 questions, 5 calls.",
+  "foot": "Run 012059 (one call per doubt, earlier tracker) vs 140502 (merged, ≤4 cases a call) · same 8-minute window"
+ },
+ {
+  "name": "s14_row_diff",
+  "kicker": "What happens to a verdict?",
+  "title": "It rewrites the record, and every change points back to its trace.",
+  "foot": "Real row from run 140502 (revised.jsonl → validated.jsonl) · production MySQL is read-only; validated rows go to a per-run SQLite file"
+ },
+ {
+  "name": "s15_day_log",
+  "kicker": "What does the memory keep?",
+  "title": "A diary in plain words, not boxes and timestamps.",
+  "foot": "Day entry: view_3_short_term_2026-10-28.md (latest session) · zone text: view_3_long_term.yaml"
+ },
+ {
+  "name": "s16_memory_pyramid",
+  "kicker": "What does it learn over weeks?",
+  "title": "What’s normal for each cat, in each spot, at each hour.",
+  "foot": "Real entries from agent/memory/data/view_3_long_term.yaml (view 3) · quotes are the stored text"
+ },
+ {
+  "name": "s11_case_e5",
+  "kicker": "Case E2: which cat is asleep in the bed?",
+  "title": "",
+  "foot": "Frame 2026-10-28 16:33:06 · E2-P5 verdict reassign → Qb · rationale shortened from agent run 20261104-140503"
+ },
+ {
+  "name": "s13_case_e10",
+  "kicker": "Case E4 + E5: what if the tracker swaps the cats?",
+  "title": "Nearness swapped them. The agent swapped them back.",
+  "foot": "Frame 2026-10-28 16:35:21 · E4-T2 + E5-T2 verdict keep_original · rationales shortened from agent run 20261104-140629"
+ },
+ {
+  "name": "s13b_detector_fixes",
+  "kicker": "What if the detector itself is wrong?",
+  "title": "Wrong cat: relabeled. Not a cat: removed.",
+  "foot": "Left: run 140502, E10-P2 verdict reassign → Qbo, 28 Oct 16:34:41 · right: 1 Nov 07:35, zone exercise_ball in zones.yaml (agent/tracking/decoys.py)"
+ },
+ {
+  "name": "s17a_timeline_eval",
+  "kicker": "Same 8 minutes: what did the review change?",
+  "title": "Noise in, the true story out.",
+  "foot": "Run 140502 · raw = stream.jsonl · after review = validated.jsonl; Qb’s undetected sleep 16:34–16:35 bridged by interpolation (faint)"
+ },
+ {
+  "name": "s17_results",
+  "kicker": "Did it work? 8 real minutes, both cats",
+  "title": "93% fewer false alarms, for 39 cents.",
+  "foot": "documents/final-model-performance-20261104.md · run 140502 vs audited GT, IoU 0.5 · hardest 2 min = largest-gain window (≥300 frames)"
+ },
+ {
+  "name": "s19_beyond_cats",
+  "kicker": "Cats are just the start",
+  "title": "Any small model watching for rare moments has the same gap.",
+  "foot": "Photos: Wikimedia Commons, cropped (full credits in assets/broll/CREDITS.md) · boxes are illustrative, not model output"
+ },
+ {
+  "name": "s18_roadmap",
+  "kicker": "What’s next?",
+  "title": "Plug the eyes into your own agent.",
+  "foot": ""
+ },
+ {
+  "name": "s20_end_card",
+  "kicker": "Agentic Realtime Computer Vision",
+  "title": "AI gives the camera a brain . The camera gives AI eyes .",
+  "foot": ""
+ }
+]

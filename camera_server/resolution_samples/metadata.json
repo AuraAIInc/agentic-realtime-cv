@@ -1,10 +1,10 @@
 {
   "description": "One full-view still per resolution the Pi camera supports, via the camera_v3 MCP tool capture_high_res (no crop, max_side=null).",
   "source": {
-    "mcp_url": "http://10.0.0.21:8765/mcp",
+    "mcp_url": "http://<pi host>:8765/mcp",
     "tool": "capture_high_res",
     "device": "/dev/video0",
-    "device_id": "c2d5f3ce14067817",
+    "device_id": "<pi serial>",
     "view_id": 3,
     "server_commit": "15d5e2e"
   },

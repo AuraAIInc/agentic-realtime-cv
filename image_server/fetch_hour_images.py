@@ -576,9 +576,9 @@ def main():
             sys.exit("--box-size must look like 800x600")
         box_size = (int(m.group(1)), int(m.group(2)))
     load_env()
-    url = args.url or os.getenv("IMAGE_MCP_URL", "http://10.0.0.165:10001/mcp")
+    url = args.url or os.getenv("IMAGE_MCP_URL", "")
     if not url:
-        sys.exit("set IMAGE_MCP_URL (or pass --url), e.g. http://10.0.0.165:10001/mcp")
+        sys.exit("set IMAGE_MCP_URL (or pass --url), e.g. http://<image server host>:10001/mcp")
     token = token_from_env()
     out = os.path.expanduser(args.out) if args.out else os.path.join(RETRIEVED_DIR, args.hour)
 

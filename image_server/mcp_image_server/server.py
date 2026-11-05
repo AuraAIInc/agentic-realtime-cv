@@ -15,6 +15,7 @@ import hmac
 import io
 import json
 import logging
+import os
 from dataclasses import replace
 
 from mcp.server.mcpserver import MCPServer
@@ -172,9 +173,11 @@ def main() -> None:
 
     # Always the repo-root .env (shared with the agent), whatever the working directory; its
     # values win over shell exports so a stale `export MCP_AUTH_TOKEN=...` cannot take over.
-    loaded = load_dotenv(REPO_ENV, override=True)
+    # AGENT_ENV_FILE (process env) swaps in another file, e.g. the demo's isolated config.
+    env_path = os.environ.get("AGENT_ENV_FILE") or REPO_ENV
+    loaded = load_dotenv(env_path, override=True)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - [%(levelname)s] %(filename)s:%(lineno)d: %(message)s")
-    logger.info(f".env: {REPO_ENV} ({'loaded' if loaded else 'NOT FOUND'})")
+    logger.info(f".env: {env_path} ({'loaded' if loaded else 'NOT FOUND'})")
     settings = Settings.from_env()
 
     p = argparse.ArgumentParser(description="MCP server for the cat-monitor image SSD")

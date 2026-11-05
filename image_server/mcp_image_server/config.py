@@ -63,7 +63,7 @@ class Settings:
 
     @property
     def s3_enabled(self) -> bool:
-        return bool(self.s3_access_key and self.s3_secret_key)
+        return bool(self.s3_access_key and self.s3_secret_key and self.s3_bucket)
 
     @property
     def s3_cutoff_date(self) -> datetime.date:

@@ -19,10 +19,17 @@ charts, and per-frame process visualization. Runnable via `agent/main.py`:
   `FileSink` (corrector rows -> canonical row-dict JSON; formats documented in
   its module docstring).
 - `cat_config.py` — `resolve_cat_ids(view_id)` from `cats.yaml` tracking ids.
+- `decoys.py` — drops detections on `zones.yaml` `kind: decoy` objects (the
+  exercise ball YOLO keeps calling a cat) before they reach the tracker.
+- `db_stream.py` — `--replay-db` source: one read-only `SELECT` over the MySQL
+  `images`/`detection` tables, yielding camera-format messages.
 - `charts.py` — `plot_detection_charts(...)` writes `original.png` +
-  `revised.png` strip charts (one lane per cat, red escalation marks).
+  `revised.png` (+ `validated.png` with `--validate`) strip charts (one lane
+  per cat, red escalation marks).
 - `process_viz.py` — `render_process_frame(...)` per-frame JPGs +
   `stitch_mp4(...)` (needs `cv2`; frames are kept when it is missing).
+- `report.py` — the per-run `report.md` session summary (also
+  `python -m agent.tracking.report output/tracking_runs/<run>`).
 
 ## Usage examples (run from the repo root)
 
@@ -38,8 +45,8 @@ Replay a recorded camera stream through the same ingest loop:
 
 ```bash
 .venv/bin/python -m agent.main --view-id 3 \
-  --start 2026-10-27-14-00 --end 2026-10-27-14-05 \
-  --replay /tmp/stream.jsonl --plot
+  --start 2026-10-28-16-33 --end 2026-10-28-16-38 \
+  --replay demo/data/2026-10-28-16/raw_detections.jsonl --plot
 ```
 
 Replay straight from MySQL (read-only, no intermediate file):
@@ -54,8 +61,8 @@ Replay with per-frame process visualization + MP4 for the first cat:
 
 ```bash
 .venv/bin/python -m agent.main --view-id 3 \
-  --start 2026-10-27-14-00 --end 2026-10-27-14-05 \
-  --replay /tmp/stream.jsonl --process-viz --cat-idx 0 --fps 5
+  --start 2026-10-28-16-33 --end 2026-10-28-16-38 \
+  --replay demo/data/2026-10-28-16/raw_detections.jsonl --process-viz --cat-idx 0 --fps 5
 ```
 
 (Add `--no-video` to keep the `process_frames/*.jpg` without stitching

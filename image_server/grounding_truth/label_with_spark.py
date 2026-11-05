@@ -74,6 +74,11 @@ class SparkBoxes(BaseModel):
     boxes: list[SparkBox]
 
 
+# Resolve the postponed `list[SparkBox]` annotation now: when this file is loaded by path
+# (tests, importlib) its module is not in sys.modules under a resolvable name.
+SparkBoxes.model_rebuild(_types_namespace={"SparkBox": SparkBox})
+
+
 def load_contributor_settings(model_config=None):
     """Return (model, base_url, api_key, pricing) for the contributor tier."""
     cfg_path = model_config or os.getenv("MODEL_CONFIG") or sam_mod.DEFAULT_MODELS

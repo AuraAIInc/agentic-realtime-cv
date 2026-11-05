@@ -1,0 +1,56 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root{
+  --bg:#1a1a19; --panel:#232321; --panel2:#2b2b28; --line:#3a3935;
+  --t1:#f2f1ed; --t2:#c3c2b7; --t3:#8e8d84;
+  --qb:#3987e5; --qbo:#d95926; --edge:#199e70; --agent:#9085e9;
+  --doubt:#fab219; --good:#0ca30c; --bad:#e66767;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg);color:var(--t1);
+  font-family:-apple-system,"SF Pro Display","Helvetica Neue",sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:"SF Mono",Menlo,monospace}
+.slide{position:absolute;inset:0;padding:88px 112px 110px;display:flex;flex-direction:column;justify-content:center}
+.kicker{font-size:26px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);font-weight:600}
+h1{font-size:76px;line-height:1.06;font-weight:700;letter-spacing:-.02em}
+h2{font-size:56px;line-height:1.1;font-weight:700;letter-spacing:-.015em}
+.lead{font-size:34px;line-height:1.4;color:var(--t2)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:36px 40px}
+.pill{display:inline-flex;align-items:center;gap:10px;padding:8px 18px;border-radius:999px;
+  font-size:24px;font-weight:600;background:var(--panel2);border:1px solid var(--line)}
+.dot{width:14px;height:14px;border-radius:50%;display:inline-block}
+.frame{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line)}
+.frame img{display:block;width:100%;height:100%}
+.box{position:absolute;border:4px solid;border-radius:6px}
+.tag{position:absolute;padding:6px 14px;border-radius:10px;font-size:24px;font-weight:700;white-space:nowrap;color:#111}
+.foot{position:absolute;left:112px;right:112px;bottom:48px;font-size:20px;color:var(--t3);display:flex;justify-content:space-between}
+.stamp{display:inline-block;padding:10px 26px;border:4px solid;border-radius:14px;font-size:40px;font-weight:800;letter-spacing:.06em;transform:rotate(-4deg)}
+
+    .row{display:grid;grid-template-columns:820px 820px;gap:56px;margin-top:40px}
+    .h{font-size:32px;font-weight:700}
+    .was{font-size:23px;color:var(--t3);margin:4px 0 18px}
+    .pair{display:flex;gap:20px;align-items:flex-start}
+    .refs{display:flex;flex-direction:column;gap:14px}
+    .ref{width:200px;height:200px;border-radius:12px;overflow:hidden;position:relative;border:1px solid var(--line)}
+    .ref img{width:100%;height:100%;object-fit:cover}
+    .ref span{position:absolute;left:8px;bottom:8px;font-size:20px;font-weight:700;padding:2px 10px;border-radius:7px;color:#111}
+    ul{list-style:none;font-size:23px;line-height:1.55;color:var(--t2);margin-top:18px}
+    ul b{color:var(--t1)}
+    .stamp{font-size:30px;padding:6px 20px;margin-top:20px}
+    .big{font-size:23px;line-height:1.55;color:var(--t2);margin-top:18px}
+    .big b{color:var(--t1)}
+    </style></head>
+<body><div class="slide" style="padding-top:70px"><div class="kicker">What if the detector itself is wrong?</div><h2 style="margin-top:14px">Wrong cat: relabeled. Not a cat: removed.</h2>
+      <div class="row">
+        <div><div class="h">Wrong cat</div><div class="was">Detector said <b style="color:var(--qb)">Qb</b> · agent: <b style="color:var(--qbo)">Qbo</b></div>
+          <div class="pair"><div class="frame" style="width:418px;height:528px;background:url(../../assets/frames/2026-10-28-16-34-41-265746_E10P2.jpg) -517px -770px/1760px 1320px no-repeat;"><div class="box" style="left:121px;top:86px;width:183px;height:337px;border-color:var(--qbo);border-style:solid"></div></div>
+            <div class="refs">
+              <div class="ref"><img src="../../assets/reference/qbo_lying_side.jpg" style="object-position:70% 50%"><span style="background:var(--qbo)">Qbo</span></div>
+              <div class="ref"><img src="../../assets/reference/qb_standing_front.jpg" style="object-position:50% 55%"><span style="background:var(--qb)">Qb</span></div></div></div>
+          <ul><li>✓ golden-brown face mask · ✓ thick neck ruff</li><li>✓ brown paws · ✓ plume tail &nbsp;<span style="color:var(--t3)">(Qb: smooth, white paws)</span></li></ul>
+          <span class="stamp" style="color:var(--agent);border-color:var(--agent)">RELABELED</span></div>
+        <div><div class="h">Not a cat</div><div class="was">The exercise ball, tracked as “Qbo” for 26 minutes</div>
+          <div class="frame" style="width:525px;height:420px;background:url(../../assets/frames/2026-11-01-07-35-00-150851_ball_decoy.jpg) -402px -0px/1400px 1050px no-repeat;"><div class="box" style="left:212px;top:82px;width:98px;height:100px;border-color:var(--bad);border-style:dashed"></div><div class="tag" style="left:212px;top:192px;background:var(--bad)">“Qbo” → not a cat</div></div>
+          <div class="big">Found in review, saved as a <b>decoy zone</b>. Its boxes are now<br>
+            dropped before tracking: <b>1,016</b> in the 26 Oct replay, <b>660</b> in 25 Oct's.</div>
+          <span class="stamp" style="color:var(--bad);border-color:var(--bad)">REMOVED</span></div>
+      </div></div><div class="foot"><span>Left: run 140502, E10-P2 verdict reassign → Qbo, 28 Oct 16:34:41 · right: 1 Nov 07:35, zone exercise_ball in zones.yaml (agent/tracking/decoys.py)</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>

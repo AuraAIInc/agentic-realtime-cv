@@ -8,8 +8,10 @@ and per-model token pricing come from models.json next to this file (or the file
     MODEL_API_KEY       required (Meta Model API key; the variable name is api_key_env in models.json)
     MCP_AUTH_TOKEN      shared by the agent and all three MCP servers below
     CAMERA_MCP_URL      default http://raspberrypi.local:8765/mcp   (camera_server / camera_v3)
-    IMAGE_MCP_URL       default http://10.0.0.63:10001/mcp          (image-server / mcp_image_server)
-    TRACKING_MCP_URL    default http://10.0.0.165:10002/mcp         (tracking_mcp, inside existing_work_before_hackathon/detection_ingest_server.py)
+    IMAGE_MCP_URL       default http://127.0.0.1:10001/mcp          (image_server / mcp_image_server)
+    TRACKING_MCP_URL    default http://127.0.0.1:10002/mcp          (tracking_mcp, inside existing_work_before_hackathon/detection_ingest_server.py)
+
+Set a URL to an empty string to leave that server out (run_demo.py runs with images only).
 
 Or pass --servers servers.json with a list of {"name", "url", "token"} objects.
 """
@@ -55,23 +57,12 @@ class AgentConfig:
                 servers = [ServerConfig(**s) for s in json.load(f)]
         else:
             token = os.getenv("MCP_AUTH_TOKEN") or None  # one token for every MCP server
-            servers = [
-                ServerConfig(
-                    "camera",
-                    os.getenv("CAMERA_MCP_URL", "http://10.0.0.21:8765/mcp"),
-                    token,
-                ),
-                ServerConfig(
-                    "images",
-                    os.getenv("IMAGE_MCP_URL", "http://10.0.0.165:10001/mcp"),
-                    token,
-                ),
-                ServerConfig(
-                    "tracking",
-                    os.getenv("TRACKING_MCP_URL", "http://10.0.0.165:10002/mcp"),
-                    token,
-                ),
-            ]
+            urls = {
+                "camera": os.getenv("CAMERA_MCP_URL", "http://raspberrypi.local:8765/mcp"),
+                "images": os.getenv("IMAGE_MCP_URL", "http://127.0.0.1:10001/mcp"),
+                "tracking": os.getenv("TRACKING_MCP_URL", "http://127.0.0.1:10002/mcp"),
+            }
+            servers = [ServerConfig(name, url.strip(), token) for name, url in urls.items() if url.strip()]
         return cls(
             model=models["roles"]["agent"]["model"],
             base_url=models["base_url"],

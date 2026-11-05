@@ -207,7 +207,8 @@ def main(argv=None) -> None:
 
     # Always the repo-root .env (agent/camera_sim/main.py -> parents[2]),
     # never whatever the current working directory happens to be.
-    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
+    # AGENT_ENV_FILE (process env) swaps in another file, e.g. the demo's isolated config.
+    load_dotenv(os.environ.get("AGENT_ENV_FILE") or Path(__file__).resolve().parents[2] / ".env", override=True)
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
     a = parse_args(argv)

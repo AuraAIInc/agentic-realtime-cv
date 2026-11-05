@@ -25,15 +25,18 @@ h2{font-size:56px;line-height:1.1;font-weight:700;letter-spacing:-.015em}
 .foot{position:absolute;left:112px;right:112px;bottom:48px;font-size:20px;color:var(--t3);display:flex;justify-content:space-between}
 .stamp{display:inline-block;padding:10px 26px;border:4px solid;border-radius:14px;font-size:40px;font-weight:800;letter-spacing:.06em;transform:rotate(-4deg)}
 
-    table{width:100%;border-collapse:separate;border-spacing:0;margin-top:56px;font-size:32px}
+    table{width:100%;border-collapse:separate;border-spacing:0;margin-top:40px;font-size:27px}
     th{font-size:34px;text-align:left;padding:26px 30px;font-weight:700}
-    td{padding:24px 30px;border-top:1px solid var(--line);color:var(--t2)}
+    td{padding:18px 30px;border-top:1px solid var(--line);color:var(--t2)}
+    .ok{color:#3fc591;font-weight:700} .no{color:var(--bad);font-weight:700}
     td:first-child{color:var(--t3);font-size:26px;text-transform:uppercase;letter-spacing:.08em;width:300px}
     .hl{color:var(--t1)}
     </style></head>
 <body><div class="slide">
-      <div class="kicker">Two halves that fail in opposite ways</div>
+      <div class="kicker">Why not use just one of them?</div>
+      <h2 style="margin-top:14px">Each fails where the other is strong.</h2>
       <table><tr><th></th>
-        <th><span class="dot" style="background:var(--edge);margin-right:14px"></span>Fast eyes · YOLO on a Pi</th>
-        <th><span class="dot" style="background:var(--agent);margin-right:14px"></span>Smart brain · Muse Spark</th></tr><tr><td>Speed</td><td>~67 ms a frame</td><td>30–80 s a review</td></tr><tr><td>Cost, 24/7</td><td>fixed hardware, ~6–8 W</td><td>$63k a year</td></tr><tr><td>Best at</td><td><span class='hl'>where</span> things are</td><td><span class='hl'>what</span> they mean, and why</td></tr><tr><td>Fails by</td><td>mixing up cats, chasing balls</td><td>can't watch everything</td></tr><tr><td>Memory</td><td>seconds of tracking</td><td>one context window</td></tr></table>
-    </div><div class="foot"><span>Pi 5 CPU latency: Ultralytics guide · power: Sixfab Pi 5 AI HAT benchmark · review time: our traces</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>
+        <th><span class="dot" style="background:var(--edge);margin-right:14px"></span>Fast eyes · YOLO nano on a Pi</th>
+        <th><span class="dot" style="background:var(--agent);margin-right:14px"></span>Smart brain · AI on every frame</th></tr><tr><td>Keeps up?</td><td><span class='ok'>yes</span> · YOLO nano, ~3 frames/s on the Pi 5 CPU</td><td><span class='no'>no</span> · 8–12× slower than real time</td></tr><tr><td>Cost, 24/7</td><td><span class='ok'>~free</span> · fixed hardware, ~6–8 W</td><td><span class='no'>≈ $1.2M</span> a year per camera</td></tr><tr><td>Video</td><td><span class='ok'>stays home</span></td><td><span class='no'>every frame</span> leaves home</td></tr><tr><td>Best at</td><td><span class='hl'>where</span> the cats are</td><td><span class='hl'>which</span> cat, and why</td></tr><tr><td>Fails by</td><td><span class='no'>mixing up cats</span>, chasing balls</td><td>still misses the sleeping cat</td></tr><tr><td>Memory</td><td>seconds of tracking</td><td>one context window</td></tr></table>
+      <div class="lead" style="margin-top:30px;font-size:30px">A tiny model on a Raspberry Pi is almost free, <b style="color:var(--t1)">but it makes mistakes.</b></div>
+    </div><div class="foot"><span>Pi 5 CPU: YOLO nano ~3 frames/s (camera captures 2 fps) · power: Sixfab Pi 5 benchmark · AI column: labeling shootout 2026-11-03 (s04)</span><span>Agentic CV · Meta Muse Spark</span></div></body></html>

@@ -22,8 +22,9 @@ from mcp_image_server.timing import Timer
 
 logger = logging.getLogger("mcp_image_server.s3")
 
-S3_DEFAULT_BUCKET = "aura-history-image"
-S3_DEFAULT_PREFIX = "14/c2d5f3ce14067817"
+# No deployment bucket/prefix in code: set IMAGE_S3_BUCKET / IMAGE_S3_PREFIX in .env.
+S3_DEFAULT_BUCKET = ""
+S3_DEFAULT_PREFIX = ""
 S3_DEFAULT_CUTOFF = datetime.date(2026, 10, 20)
 
 _PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(-\d{2}(-\d{2})?)?$")

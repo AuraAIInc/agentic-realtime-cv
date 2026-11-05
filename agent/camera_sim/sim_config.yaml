@@ -3,18 +3,18 @@
 # Run from agent/: python -m camera_sim
 
 # --- identity: stamped on every streamed message, same keys as camera_server ---
-device_id: "c2d5f3ce14067817"
+device_id: "sim-camera-01"  # the real camera stamps the Pi serial
 view_id: 3
 model_id: 70
-user_id: 14
-user_name: "muyang-lu"
+user_id: "sim-user"
+user_name: "sim"
 cat_names:
   # <cat tracker id>: "<name>"  (used only by models with cat_classes: true)
   25: "Qb-2"
   26: "Qbo-2"
 
 # --- replay source: <stamp>.jpg or NNNN_<stamp>.jpg under images/, any subfolders ---
-image_dir: "/Users/muyang/Documents/Personal/Github/agentic-realtime-cv/image_server/retrieved_images"
+image_dir: "../image_server/retrieved_images"  # relative to agent/ (where camera_sim runs)
 replay_start: "2026-10-26-02-00-00"  # inclusive; hour dir, name prefix, or full name
 replay_end: ""  # inclusive; "" = to the last image
 replay_speed: 1.0  # 1.0 = realtime pacing from the file timestamps; 0 = as fast as possible
@@ -37,8 +37,8 @@ loop_model: "default"  # always-on loop model; the log shows the loop runs "defa
 
 # --- models: same schema as camera_v3/models.json ---
 models_config: "models.json"  # relative to this folder unless absolute
-model_s3_save_path: "muyang-lu/pretrained-26-640-200-202504122325/weights/best.pt"  # s3 key of best.pt, fallback s3_key for the default model
-model_training_bucket_name: "aura-model-training"  # training bucket for the S3 model download
+model_s3_save_path: ""  # optional s3 key of best.pt (fallback s3_key for the default model); "" = use models/best.pt
+model_training_bucket_name: ""  # training bucket for the optional S3 model download
 extra_models: {}
 
 # --- frame look-back / tracks, same as camera_server ---

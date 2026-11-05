@@ -14,5 +14,5 @@ RUN=output/tracking_runs/view3_20261028-1633_1640_replay_db_20261104-110807-3761
   --hour image_server/retrieved_images/2026-10-28-16 \
   --gt-source labels --iou 0.5 --out /tmp/eval_out
 
-# 3) Score against SAM labels as GT instead of labels/.
-.venv/bin/python evaluation/evaluate.py "$RUN" --gt-source muse --out /tmp/eval_out
+# 3) Score against MUSE SAM 3.1 labels as GT instead of labels/.
+.venv/bin/python evaluation/evaluate.py "$RUN" --gt-source "MUSE SAM 3.1" --out /tmp/eval_out

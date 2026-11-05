@@ -1,0 +1,6 @@
+# Everything run_demo.py needs (agent pipeline + local image MCP server + evaluation).
+# Python >= 3.10 (the MCP SDK needs it). Components that run on other machines keep their
+# own files: camera_server/pyproject.toml (Pi), existing_work_before_hackathon/requirements.txt
+# (ingest server), agent/camera_sim/requirements.txt (simulated camera, pulls torch).
+-r agent/requirements.txt
+-r image_server/requirements-mcp.txt
