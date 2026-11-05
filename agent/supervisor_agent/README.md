@@ -33,7 +33,7 @@ Add to `.env` (the full list for every component is in the repo's [`.env.example
 MODEL_API_KEY=<Meta Model API key>
 MCP_AUTH_TOKEN=<the single shared value for all three MCP servers>
 CAMERA_MCP_URL=http://<pi>:8765/mcp
-IMAGE_MCP_URL=http://10.0.0.63:10001/mcp
+IMAGE_MCP_URL=http://<image server host>:10001/mcp
 TRACKING_MCP_URL=http://<websocket server host>:10002/mcp
 ```
 
@@ -1283,7 +1283,7 @@ Detector output before tracking (conf above 0.5) between time_from and time_to (
 ```
 </details>
 
-### Local (`local__*`, 10 tools)
+### Local (`local__*`, 12 tools)
 
 In-process tools defined in [`local_tools/server.py`](local_tools/server.py); they run here, not over MCP.
 
@@ -1404,6 +1404,16 @@ Return one reference image (already cropped to the cat) by the `file` find_refer
 }
 ```
 </details>
+
+#### `local__get_frame`
+
+Return a camera frame from LOCAL disk by timestamp — the same pixels the images server would serve. Use this when images__get_image errors or the images server is down. Matches the exact frame when the timestamp hits one, else the nearest frame within 2 s (the actual frame time and delta are reported). Optional `box` crops around the cat. Frames come from `LOCAL_FRAME_DIRS` (default `image_server/retrieved_images/*/images`).
+
+*Returns images (counts against the image budget).* Inputs: `timestamp` (required; ISO-8601 or camera format), `box` `[x1, y1, x2, y2]`, `pad` (0.3), `max_side` (768).
+
+#### `local__get_track_box`
+
+Exact TRACKED box of one visit (period) at a timestamp, from the current run's `revised.jsonl` (`TRACK_RUN_DIR`, set by `agent.main`) — for bisection times with no listed key frame. Fetch this first, then crop that moment with `get_frame(box=...)`. Text only. Inputs: `period_id`, `timestamp` (required), `tolerance_s` (2.0).
 
 #### `local__make_contact_sheet`
 
@@ -1752,6 +1762,10 @@ Skill 'validate-cat-identity': Decide whether a detection is a cat and which hou
 | `agent.py` | the tool-calling loop, run trace |
 | `invoke_log.py` | background-thread dump of each run and tool call to MySQL (`agent_invoke`, `tool_invoke`) |
 | `cli.py` | one-shot and interactive command line |
+| `local_tools/` | in-process `local__*` tools (cat profiles, references, local frames, track boxes, zones, labels) |
+| `skills/` | task skills exposed as `skill__*` tools |
+| `tasks.py` | pipeline tasks (validate identity, check trajectory, assign labels) |
+| `trace.py` | per-run `trace.md` writer (`output/agent_runs/<stamp>/`) |
 
 ## Using it from code
 

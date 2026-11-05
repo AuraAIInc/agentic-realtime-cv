@@ -116,7 +116,7 @@ Optional view-info keys (all have defaults, so the current API response works as
   "s3_jpeg_quality": 95,
   "frame_buffer_size": 120,
   "frame_buffer_jpeg_quality": 85,
-  "local_image_dir": "/home/muyang/Cat_monitor_data",
+  "local_image_dir": "/home/<user>/Cat_monitor_data",
   "ws_port": 8000,
   "extra_models": {
     "ir": {"s3_key": "models/user123/ir_best.pt", "weights": "./models/ir.pt", "cat_classes": true,

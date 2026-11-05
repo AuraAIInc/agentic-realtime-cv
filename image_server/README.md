@@ -1,9 +1,13 @@
 # image_server
 
-Two things live here:
+Three things live here:
 
 - `fetch_hour_images.py` — download one hour of camera images and export a YOLO dataset with pre-labels (this README).
 - `mcp_image_server/` — the image server it downloads from; see [mcp_image_server/README.md](mcp_image_server/README.md) and `run_mcp_server.sh`.
+- `grounding_truth/` — ground-truth labeling with Muse SAM 3.1 and Muse Spark 1.3; see [grounding_truth/README.md](grounding_truth/README.md).
+
+Downloaded hours go to `retrieved_images/` (git-ignored). The demo's window is committed
+separately under [`../demo/data/`](../demo/README.md).
 
 ## Prerequisites
 

@@ -83,7 +83,7 @@ class Config:
     models_config: str | None = None
     # name -> same keys as a models file entry; added to / overrides the models file
     extra_models: dict = field(default_factory=dict)
-    local_image_dir: str = "/home/muyang/Cat_monitor_data"
+    local_image_dir: str = os.path.expanduser("~/Cat_monitor_data")
     ws_port: int = 8000
 
     # MCP server (from environment, not view-info, so the token never travels through the API)
@@ -126,7 +126,7 @@ class Config:
             frame_buffer_jpeg_quality=int(info.get("frame_buffer_jpeg_quality", 85)),
             models_config=os.environ.get("MODELS_CONFIG") or None,
             extra_models=info.get("extra_models") or {},
-            local_image_dir=info.get("local_image_dir", "/home/muyang/Cat_monitor_data"),
+            local_image_dir=info.get("local_image_dir", os.path.expanduser("~/Cat_monitor_data")),
             ws_port=int(info.get("ws_port", 8000)),
             mcp_enabled=os.environ.get("MCP_ENABLED", "1") not in ("0", "false", "False"),
             mcp_host=os.environ.get("MCP_HOST", "0.0.0.0"),

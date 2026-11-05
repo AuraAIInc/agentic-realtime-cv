@@ -16,7 +16,7 @@ Guide on cerebralvalley.ai (as of Oct 26, 2026).
 | --- | --- | --- | --- |
 | 1 | Track decided: **Indie Developer**, team of 2 (Terry, Muyang). Name the Representative who submits. Project plan: [project-plan.md](project-plan.md). | | Oct 27 |
 | 2 | **Swap the agent's LLM from OpenAI to Meta models.** `mcp_agent` runs on `gpt-6.1-sol` today. A project that does not use Meta models fails Stage 1 (pass/fail). | | Oct 29 |
-| 3 | Create a **separate public repo** for the submission. `aura_api_server` is private and must stay private. Copy only the hackathon code, with no secrets, internal IPs (e.g. `10.0.0.63` in `mcp_agent/README.md`), or proprietary model weights. | | Oct 30 |
+| 3 | Create a **separate public repo** for the submission. `aura_api_server` is private and must stay private. Copy only the hackathon code, with no secrets, internal IPs, or proprietary model weights. | | Oct 30 |
 | 4 | Tag the pre-hackathon state (e.g. `git tag hackathon-baseline`) and write down what existed before Oct 27. The tracker, correctors, `tracking_mcp` and `mcp_agent` all predate the event (commits Oct 23-25). | | Oct 27 |
 | 5 | Every team member claims their own **$150 Meta Model API credits** (form in the Participant Guide). Needs a credit card on the account; set a Spend Limit on the Billing page. | each | ASAP, hard stop Nov 4 9 PM ET |
 | 6 | Request partner credits early (they are capped): Baseten (2,000 people), Modal (first 1,000), Fireworks (per team, shortlist). | | Oct 27 |

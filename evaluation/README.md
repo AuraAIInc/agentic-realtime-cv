@@ -1,5 +1,8 @@
 # Evaluation pipeline: one tracking run vs ground truth (+ cost)
 
+`run_demo.py` at the repo root runs this on its demo run automatically (ground truth from
+`demo/data/2026-10-28-16`, with and without the audit).
+
 Scores a finished tracking run — offline label sets plus the
 raw → revised → supervisor-validated detection stages — against YOLO
 ground-truth labels, and reports the improvement with wall time and LLM
@@ -10,8 +13,8 @@ spend. Input is a single tracking-run directory; everything else
 
 | Stage | Source | Meaning |
 | --- | --- | --- |
-| muse | `<hour>/muse_labels/` (if present) | SAM 3.1 offline labels vs GT |
-| spark | `<hour>/spark_labels/` (if present) | Spark 1.3 offline labels vs GT |
+| MUSE SAM 3.1 | `<hour>/muse_labels/` (if present) | MUSE SAM 3.1 offline labels vs GT |
+| MUSE SPARK 1.3 | `<hour>/spark_labels/` (if present) | MUSE SPARK 1.3 offline labels vs GT |
 | raw | `stream.jsonl` | Raw detector output (e.g. DB replay) |
 | revised | `revised.jsonl` | TrackCorrector output, minus tombstones and interpolated guesses |
 | validated | `validated.jsonl` | Revised rows with supervisor verdicts, minus interpolated guesses |
@@ -23,7 +26,7 @@ key, so all of them count.
 
 ## Ground truth
 
-`<hour>/labels/` by default. `--gt-source {labels|muse|spark}` switches
+`<hour>/labels/` by default. `--gt-source {labels|"MUSE SAM 3.1"|"MUSE SPARK 1.3"}` switches
 the label directory. YOLO class ids map to cat ids through the hour's
 `classes_map.json` (`order` array); image size is read from the first
 `images/*.jpg` (fallback 800x600).
@@ -71,7 +74,7 @@ relative), else the run window's `YYYY-MM-DD-HH` stamp under
 | `run_dir` | (required) | Tracking run directory |
 | `--hour` | auto | `retrieved_images/<hour>` dir with GT labels |
 | `--data-root` | `<repo>/image_server/retrieved_images` | Hour lookup tree for replay/live runs |
-| `--gt-source` | `labels` | `labels` \| `muse` \| `spark` |
+| `--gt-source` | `labels` | `labels` \| `"MUSE SAM 3.1"` \| `"MUSE SPARK 1.3"` |
 | `--iou` | 0.5, 0.75 | Repeatable IoU thresholds |
 | `--out` | `<repo>/output/evaluation_runs/` | Report directory |
 
@@ -129,7 +132,7 @@ audited numbers.
   can drag one label across a visit (identity drops raw → revised);
   the supervisor exists to repair it (identity rises revised →
   validated). Judge the pipeline by the raw → validated row.
-- **Muse rows with mean IoU 1.000** mean that hour's `muse_labels`
+- **MUSE SAM 3.1 rows with mean IoU 1.000** mean that hour's `muse_labels`
   reuse the detector boxes verbatim and only re-classify/filter; its
   F1 then measures classification + coverage, not localization.
 

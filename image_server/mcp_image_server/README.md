@@ -74,7 +74,10 @@ local-only.
 ## Configuration (.env)
 
 Read from the repo-root `agentic-realtime-cv/.env` (never `image_server/.env` or the working
-directory), and its values override variables already exported in the shell. The startup log
+directory), and its values override variables already exported in the shell. Setting
+`AGENT_ENV_FILE` in the process environment loads that file instead (`run_demo.py` does this).
+S3 is used only when the access keys **and** `IMAGE_S3_BUCKET` are set; no bucket or prefix is
+built into the code. The startup log
 shows the path and a `sha256` fingerprint of the token; compare it with
 `printf %s "$TOKEN" | sha256sum | cut -c1-12` on the client when you get `401 unauthorized`.
 
@@ -84,8 +87,8 @@ MCP_AUTH_TOKEN=<long random string>   # the single shared value: same line in ev
 IMAGE_MCP_PORT=10001
 IMAGE_MCP_HOST=0.0.0.0
 IMAGE_ROOT=/mnt/extreme/Cat_monitor_data
-IMAGE_S3_BUCKET=aura-history-image    # or HISTORY_IMAGE_BUCKET_NAME
-IMAGE_S3_PREFIX=14/c2d5f3ce14067817
+IMAGE_S3_BUCKET=<bucket>    # required for S3; or HISTORY_IMAGE_BUCKET_NAME
+IMAGE_S3_PREFIX=<user id>/<device id>
 IMAGE_S3_CUTOFF_DATE=2026-10-20
 S3_AWS_DEFAULT_REGION=<region, e.g. us-west-1>
 S3_AWS_ACCESS_KEY=<access key id>         # same keys the camera uses

@@ -25,7 +25,8 @@ from mcp_image_server.s3_store import (
 from mcp_image_server.timing import Timer
 
 NEW_NAME = "2026-10-25-01-23-20-879991.jpg"
-NEW_KEY = "14/c2d5f3ce14067817/2026-10-25/01/23/2026-10-25-01-23-20-879991.jpg"
+PREFIX = "7/example-device"
+NEW_KEY = "7/example-device/2026-10-25/01/23/2026-10-25-01-23-20-879991.jpg"
 OLD_NAME = "2026-10-20-23-59-59-000001.jpg"
 
 
@@ -87,9 +88,10 @@ class FakeS3Client:
 
 def test_s3_key_matches_camera_upload_layout():
     t = datetime.datetime.strptime(NEW_NAME, "%Y-%m-%d-%H-%M-%S-%f.jpg")
-    assert s3_key_for(S3_DEFAULT_PREFIX, t, NEW_NAME) == NEW_KEY
-    assert S3_DEFAULT_BUCKET == "aura-history-image"
-    assert S3_DEFAULT_PREFIX == "14/c2d5f3ce14067817"
+    assert s3_key_for(PREFIX, t, NEW_NAME) == NEW_KEY
+    # No deployment bucket/prefix is baked into the code; both come from the environment.
+    assert S3_DEFAULT_BUCKET == ""
+    assert S3_DEFAULT_PREFIX == ""
 
 
 def test_cutoff_new_images_go_to_s3_old_stay_local():
@@ -100,9 +102,9 @@ def test_cutoff_new_images_go_to_s3_old_stay_local():
 
 
 def test_list_prefix_mapping():
-    assert s3_list_prefix_for(S3_DEFAULT_PREFIX, "2026-10-25") == f"{S3_DEFAULT_PREFIX}/2026-10-25/"
-    assert s3_list_prefix_for(S3_DEFAULT_PREFIX, "2026-10-25-01") == f"{S3_DEFAULT_PREFIX}/2026-10-25/01/"
-    assert s3_list_prefix_for(S3_DEFAULT_PREFIX, "2026-10-25-01-23") == f"{S3_DEFAULT_PREFIX}/2026-10-25/01/23/"
+    assert s3_list_prefix_for(PREFIX, "2026-10-25") == f"{PREFIX}/2026-10-25/"
+    assert s3_list_prefix_for(PREFIX, "2026-10-25-01") == f"{PREFIX}/2026-10-25/01/"
+    assert s3_list_prefix_for(PREFIX, "2026-10-25-01-23") == f"{PREFIX}/2026-10-25/01/23/"
 
 
 # ---------------------------------------------------------------- routing

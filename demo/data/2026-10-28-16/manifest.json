@@ -1,0 +1,25 @@
+{
+  "view_id": 3,
+  "window": {
+    "start": "2026-10-28T16:33:00",
+    "end_exclusive": "2026-10-28T16:39:00",
+    "cli": {
+      "--start": "2026-10-28-16-33",
+      "--end": "2026-10-28-16-38"
+    }
+  },
+  "raw_detections": {
+    "file": "raw_detections.jsonl",
+    "frames": 989,
+    "boxes": 686,
+    "source": "MySQL images/detection tables (read-only SELECT, agent/tracking/db_stream.py)"
+  },
+  "files": {
+    "images": 989,
+    "labels": 989,
+    "muse_labels": 988,
+    "spark_labels": 911
+  },
+  "ground_truth": "labels/ (validated YOLO export; class order in classes_map.json)",
+  "built": "2026-11-04T16:33:37"
+}

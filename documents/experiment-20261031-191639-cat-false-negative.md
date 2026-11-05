@@ -34,7 +34,7 @@ One-shot chat query (no `--task`, no `--labels`, no tag), equivalent to
 - `max_steps=12`, `image_detail=auto`, `reasoning_effort=None`, image/high-res budgets unlimited
 - `RunOptions`: all defaults — no instruction override, all tools exposed, no `text.format`
 - MCP servers from `.env`: camera `http://127.0.0.1:8766/mcp`,
-  images `http://10.0.0.165:10001/mcp`, tracking `http://52.53.150.209:10002/mcp`,
+  images `http://<image server host>:10001/mcp`, tracking `http://<ingest server host>:10002/mcp`,
   plus in-process `local` (agent_data helpers) and `skill` (task skills) toolsets
 - 34 tools exposed; each sent as a Responses `function` tool with `strict: false` and the
   description truncated to 1024 chars (`tool_adapter.to_function_tool`)
@@ -390,7 +390,7 @@ Output (`tool_output` = the `function_call_output` items fed back to the model; 
     "round_trip_ms": 9.4
   },
   {
-    "device_id": "c2d5f3ce14067817",
+    "device_id": "<pi serial>",
     "view_id": 3,
     "display_size": [
       800,
@@ -429,7 +429,7 @@ Output (`tool_output` = the `function_call_output` items fed back to the model; 
         "create_time": "2026-10-27-18-01-22-768257",
         "model_id": 70,
         "view_id": 3,
-        "device_id": "c2d5f3ce14067817",
+        "device_id": "<pi serial>",
         "source": "default",
         "settings": null
       }
@@ -517,7 +517,7 @@ Output (`tool_output` = the `function_call_output` items fed back to the model; 
         ],
         "width": 640,
         "height": 640,
-        "device_id": "c2d5f3ce14067817",
+        "device_id": "<pi serial>",
         "cats": {
           "25": "Qb-2",
           "26": "Qbo-2"
@@ -532,7 +532,7 @@ Output (`tool_output` = the `function_call_output` items fed back to the model; 
         ],
         "width": 800,
         "height": 600,
-        "device_id": "c2d5f3ce14067817",
+        "device_id": "<pi serial>",
         "cats": {
           "25": "Qb-2",
           "26": "Qbo-2"
@@ -1136,7 +1136,7 @@ Output (`tool_output` = the `function_call_output` items fed back to the model; 
     ],
     "max_size": null,
     "sizes": [],
-    "note": "replay source: resolution is fixed by the files in /Users/muyang/Documents/Personal/Github/agentic-realtime-cv/image_server/retrieved_images"
+    "note": "replay source: resolution is fixed by the files in <repo>/image_server/retrieved_images"
   }
 ]
 ```
