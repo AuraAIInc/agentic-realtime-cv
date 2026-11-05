@@ -18,7 +18,7 @@ hand-validated ground truth
 > with the right name. It costs **$0.39** for eight minutes of footage, about **63× cheaper**
 > than having AI label every frame.
 
-![The result in one slide](demo-claude/assets/slides/s17_results.png)
+![The result in one slide](demo/assets/slides/s17_results.png)
 
 ---
 
@@ -133,7 +133,7 @@ The rest of their day is invisible, and we want to answer simple questions about
 - When did he play, and for how long?
 - How does today compare with his normal month or year?
 
-![Meet Qb and Qbo](demo-claude/assets/slides/s01_meet_qb_qbo.png)
+![Meet Qb and Qbo](demo/assets/slides/s01_meet_qb_qbo.png)
 
 We built a smart camera for this before the hackathon. It exposed three problems that no
 off-the-shelf product solves together:
@@ -145,7 +145,7 @@ off-the-shelf product solves together:
 | **24/7 monitoring has to run on cheap hardware** | A Raspberry Pi 5 CPU sustains only a nano-class YOLO in real time ([Ultralytics](https://docs.ultralytics.com/guides/raspberry-pi)); a Pi 5 with an AI HAT draws [6–8 W](https://sixfab.com/blog/raspberry-pi-5-ai-hat-benchmark-deepx-vs-hailo/). |
 | **Sending every frame to AI costs too much** | Measured: **$24.65** to detect and identify every frame of an 8-minute window (1,318 frames) with SAM 3.1 + Muse Spark. |
 
-![The ball the camera believed was a cat](demo-claude/assets/slides/s02_ball_decoy.png)
+![The ball the camera believed was a cat](demo/assets/slides/s02_ball_decoy.png)
 
 Two near-identical white cats make this harder than usual. Qb is a cool-white short-hair with
 a smooth outline, white paws and a thin ringed tail. Qbo is a cream long-hair with a golden-brown
@@ -153,7 +153,7 @@ face mask, brown paws and a dark plume tail. At 800×600 from a wide-angle ceili
 small detector often cannot tell them apart. A vision LLM can, *if someone tells it where to
 look and what to compare*. That sentence is the design brief of this project.
 
-![What we want to know](demo-claude/assets/slides/s03_simple_questions.png)
+![What we want to know](demo/assets/slides/s03_simple_questions.png)
 
 ---
 
@@ -198,7 +198,7 @@ and clustered. Our measured doubt rate, ~1% of frames, matches that structure.
 
 ## 5. The core insight: fast eyes, slow brain, shared memory
 
-![Two halves that fail in opposite ways](demo-claude/assets/slides/s05_two_halves.png)
+![Two halves that fail in opposite ways](demo/assets/slides/s05_two_halves.png)
 
 | | Real-time detector (YOLO nano on a Pi) | Vision LLM (Muse Spark) |
 | --- | --- | --- |
@@ -214,7 +214,7 @@ it but never sees it. About 770 million surveillance cameras existed in 2019
 ([CNBC/IHS Markit](https://www.cnbc.com/2019/12/06/one-billion-surveillance-cameras-will-be-watching-globally-in-2021.html));
 no improvement in model quality makes it affordable to send all of them to an LLM.
 
-![The cost of sending every frame to AI](demo-claude/assets/slides/s04_cost_math.png)
+![The cost of sending every frame to AI](demo/assets/slides/s04_cost_math.png)
 
 Three things have to cross the gap, and this project builds all three:
 
@@ -230,7 +230,7 @@ better, but it needs GPUs and hardware this setting does not have. We take the s
 a given and make its output trustworthy with AI, which is the problem every compute-limited
 and privacy-bound deployment actually faces.
 
-![What this project is, and is not](demo-claude/assets/slides/s05b_scope.png)
+![What this project is, and is not](demo/assets/slides/s05b_scope.png)
 
 Prior work covers each piece on its own. Specialized cascades
 ([NoScope](https://web.cs.ucla.edu/~ravi/CS239_W20/papers/noscope.pdf)), online distillation
@@ -245,7 +245,7 @@ individuals.
 
 ## 6. System architecture
 
-![The loop: the Pi handles 99% of frames; the agent sees only the doubts](demo-claude/assets/slides/s07_loop_diagram.png)
+![The loop: the Pi handles 99% of frames; the agent sees only the doubts](demo/assets/slides/s07_loop_diagram.png)
 
 ```
   Raspberry Pi (home)                   ingest / pipeline host                     cloud
@@ -315,7 +315,7 @@ Pre-hackathon code lives in a separate, clearly marked folder
 | | **Agent and tool invoke logging** to the database, with a fleet report |
 | | Two trace reviews that became fixes: slimmer tools, skill gating, chat budgets, raw-pixel grounding, an explicit decoy rule |
 | | YOLO dataset export with database pre-labels |
-| | A 3-minute demo with 22 slides, 3 generated clips, narration and captions, all built from real frames and measured numbers by script (`documents/demo-claude/`) |
+| | A 3-minute demo with 22 slides, 3 generated clips, narration and captions, all built from real frames and measured numbers by script (`documents/demo/`) |
 
 ---
 
@@ -357,7 +357,7 @@ How both work is explained in [how-track-correctors-work.md](how-track-corrector
 The hackathon contribution is that both correctors now **report their uncertainty at the
 exact decision point** where it arises:
 
-![Fifteen kinds of doubt](demo-claude/assets/slides/s09_doubt_taxonomy.png)
+![Fifteen kinds of doubt](demo/assets/slides/s09_doubt_taxonomy.png)
 
 | Frame scope | Trigger | Visit scope | Trigger |
 | --- | --- | --- | --- |
@@ -383,7 +383,7 @@ has its own **prompt builder**, which states the conflict, the question, the alt
 key frames to inspect and each cat's written appearance. It frames the Pi's YOLO honestly, as
 *"a hint, not evidence"*, and attaches a memory brief marked *"may help, may be stale"*.
 
-![A doubt becomes a question](demo-claude/assets/slides/s10_question_card.png)
+![A doubt becomes a question](demo/assets/slides/s10_question_card.png)
 
 Each code also has a **slim pydantic schema**: one `verdict` enum, at most one qualifier
 (`chosen_cat_id` or `cut_time`) and a short `rationale`. Structured output keeps generation
@@ -411,7 +411,7 @@ agent gets a narrow set of three tools (`images__get_image`, `images__list_image
 
 ### 8.5 A queue that merges related doubts
 
-![Related doubts share one call](demo-claude/assets/slides/s12_batching.png)
+![Related doubts share one call](demo/assets/slides/s12_batching.png)
 
 Doubts cluster in time: in the demo run, E4, E5 and E6 all fired on the same frame. The
 `EscalationBatcher` lets a new doubt join the waiting batch if it falls **within 60 s**, up to
@@ -424,7 +424,7 @@ item becomes an `error` for that case only, and its siblings still apply. Design
 
 ### 8.6 Verdicts become data
 
-![Every verdict rewrites the record](demo-claude/assets/slides/s14_row_diff.png)
+![Every verdict rewrites the record](demo/assets/slides/s14_row_diff.png)
 
 At the end of a run, `materialize()` applies verdicts to the revised rows. Frame verdicts
 match rows by timestamp and cat; period verdicts match by visit. `keep_original` restores the
@@ -441,13 +441,13 @@ visit separate from Qbo's.
 
 ### 8.7 Spatial-temporal memory
 
-![Memory as a diary](demo-claude/assets/slides/s15_day_log.png)
+![Memory as a diary](demo/assets/slides/s15_day_log.png)
 
 Detectors see frames and trackers see paths, but neither knows that *Qb usually naps in the
 green bed in the afternoon*. Agent frameworks treat memory as conversation history; video
 needs memory organized by **where** and **when**.
 
-![Learning what normal looks like](demo-claude/assets/slides/s16_memory_pyramid.png)
+![Learning what normal looks like](demo/assets/slides/s16_memory_pyramid.png)
 
 - **Visits, not frames.** Closed visits by the same cat less than 5 minutes apart merge into
   one activity record. A **Muse Spark vision call** (`PeriodLabeler`) labels the key frames
@@ -599,7 +599,7 @@ Timelines of the same 8 minutes (y = cat, red bands = doubts the Pi raised):
 | --- | --- | --- |
 | ![GT](assets/final-performance-20261104/timeline_gt.png) | ![raw](assets/final-performance-20261104/timeline_original.png) | ![validated](assets/final-performance-20261104/timeline_validated.png) |
 
-![The demo window as the Pi saw it, with doubts marked](demo-claude/assets/slides/s08_timeline.png)
+![The demo window as the Pi saw it, with doubts marked](demo/assets/slides/s08_timeline.png)
 
 ### 10.3 Where the gain lives: showcase windows
 
@@ -731,7 +731,7 @@ three frames against both profiles and answered: *"Cool white, smooth sharp outl
 paws, no fluffy halo. Matches Qb … label 26 is wrong, reassign to 25."* One verdict renamed
 163 rows. This single case is the 16:33–16:35 showcase window: precision 0.529 → 0.971.
 
-![Case E2: overturned](demo-claude/assets/slides/s11_case_e5.png)
+![Case E2: overturned](demo/assets/slides/s11_case_e5.png)
 
 ### 11.2 Case E4 + E5: the tracker swapped the cats. The agent swapped them back.
 
@@ -741,7 +741,7 @@ reviewed all four related doubts (E4–E7) together and restored both: *"Rug cat
 bushy plume tail = Qbo. Bed cat: cool white, smooth outline = Qb. Nearness caused a
 cross-steal; the detector was right."*
 
-![Case E4 + E5: swapped back](demo-claude/assets/slides/s13_case_e10.png)
+![Case E4 + E5: swapped back](demo/assets/slides/s13_case_e10.png)
 
 ### 11.3 When the detector itself is wrong
 
@@ -752,7 +752,7 @@ a ball tracked as "Qbo" for 26 minutes, was found in our trace review and closed
 a **decoy zone** (§13.1). It is now dropped before tracking: 1,016 false boxes in the 26 Oct
 replay, 660 in 25 Oct's.
 
-![Wrong cat relabeled; not a cat removed](demo-claude/assets/slides/s13b_detector_fixes.png)
+![Wrong cat relabeled; not a cat removed](demo/assets/slides/s13b_detector_fixes.png)
 
 ### 11.4 Watching the agent think
 
@@ -922,7 +922,7 @@ resting, playing, and which cat was where.
 
 ## 17. Impact and generalization
 
-![Beyond cats](demo-claude/assets/slides/s19_beyond_cats.png)
+![Beyond cats](demo/assets/slides/s19_beyond_cats.png)
 
 The pattern of a cheap camera that watches continuously, **knows when it is unsure**, asks for
 help only then and remembers what it learns fits any setting with **fixed cameras, rare or slow
@@ -971,7 +971,7 @@ physical things a person cares about, all year round, with nothing leaving the h
 
 ## 19. Roadmap
 
-![Roadmap](demo-claude/assets/slides/s18_roadmap.png)
+![Roadmap](demo/assets/slides/s18_roadmap.png)
 
 | Priority | Item | Why | Status |
 | --- | --- | --- | --- |
@@ -993,16 +993,16 @@ physical things a person cares about, all year round, with nothing leaving the h
 ## 20. Demo
 
 The 3-minute demo is fully produced from real frames and measured numbers. Everything is in
-[`demo-claude/`](demo-claude/):
+[`demo/`](demo/):
 
-- **Video:** [`demo-claude/assets/video/final_demo.mp4`](demo-claude/assets/video/final_demo.mp4),
+- **Video:** [`demo/assets/video/final_demo_v2.mp4`](demo/assets/video/final_demo_v2.mp4),
   plus the generated clips `v01_cost_counter.mp4`, `v02_ball_push_in.mp4` and
   `v03_replay_tracker.mp4`.
-- **Script:** [`demo-claude/demo-script-claude.md`](demo-claude/demo-script-claude.md): every
+- **Script:** [`demo/demo-script.md`](demo/demo-script.md): every
   beat with its narration, format, asset, data source and motion notes.
-- **Narration and captions:** `demo-claude/assets/text/narration.txt` and `captions.srt`.
-- **Slides:** 22 slides in `demo-claude/assets/slides/`, rendered from HTML by
-  `demo-claude/scripts/build_slides.py`, which reads boxes from the run's own files rather
+- **Narration and captions:** `demo/assets/text/narration.txt` and `captions.srt`.
+- **Slides:** 22 slides in `demo/assets/slides/`, rendered from HTML by
+  `demo/scripts/build_slides.py`, which reads boxes from the run's own files rather
   than typing them in. Clips come from `build_videos.py`, text from `build_text.py`.
 
 The story in six moves: two near-identical cats and a ball the camera believed was a cat → the
@@ -1109,8 +1109,7 @@ this report. Start with the first group.
 | --- | --- |
 | [hackathon-guide.md](hackathon-guide.md) | Event rules, dates and judging criteria |
 | [project-plan.md](project-plan.md) · [project-plan.zh.md](project-plan.zh.md) | The team's plan for the event (English and Chinese) |
-| [demo-claude/demo-script-claude.md](demo-claude/demo-script-claude.md) | The produced 3-minute demo: beats, assets, sources |
-| [hackathon-project-report-muse.md](hackathon-project-report-muse.md) | The long-form companion report |
+| [demo/demo-script.md](demo/demo-script.md) | The produced 3-minute demo: beats, assets, sources |
 
 ---
 
