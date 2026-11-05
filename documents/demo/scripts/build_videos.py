@@ -5,7 +5,7 @@
     v03_replay_tracker.mp4 first 10 s (16:34:25-16:34:54) at ~3x, the Pi tracker's boxes on the walking cat, Qb asleep from review,
                            doubts popping up as they fire, verdicts listed on the right
 
-    python documents/demo-claude/scripts/build_videos.py [v01 v02 v03]
+    python documents/demo/scripts/build_videos.py [v01 v02 v03]
 """
 
 from __future__ import annotations

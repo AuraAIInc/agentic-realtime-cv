@@ -1,13 +1,13 @@
 """Build the final demo video, timed to the continuous voice-over.
 
-1. build_voice.py renders assets/audio/voiceover.wav (one take) + voiceover_timings.json.
+1. build_voice.py renders assets/audio/voiceover_v2.wav (one take) + voiceover_v2_timings.json.
 2. This script shows each beat's slide from just before its sentence starts until the next
    beat, plays the ball / counter / replay clips inside their beats, cross-fades between
    slides (slides themselves stay still: no zoom, no drift), lays the voice track under it,
    and writes captions from the same timings. Hard limit: 180 s.
 
-    .venv/bin/python documents/demo-claude/scripts/build_final_video.py
-    -> documents/demo-claude/assets/video/final_demo.mp4 (+ assets/text/captions_final.srt)
+    .venv/bin/python documents/demo/scripts/build_final_video.py
+    -> documents/demo/assets/video/final_demo_v2.mp4 (+ assets/text/captions_final_v2.srt)
 """
 
 from __future__ import annotations
@@ -21,11 +21,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DEMO = HERE.parent
 SL, VID, TXT, AUD = (DEMO / "assets" / d for d in ("slides", "video", "text", "audio"))
-OUT = VID / "final_demo.mp4"
+OUT = VID / "final_demo_v2.mp4"
 FPS, W, H = 30, 1920, 1080
 XF = 0.4         # cross-fade between segments
 LEAD = 0.25      # a slide appears this long before its sentence starts
-END_HOLD = 2.0   # silence + last slide after the final sentence
+END_HOLD = 1.5   # silence + last slide after the final sentence
 LIMIT = 180.0
 
 # beat -> parts: (asset, seconds or None = rest of the beat, clip start offset)
@@ -107,15 +107,15 @@ def segment(asset: str, secs: float, offset: float, out: Path) -> None:
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tag", default="", help='voice/output suffix, e.g. "_v2": voiceover_v2.wav -> final_demo_v2.mp4')
+    ap.add_argument("--tag", default="_v2", help='voice/output suffix, e.g. "_v2": voiceover_v2.wav -> final_demo_v2.mp4')
     ap.add_argument("--end-hold", type=float, default=END_HOLD)
     args = ap.parse_args()
     out = VID / f"final_demo{args.tag}.mp4"
     tim = json.loads((AUD / f"voiceover{args.tag}_timings.json").read_text())
     beats = tim["beats"]
     total = round(tim["length"] + args.end_hold, 3)
-    assert total <= LIMIT, f"{total} s > {LIMIT} s: shorten voiceover.txt or the holds in build_voice.py"
-    assert [b["beat"] for b in beats] == sorted(PARTS), "voiceover.txt beats must match PARTS"
+    assert total <= LIMIT, f"{total} s > {LIMIT} s: shorten voiceover_v2.txt"
+    assert [b["beat"] for b in beats] == sorted(PARTS), "voiceover_v2.txt beats must match PARTS"
     # beat windows: from LEAD before its sentence to LEAD before the next one
     edges = [0.0] + [max(0.0, b["start"] - LEAD) for b in beats[1:]] + [total]
     plan = []  # (asset, start, length, offset)

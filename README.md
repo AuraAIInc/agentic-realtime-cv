@@ -199,5 +199,5 @@ python -m pytest agent/tests agent/escalation/tests agent/tracking/tests \
 - Memory: [`agent/memory/README.md`](agent/memory/README.md),
   [`documents/spatial-temporal-memory-design.md`](documents/spatial-temporal-memory-design.md)
 - Results: [`documents/final-model-performance-20261104.md`](documents/final-model-performance-20261104.md),
-  hackathon report: [`documents/hackathon-project-report-claude.md`](documents/hackathon-project-report-claude.md)
+  hackathon report: [`documents/report.md`](documents/report.md)
 - Everything else: [`documents/README.md`](documents/README.md)

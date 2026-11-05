@@ -18,8 +18,6 @@ hand-validated ground truth
 > with the right name. It costs **$0.39** for eight minutes of footage, about **63× cheaper**
 > than having AI label every frame.
 
-![The result in one slide](demo-claude/assets/slides/s17_results.png)
-
 ---
 
 ## Contents
@@ -133,8 +131,6 @@ The rest of their day is invisible, and we want to answer simple questions about
 - When did he play, and for how long?
 - How does today compare with his normal month or year?
 
-![Meet Qb and Qbo](demo-claude/assets/slides/s01_meet_qb_qbo.png)
-
 We built a smart camera for this before the hackathon. It exposed three problems that no
 off-the-shelf product solves together:
 
@@ -145,15 +141,11 @@ off-the-shelf product solves together:
 | **24/7 monitoring has to run on cheap hardware** | A Raspberry Pi 5 CPU sustains only a nano-class YOLO in real time ([Ultralytics](https://docs.ultralytics.com/guides/raspberry-pi)); a Pi 5 with an AI HAT draws [6–8 W](https://sixfab.com/blog/raspberry-pi-5-ai-hat-benchmark-deepx-vs-hailo/). |
 | **Sending every frame to AI costs too much** | Measured: **$24.65** to detect and identify every frame of an 8-minute window (1,318 frames) with SAM 3.1 + Muse Spark. |
 
-![The ball the camera believed was a cat](demo-claude/assets/slides/s02_ball_decoy.png)
-
 Two near-identical white cats make this harder than usual. Qb is a cool-white short-hair with
 a smooth outline, white paws and a thin ringed tail. Qbo is a cream long-hair with a golden-brown
 face mask, brown paws and a dark plume tail. At 800×600 from a wide-angle ceiling camera, a
 small detector often cannot tell them apart. A vision LLM can, *if someone tells it where to
 look and what to compare*. That sentence is the design brief of this project.
-
-![What we want to know](demo-claude/assets/slides/s03_simple_questions.png)
 
 ---
 
@@ -198,8 +190,6 @@ and clustered. Our measured doubt rate, ~1% of frames, matches that structure.
 
 ## 5. The core insight: fast eyes, slow brain, shared memory
 
-![Two halves that fail in opposite ways](demo-claude/assets/slides/s05_two_halves.png)
-
 | | Real-time detector (YOLO nano on a Pi) | Vision LLM (Muse Spark) |
 | --- | --- | --- |
 | Speed | Every frame, in real time | ~30–110 s per agentic review in our runs |
@@ -213,8 +203,6 @@ The fast model sees the moment without understanding it. The smart model could u
 it but never sees it. About 770 million surveillance cameras existed in 2019
 ([CNBC/IHS Markit](https://www.cnbc.com/2019/12/06/one-billion-surveillance-cameras-will-be-watching-globally-in-2021.html));
 no improvement in model quality makes it affordable to send all of them to an LLM.
-
-![The cost of sending every frame to AI](demo-claude/assets/slides/s04_cost_math.png)
 
 Three things have to cross the gap, and this project builds all three:
 
@@ -230,8 +218,6 @@ better, but it needs GPUs and hardware this setting does not have. We take the s
 a given and make its output trustworthy with AI, which is the problem every compute-limited
 and privacy-bound deployment actually faces.
 
-![What this project is, and is not](demo-claude/assets/slides/s05b_scope.png)
-
 Prior work covers each piece on its own. Specialized cascades
 ([NoScope](https://web.cs.ucla.edu/~ravi/CS239_W20/papers/noscope.pdf)), online distillation
 from a costly teacher ([Mullapudi et al.](https://arxiv.org/pdf/1812.02699)), cascaded VLM
@@ -241,11 +227,18 @@ project joins **self-reported, typed doubt**, **agentic review that rewrites the
 **spatial-temporal memory** into one loop on a $100 device for long-term tracking of named
 individuals.
 
+The rest of this report is the answer to one question: how do you let a cheap model watch
+everything and still trust what it records? §6 shows the system, §8 follows one doubt through
+it, §10 and §11 measure it, and §12 prices it.
+
 ---
 
 ## 6. System architecture
 
-![The loop: the Pi handles 99% of frames; the agent sees only the doubts](demo-claude/assets/slides/s07_loop_diagram.png)
+The whole system on one page. Section 8 then follows a single doubt through it, step by step.
+
+<p align="center"><img src="demo/assets/slides/s07_loop_diagram.png" alt="The loop: the Pi handles 99% of frames; the agent sees only the doubts" width="720"></p>
+<sub>The three shaded boxes are the three new ideas: (1) escalation, (2) an agent with tools and skills, (3) spatial-temporal memory.</sub>
 
 ```
   Raspberry Pi (home)                   ingest / pipeline host                     cloud
@@ -286,7 +279,8 @@ individuals.
   each tool call and result, the evidence images, tokens, cost and time. Every memory LLM call
   writes its own trace. Every agent and tool invocation is logged to the project database.
 
-The full data path, with code pointers, is in [end-to-end-flow.md](end-to-end-flow.md).
+The full data path, with code pointers, is in [end-to-end-flow.md](end-to-end-flow.md). §7
+separates what existed before the hackathon from what we built; §8 then walks the loop in order.
 
 ---
 
@@ -315,11 +309,30 @@ Pre-hackathon code lives in a separate, clearly marked folder
 | | **Agent and tool invoke logging** to the database, with a fleet report |
 | | Two trace reviews that became fixes: slimmer tools, skill gating, chat budgets, raw-pixel grounding, an explicit decoy rule |
 | | YOLO dataset export with database pre-labels |
-| | A 3-minute demo with 22 slides, 3 generated clips, narration and captions, all built from real frames and measured numbers by script (`documents/demo-claude/`) |
+| | A 3-minute demo with 22 slides, 3 generated clips, narration and captions, all built from real frames and measured numbers by script (`documents/demo/`) |
 
 ---
 
 ## 8. Module deep dives
+
+### 8.0 Follow one doubt through the loop
+
+One real doubt from the demo run (E5-T2, 2026-10-28 16:35:21) touches every module. Each step
+links to the section that explains it.
+
+1. **The camera sees two cats** close together on the rug and in the bed (§8.1).
+2. **The tracker doubts itself.** It relabels the bed cat from Qb to Qbo because Qbo's last box
+   was 92 px away, with no overlap, and raises `T2` (§8.2).
+3. **The queue merges** E5 with three related doubts on the same frame (E4, E6, E7) into one
+   agent call (§8.5).
+4. **The bridge writes a question** in plain English, with the frames to inspect, both cats'
+   written profiles and a memory brief (§8.3).
+5. **The agent investigates.** It pulls 4 frames, then 4 crops, compares the cats and returns
+   `keep_original` with its reasons (§8.4).
+6. **The record is rewritten.** The bed cat's rows go back to Qb, each stamped with the verdict
+   that changed it (§8.6).
+7. **Memory learns.** The trusted visit, "Qb slept in the green bed 16:34–16:40", enters the
+   day log and rolls up into the long-term picture of that spot and hour (§8.7).
 
 ### 8.1 An agent-steerable camera
 
@@ -357,19 +370,36 @@ How both work is explained in [how-track-correctors-work.md](how-track-corrector
 The hackathon contribution is that both correctors now **report their uncertainty at the
 exact decision point** where it arises:
 
-![Fifteen kinds of doubt](demo-claude/assets/slides/s09_doubt_taxonomy.png)
+| Code | Name | Fires when | Verdicts the agent can return | Demo run |
+| --- | --- | --- | --- | --- |
+| T1 | multi-match relabel | a box fits 2+ cats' histories and the first match won | `confirm_assigned` · `reassign_candidate` · `reject_box` | |
+| T2 | weak-rule relabel | a box was relabeled by center distance alone, no overlap | `confirm` · `keep_original` · `reassign_other` · `drop` | ×3 |
+| T3 | duplicate tie | duplicate boxes were removed on near-tied confidence | `confirm_survivor` · `keep_killed` · `keep_both` | |
+| T4 | jump reset | a new box missed the anchor and the buffer was wiped | `confirm_reset` · `link_continuation` · `drop_box_as_outlier` | ×2 |
+| T5 | target fallback | nothing confident; the tracker guessed a target | `commit_target` · `wait_for_stronger` · `close_visit` | |
+| T6 | teleport split | a committed box jumped > 300 px; the visit was split | `confirm_split` · `merge_visits` · `drop_box` | ×1 |
+| T7 | long synthesis | a long run of interpolated-only frames was committed | `keep_synthesis` · `cut_at_gap_start` · `shorten_gap` | |
+| P1 | close vote | the top-two cat scores for a visit are nearly tied | `confirm_winner` · `award_runner_up` · `split_visit` | |
+| P2 | weak winner | the winner is barely above the minimum, or the visit is short | `confirm` · `drop` · `reassign` | ×2 |
+| P3 | conflict reassign | the top cat was taken by an overlapping visit | `confirm` · `reassign` · `drop` | |
+| P4 | long unknown | a long visit was assigned no cat | `assign_cat` · `split_fragments` · `confirm_unknown` | |
+| P5 | low quality | the winner's confidence is low or most frames are guesses | `keep` · `drop` · `reassign` | ×1 |
+| P6 | merge candidate | a visit may continue the same cat's previous visit | `merge` · `keep_separate` · `different_cats` | ×2 |
+| P7 | static link | both ends are static and overlapping: a sleeping cat split by a gap | `merge` · `keep_separate` | |
+| P8 | tracker-vote split | the tracker's frame labels disagree with the visit's vote | `relabel_to_vote` · `keep_tracked` · `split_mixed` | ×1 |
+| H1 | quiet spot-check | no doubt for 300 s; a routine audit of the quiet window | `confirm` · `flag_issue` (never rewrites rows) | |
 
-| Frame scope | Trigger | Visit scope | Trigger |
-| --- | --- | --- | --- |
-| T1 multi-match relabel | Box fits 2+ cats' histories | P1 close vote | Top-two scores nearly tied |
-| T2 weak-rule relabel | Relabeled by distance alone, no overlap | P2 weak winner | Barely above minimum, or short visit |
-| T3 duplicate tie | Duplicates removed on near-tied confidence | P3 conflict reassign | Top cat taken by an overlapping visit |
-| T4 jump reset | New box missed the anchor; buffer wiped | P4 long unknown | Long visit with no cat |
-| T5 target fallback | Nothing confident; tracker guessed | P5 low quality | Low confidence or mostly guessed frames |
-| T6 teleport split | Committed box jumped > 300 px | P6 merge candidate | May continue the cat's previous visit |
-| T7 long synthesis | Long run of interpolated frames | P7 static link | Sleeping cat split by a long gap |
-| | | **P8 tracker-vote split** | The tracker's frame labels disagree with the visit's vote: a possible handover |
-| **H1 quiet spot-check** | No doubt for a while; sample the quiet window | | |
+Each doubt is emitted as a small record with the numbers behind it. This is E5-T2 from the
+demo run, exactly as the Pi wrote it to `escalations.jsonl`:
+
+```json
+{"name": "E5-T2", "time": "2026-10-28T16:35:21.976102", "scope": "frame", "code": "T2",
+ "reason": "detection labeled cat 25 relabeled to cat 26 by center distance alone, no IoU support",
+ "cat_id": 26,
+ "metrics": {"original_cat_id": 25, "rule": "distance", "box": [174, 457, 279, 585],
+             "source_time": "2026-10-28T16:35:21.555851", "source_box": [162, 371, 258, 489],
+             "source_distance_px": 92.5, "source_threshold_px": 160.0}}
+```
 
 A low-confidence box does **not** trigger a review by itself. These rules fire on conflicts in
 the tracker's *decisions*, which is why the escalation rate stays near 1%, and why each
@@ -383,7 +413,52 @@ has its own **prompt builder**, which states the conflict, the question, the alt
 key frames to inspect and each cat's written appearance. It frames the Pi's YOLO honestly, as
 *"a hint, not evidence"*, and attaches a memory brief marked *"may help, may be stale"*.
 
-![A doubt becomes a question](demo-claude/assets/slides/s10_question_card.png)
+This is the question the agent actually received for E5-T2 (agent run `20261104-140629`,
+shortened only where marked):
+
+```text
+[E5-T2] Identity switched on nearness alone, no overlap.
+Conflict: the camera said cat 25, but the tracker re-labeled the box to cat 26 by nearness
+  only — the boxes do not overlap at all.
+Validate: is the photo really cat 26?
+Context: the tracker assumes cats move smoothly (spatial continuity): a new box near a cat's
+  last known position is treated as that cat even when the detector said otherwise. Here the
+  detector's first guess was cat 25, … nearness can steal a neighbor.
+Alternatives: keep 25, pick another nearby cat, or drop the box.
+Cats:
+- cat 25 (Qb): Short-haired white cat with faint silver shading, round face and blue-green
+  eyes. Look for: cool white to light silver colour, no warm cream or brown tones; smooth,
+  sharp body outline (short fur, no fluffy halo); …
+- cat 26 (Qbo): Long-haired cream and golden-beige cat with darker brown paws, face and plume
+  tail. Look for: warm cream / beige colour, clearly warmer than Qb; fuzzy, soft body outline
+  with a fluffy halo; big bushy plume tail; …
+Resources (images__get_image):
+  - 2026-10-28T16:35:21.976102 — the disputed photo; compare both cats' profiles,
+    Box [174.0, 457.0, 279.0, 585.0]
+  - 2026-10-28T16:35:21.555851 — source of the correction: cat 26's nearest recent position,
+    92 px away. Box [162.0, 371.0, 258.0, 489.0]
+Allowed verdicts for E5-T2: confirm | keep_original | reassign_other | drop.
+Past context from memory (may help, may be stale): [T2 identity] no spatial anchor;
+  4 temporal buckets (2026-10-28T16:35, 2026-10-28T16:00, 2026-10-28, 2026-W44); recent: …
+```
+
+The answer must fit this schema (one per code; shown as JSON Schema):
+
+```json
+{"verdict": {"enum": ["confirm", "keep_original", "reassign_other", "drop"]},
+ "chosen_cat_id": {"type": ["integer", "null"]},
+ "rationale": {"type": "string"}}
+```
+
+And the agent's answer, which the handler applied (§8.6):
+
+```json
+{"name": "E5-T2", "verdict": "keep_original", "chosen_cat_id": 25,
+ "rationale": "Box-cropped [174,457,279,585] at 16:35:21 is bed cat in green bed: cool white,
+  smooth sharp outline no halo, compact body round head = Qb cat 25. Same individual as bed
+  cat in 16:34:42 and 16:35:02 full frames. Separate rug Qbo track nearby; 92px nearness with
+  no overlap caused cross-steal. Detector 25 was right."}
+```
 
 Each code also has a **slim pydantic schema**: one `verdict` enum, at most one qualifier
 (`chosen_cat_id` or `cut_time`) and a short `rationale`. Structured output keeps generation
@@ -403,15 +478,40 @@ reviews ([agent-trace-review-20261101-003501.md](agent-trace-review-20261101-003
 - Two simultaneous boxes with the same cat id mean one label is wrong.
 - Use generic detectors to check for objects, never for cat identity.
 
-For identity, the `validate-cat-identity` skill defines an **evidence ladder** with image
-budgets: metadata, then written profiles, then a sharper view, then owner photos, then
-confirmed crops, and finally asking a human rather than forcing a call. In the pipeline the
-agent gets a narrow set of three tools (`images__get_image`, `images__list_images`,
-`tracking__get_period_detail`), which cuts the tool-schema tokens sent on every turn.
+**Tool design.** The agent sees up to 39 tools in four groups. Each group answers a different
+kind of question, and every tool returns small JSON plus at most the images it was asked for:
+
+| Group | Tools | Examples | Design choice |
+| --- | --- | --- | --- |
+| `camera__*` (Pi, MCP) | 11 | `capture_frame`, `capture_high_res(box)`, `detect`, `set_schedule` | Look *now*, sharper, or with another model; every override expires in 24 h |
+| `images__*` (SSD + S3, MCP) | 4 | `image_exists`, `images_exist`, `get_image(box, max_side)` | Check existence first (no pixels), then fetch only the frames needed, cropped |
+| `tracking__*` (tracker, MCP) | 9 | `get_period_detail`, `get_arrival_path`, `get_last_seen` | Cheap structured history before any image |
+| `local__*` (in-process) | 10 | `get_cat_profiles`, `find_references`, `make_contact_sheet`, `get_frame(box)`, `analyze_trajectory` | Knowledge and local pixel work: profiles, reference photos, crops without a server |
+| `skill__*` | 5 | see below | Load a playbook only when the task needs it |
+
+In the pipeline the agent gets a **narrow set** (`images__get_image`, `images__list_images`,
+`tracking__get_period_detail`, plus local frame and reference helpers), which cuts the
+tool-schema tokens sent on every turn. In the demo call it used `local__get_frame` 8 times:
+4 full frames in turn 1, then 4 crops to each disputed box in turn 2, then answered in turn 3.
+
+**Skills.** A skill is a short playbook loaded on demand through a `skill__*` tool, so the
+system prompt stays small:
+
+| Skill | Used for | What it encodes |
+| --- | --- | --- |
+| `validate-cat-identity` | pipeline identity doubts | the cheapest-evidence-first ladder below |
+| `check-trajectory` | continuity doubts (T4, T6, P6) | is this one physically plausible path of one animal? |
+| `assign-activity-label` | memory activity labels | one activity and context labels per crop, from `labels.yaml` |
+| `check-live-detections` | chat: "what's on camera now?" | a wide frame, zoomed crops, a verdict table in ~3 turns |
+| `manage-labels` | chat: "label the cat when it sits in the tent" | turn a request into a label (and a zone), confirm before saving |
+
+The identity ladder stops at the first rung that gives a confident answer: (1) metadata
+(another cat confidently elsewhere rules one out; a box that never moves for minutes is a decoy
+suspect), (2) the crop against the written profiles, naming each visible cue, (3) a sharper
+view only if the deciding cue needs it, (4) owner photos in one contact sheet, (5) reference
+crops from the same camera, (6) a human. A verdict that cites no visible cue is not allowed.
 
 ### 8.5 A queue that merges related doubts
-
-![Related doubts share one call](demo-claude/assets/slides/s12_batching.png)
 
 Doubts cluster in time: in the demo run, E4, E5 and E6 all fired on the same frame. The
 `EscalationBatcher` lets a new doubt join the waiting batch if it falls **within 60 s**, up to
@@ -419,12 +519,23 @@ Doubts cluster in time: in the demo run, E4, E5 and E6 all fired on the same fra
 it is free, so merging **adds no latency**. One agent call reviews all cases together,
 fetching each frame once, and returns **one verdict per case** in a schema built at runtime
 from the union of the cases' verdict sets. Parsing is **isolated per case**: one malformed
-item becomes an `error` for that case only, and its siblings still apply. Design:
+item becomes an `error` for that case only, and its siblings still apply. In the demo run the
+12 doubts became 5 calls: {E1-T6, E2-P5, E3-T2}, {E4-T2, E5-T2, E6-T4, E7-P6},
+{E8-T4, E9-P6, E10-P2}, {E11-P2}, {E12-P8}. Design:
 [escalation-merge-design.md](escalation-merge-design.md).
 
 ### 8.6 Verdicts become data
 
-![Every verdict rewrites the record](demo-claude/assets/slides/s14_row_diff.png)
+A real row before and after review (E2-P5, the sleeping cat's first visit):
+
+```text
+// revised.jsonl (tracker)                      // validated.jsonl (after review)
+{"create_time": "16:33:06.797",                 {"create_time": "16:33:06.797",
+ "box": [209, 505, 311, 599],                    "box": [209, 505, 311, 599],
+ "conf": 0.511, "orig_cat_id": 26,               "conf": 0.511, "orig_cat_id": 26,
+ "cat_id": 26}                                   "cat_id": 25,
+                                                 "validated_by": "E2-P5", "verdict": "reassign"}
+```
 
 At the end of a run, `materialize()` applies verdicts to the revised rows. Frame verdicts
 match rows by timestamp and cat; period verdicts match by visit. `keep_original` restores the
@@ -441,45 +552,129 @@ visit separate from Qbo's.
 
 ### 8.7 Spatial-temporal memory
 
-![Memory as a diary](demo-claude/assets/slides/s15_day_log.png)
-
 Detectors see frames and trackers see paths, but neither knows that *Qb usually naps in the
 green bed in the afternoon*. Agent frameworks treat memory as conversation history; video
-needs memory organized by **where** and **when**.
+needs memory organized by **where** and **when**, and protected from noise.
 
-![Learning what normal looks like](demo-claude/assets/slides/s16_memory_pyramid.png)
+**Short-term and long-term memory.** The system keeps two memories with different jobs:
 
-- **Visits, not frames.** Closed visits by the same cat less than 5 minutes apart merge into
-  one activity record. A **Muse Spark vision call** (`PeriodLabeler`) labels the key frames
-  with an activity from a configurable set (sleeping, resting, sitting, walking, eating,
-  grooming, playing, …), plus the cat's appearance and the background.
-- **Two memories.** The *short-term* day log keeps everything, including weak visits, doubts,
-  verdicts and rationales, as readable Markdown. The *long-term* store keeps only **trusted**
-  knowledge: the detector and every activity label must reach 0.7. Doubts and raw verdicts
-  never enter it directly.
-- **Spatial pyramid.** 48 cells of 100 px roll up into 12 zones and then one whole-view
-  summary, each holding plain text about environment, contrast, activity, appearance and
-  behavior, plus visit counts per cat.
-- **Temporal pyramid.** 5-minute slots hold events (kept 7 days), hours hold the activity mix
-  (30 days), days hold routine (180 days) and weeks hold habits (kept indefinitely).
-- **Resistance to noise.** A pattern needs ≥3 observations to enter stable text. One-offs live
-  in a 5-item recent buffer. Stable text flips only after **3 consecutive contradictions**, and
-  word caps force each summary to keep only its strongest patterns. The LLM judges whether new
-  evidence contradicts the stable text; *code* does the counting, so the rules are testable
-  offline.
-- **Targeted retrieval.** Each doubt family asks memory a different question: T1/T2/T5 ask
-  whether the cat is hard to see here, P3 asks which cat is usually here now, and P6/P7 ask
-  whether this is the usual nap spot. The answer is a brief of at most 600 characters. Memory
-  informs the agent but **never overrides the image**.
+| | Short-term memory (day log) | Long-term memory (spatial-temporal store) |
+| --- | --- | --- |
+| Holds | everything from today's sessions: every visit, weak or strong, every doubt, every verdict and its rationale | only **trusted** knowledge: visits whose detector confidence *and* activity label both reach 0.7 |
+| Shape | readable Markdown, one file per day (`view_3_short_term_2026-10-28.md`) | one YAML per view: a spatial pyramid and a temporal pyramid of plain-language units |
+| Lifetime | the day; merged into long-term at day end | 5-min slots 7 days, hours 30 days, days 180 days, weeks kept indefinitely |
+| Used for | debugging, same-day context, the diary | the brief attached to each new question |
 
-Real output from the day log:
+A short-term entry, as written for the demo window:
 
 ```text
-16:34–16:40: Qb (cat 25) — 772 sightings, mean confidence 0.71.
+16:34–16:40: Qb (cat 25) at [186, 503, 293, 590] — 772 sightings, mean confidence 0.71.
 Activity: sleeping (confidence 0.92). Looks: qb is a white fluffy cat curled up tight
-in a small green bed with eyes closed and paws tucked in. Background: light brown wood
-floor with a large white ridged rug and a light gray couch along the window wall.
+in a small green bed with eyes closed and paws tucked in.
+16:35:21 [E5-T2]: detection labeled cat 25 relabeled to cat 26 by center distance alone.
+Validation verdict: keep_original. Box [174,457,279,585] is bed cat in green bed: cool white,
+smooth sharp outline no halo … Detector 25 was right.
 ```
+
+**Storing: what each visit becomes.** Closed visits by the same cat less than 5 minutes apart
+merge into one activity record. A Muse Spark vision call labels it from its key frames, under
+a strict schema. The instructions (shortened):
+
+```text
+You label what one cat did during one tracked visit, from the attached key frames.
+Write plain, concrete language a non-expert can read. … Never invent cats, places, or events.
+Pick exactly one activity from this set: sleeping, resting, sitting, walking, eating, …
+Respond with JSON: {"activity", "activity_confidence": 0..1, "appearance", "background"}.
+Judge from the pixels and the given boxes, not from the detector's opinion.
+When several cats share a frame, describe only the boxed one.
+```
+
+A real call (night run, 2026-10-26) and its answer:
+
+```text
+CAT: Qbo (cat 26)   SPAN: 02:05 to 02:09
+FRAMES: 02-05-47.jpg (230,255,336,378) · 02-07-30.jpg (…) · 02-09-13.jpg (…)
+→ {"activity": "playing", "activity_confidence": 0.8,
+   "appearance": "qbo is a fluffy white cat with a long dark bushy tail",
+   "background": "a dim living room with a light sofa on the left, a large light patterned
+                  rug with scattered wand toys on it, wood flooring, …"}
+```
+
+Each trusted visit is then written into every cell, zone, slot, hour, day and week it touches.
+A second prompt decides whether the new observation **contradicts** what the unit already knows;
+*code* does the counting:
+
+```text
+You maintain one unit of a cat-tracking spatial-temporal memory.
+Compare OBSERVATION against the unit's STABLE text and respond with JSON:
+{"contradicts_stable": bool, "note": "one plain sentence, at most 40 words"}.
+The established stable pattern outranks any single new input: set contradicts_stable true
+only when the observation is genuinely incompatible with STABLE (different routine, different
+place use), not for extra detail, rephrasing, or a first observation.
+```
+
+**Summarizing: rolling up the pyramids.** A parent unit is rewritten from its children with a
+word cap, after children below the support gate are removed. A real zone roll-up (zone `r2c1`,
+run 140502):
+
+```text
+You describe one L1 camera zone from its child cells. … Respond with JSON:
+{"activity", "appearance", "behavior"}. Dominant patterns only … never invent fur colors,
+breeds, markings, or habits. Hard cap: at most 100 words per field.
+
+LEVEL: L1 (cap 100 words)   ROLLED-UP STATS: {'visits': 33, 'by_cat': {'25': 14, '26': 11}}
+- r5c2: visits=21 text=qb appears in period 2 between 16:34 and 16:40 with 772 detections. …
+- r4c3: visits=12 text=The zone shows activity at 16:34 with one unassigned visit …
+→ {"activity": "qb is seen here in the afternoon around 16:34 to 16:40 with many detections.", …}
+```
+
+**Resistance to noise.** A pattern needs **≥3 observations** to enter stable text; one-offs
+wait in a 5-item recent buffer. Stable text flips only after **3 consecutive contradictions**,
+and word caps force each summary to keep only its strongest patterns.
+
+<p align="center"><img src="demo/assets/slides/s16_memory_pyramid.png" alt="Spatial and temporal memory levels with real stored entries" width="720"></p>
+
+**Spatial memory: where.** 48 cells of 100 px roll up into 12 zones and one whole-view
+summary. Real entries from `agent/memory/data/view_3_long_term.yaml`, following the green bed
+upward:
+
+```yaml
+L0 cell r5c2   # bounds [200,500,300,600]: the green bed
+  activity:   qb appears in period 2 between 16:34 and 16:40 with 772 detections.
+  appearance: qb is a white fluffy cat curled up tight in a small green bed …
+  weight: 20   by_cat: {qb: 10, qbo: 10}
+L1 zone r2c1   # bounds [200,400,400,600]: contains the bed
+  activity:   qb visits here around 16:34 to 16:40 with many detections across 30 visits.
+  appearance: qb is a white cat with short to fluffy fur, a round face and blue-green eyes …
+  weight: 30   by_cat: {qb: 12, qbo: 10}
+L2 view r0c0   # the whole frame
+  activity:   qb and qbo visit this zone often, with most visits in the afternoon around
+              16:34 to 16:40. Smaller visits happen in the early morning around 04:13 to 05:55.
+  behavior:   qb and qbo mostly walk here and briefly stand still … qb sometimes sleeps.
+  weight: 48   by_cat: {qb: 16, qbo: 21}
+```
+
+**Temporal memory: when.** The same visits roll up in time:
+
+```yaml
+slot_5min 2026-10-28T16:30   # kept 7 days
+  summary: qb appears in period 2 from 16:34 to 16:40 with 772 detections.
+  detections: [{cat: qb, box: [186,503,293,590], activity: sleeping, conf: 0.71}, …]
+hour 2026-10-28T16:00        # kept 30 days
+  summary: qb and qbo visit during this hour with 65 visits total. qb is present for several
+           minutes with many detections. qbo appears briefly.
+day 2026-10-28               # kept 180 days
+  summary: qb and qbo visit here during the day with 75 visits total. qb stays for several
+           minutes with many visits. qbo appears briefly.
+week 2026-W44                # kept indefinitely
+  summary: qb and qbo visit here with 80 visits total. qb visits more often. Both sleep here.
+```
+
+**Retrieval: memory rides along with the question.** Each doubt family asks memory a different
+question: T1/T2/T5 ask whether the cat is hard to see here, P3 asks which cat is usually here
+now, and P6/P7 ask whether this is the usual nap spot. The answer is a brief of at most 600
+characters, appended to the prompt and marked *"may help, may be stale"*, as in the E5-T2
+question above (§8.3). Memory informs the agent but **never overrides the image**.
 
 Designs: [short-term-memory-design.md](short-term-memory-design.md),
 [spatial-temporal-memory-design.md](spatial-temporal-memory-design.md).
@@ -491,6 +686,32 @@ Designs: [short-term-memory-design.md](short-term-memory-design.md),
 Muse is not one dependency in this project; it is the toolchain that built it and the model
 family that runs it. We split work across Muse models by reasoning depth and latency, and we
 built the system itself inside Muse Code.
+
+### 9.0 Why this project needs Muse
+
+A one-page summary of all Muse usage, in the product and in development, is in
+[muse-usage.md](muse-usage.md).
+
+The loop in §8 only works if the model on the other end of a doubt can do five things at
+once. Each one maps to a Muse capability we depend on, and each one is something the small
+detector, the tracker rules or a plain chat model cannot supply:
+
+| The loop needs a model that… | Why nothing smaller works | Muse capability we use |
+| --- | --- | --- |
+| **tells two look-alike cats apart from pixels**, quoting the cues it sees | The detector confuses them, and tracker rules alone *lower* identity accuracy (0.934 → 0.920) | Muse Spark vision reasoning over crops and written profiles; identity accuracy reaches **0.993** |
+| **decides which evidence to fetch**, instead of being sent everything | Sending every frame costs $24.65 per 8 minutes; one fixed crop is often the wrong one | Multi-turn tool calling with images returned inside tool outputs (frames first, then crops) |
+| **returns an operation, not an essay**, that code can apply to rows | A free-text answer cannot rewrite a record safely | Strict `json_schema` output, including schemas built at runtime for merged calls; 12 of 12 verdicts parsed and applied |
+| **costs little per doubt**, so it can run all day | A doubt costs cents only if prompts and images stay small and repeat context is cheap | Everyday Spark pricing with cached input (**52% of input tokens cached**); **$0.39** per 8 minutes |
+| **writes memory a person can read** and that stays stable | Raw boxes and timestamps say nothing about "normal" | Spark as the memory engine: activity labels, contradiction checks, word-capped summaries |
+
+Muse also covers the stages around that loop with one model family. **SAM 3.1** produced the
+ground truth that makes every number in §10 checkable. **Muse Glimmer** is the edge path for
+keeping footage on the device. **Muse Wonder** shaped the design before any code existed.
+
+**Why we have to use it, in one line:** without a vision agent that can investigate, answer in
+a contract and do it for cents, the doubts the Pi raises would have nowhere to go. The cheap
+model would stay cheap and wrong, or the system would have to send everything to AI and stop
+being cheap. Muse is what lets us spend intelligence only where doubt exists.
 
 ### 9.1 Muse Code is our development environment
 
@@ -582,7 +803,7 @@ Run `view3_20261028-1633_1640_replay_db_20261104-140502-443911`, 1,319 frames, b
 | Tracker corrections only | 0.919 | 0.362 | 0.519 | 0.920 | 893 | 79 | 1,573 |
 | **After agent review** | **0.992** | **0.391** | **0.561** | **0.993** | **964** | **8** | 1,502 |
 
-![Raw vs after review, full window and showcase window](assets/final-performance-20261104/headline_dumbbell.png)
+<p align="center"><img src="assets/final-performance-20261104/headline_dumbbell.png" alt="Raw vs after review, full window and showcase window" width="680"></p>
 
 - **The agent does the lifting, not the rules.** Tracker rules alone leave F1 flat and lower
   identity accuracy. The agent's 12 verdicts take precision to 0.992 and identity accuracy to
@@ -593,13 +814,11 @@ Run `view3_20261028-1633_1640_replay_db_20261104-140502-443911`, 1,319 frames, b
   are boxed *with the right name*: **99% of what is reachable**.
 - **Geometry untouched** (mean IoU 0.771 → 0.770): the agent fixes *who*, not *where*.
 
-Timelines of the same 8 minutes (y = cat, red bands = doubts the Pi raised):
+The same 8 minutes before and after review. In each lane a frame is one vertical tick spanning
+the cat's box from left to right edge; yellow lines mark where the Pi escalated:
 
-| Ground truth | Raw detector | After agent review |
-| --- | --- | --- |
-| ![GT](assets/final-performance-20261104/timeline_gt.png) | ![raw](assets/final-performance-20261104/timeline_original.png) | ![validated](assets/final-performance-20261104/timeline_validated.png) |
-
-![The demo window as the Pi saw it, with doubts marked](demo-claude/assets/slides/s08_timeline.png)
+<p align="center"><img src="demo/assets/slides/s17a_timeline_eval.png" alt="Raw detector vs after agent review, same 8 minutes" width="720"></p>
+<sub>Raw: the sleeping cat is filed as Qbo and labels flip. After review: Qb sleeps throughout (her undetected stretch is bridged, drawn faint, never scored) and Qbo walks in and out.</sub>
 
 ### 10.3 Where the gain lives: showcase windows
 
@@ -612,8 +831,6 @@ fixed rule in `evaluation/final_performance.py`, so a handful of lucky frames ca
 | **Oct 28 16:33–16:35** (demo) | 330 | 0.205 → **0.375** | 0.529 → **0.971** | 0.533 → **0.978** | 65 → **4** |
 | **Oct 26 02:06–02:08** (night) | 340 | 0.954 → **0.987** | 0.956 → **0.991** | 0.964 → **0.994** | 15 → **3** |
 
-![F1 per 2-minute window, raw vs after review](assets/final-performance-20261104/window_sweep.png)
-
 The sweep shows the shape of the design: review helps most exactly where the tracker named a
 doubt (16:33–16:36), and changes nothing where the detector was right (16:36 onward, no doubts
 raised). **Intelligence is spent where doubt exists, and nowhere else.**
@@ -625,8 +842,6 @@ raised). **Intelligence is spent where doubt exists, and nowhere else.**
 | **Oct 28 16:33 (demo)** | 1,319 | 12 | 5 | 0.522 → **0.561** | 0.895 → **0.992** | **$0.39** |
 | Oct 26 02:00 (night) | 5,320 | 45 | 20 | 0.643 → 0.643 | 0.853 → 0.857 | $1.63 |
 | Oct 25 04:13 (night) | 3,135 | 48 | 18 | 0.234 → 0.221 | 0.261 → 0.247 | $1.75 |
-
-![Precision and F1 across the three runs](assets/final-performance-20261104/all_runs.png)
 
 The doubt rate is steady at **~1% of frames** (0.9%, 0.8%, 1.1%). The night runs are flat over
 their full length: outside the stretches where doubts fired, the reviewed output *is* the
@@ -731,7 +946,6 @@ three frames against both profiles and answered: *"Cool white, smooth sharp outl
 paws, no fluffy halo. Matches Qb … label 26 is wrong, reassign to 25."* One verdict renamed
 163 rows. This single case is the 16:33–16:35 showcase window: precision 0.529 → 0.971.
 
-![Case E2: overturned](demo-claude/assets/slides/s11_case_e5.png)
 
 ### 11.2 Case E4 + E5: the tracker swapped the cats. The agent swapped them back.
 
@@ -741,7 +955,6 @@ reviewed all four related doubts (E4–E7) together and restored both: *"Rug cat
 bushy plume tail = Qbo. Bed cat: cool white, smooth outline = Qb. Nearness caused a
 cross-steal; the detector was right."*
 
-![Case E4 + E5: swapped back](demo-claude/assets/slides/s13_case_e10.png)
 
 ### 11.3 When the detector itself is wrong
 
@@ -752,7 +965,6 @@ a ball tracked as "Qbo" for 26 minutes, was found in our trace review and closed
 a **decoy zone** (§13.1). It is now dropped before tracking: 1,016 false boxes in the 26 Oct
 replay, 660 in 25 Oct's.
 
-![Wrong cat relabeled; not a cat removed](demo-claude/assets/slides/s13b_detector_fixes.png)
 
 ### 11.4 Watching the agent think
 
@@ -922,8 +1134,6 @@ resting, playing, and which cat was where.
 
 ## 17. Impact and generalization
 
-![Beyond cats](demo-claude/assets/slides/s19_beyond_cats.png)
-
 The pattern of a cheap camera that watches continuously, **knows when it is unsure**, asks for
 help only then and remembers what it learns fits any setting with **fixed cameras, rare or slow
 events, and too much video for people to review**:
@@ -971,8 +1181,6 @@ physical things a person cares about, all year round, with nothing leaving the h
 
 ## 19. Roadmap
 
-![Roadmap](demo-claude/assets/slides/s18_roadmap.png)
-
 | Priority | Item | Why | Status |
 | --- | --- | --- | --- |
 | — | Identity-consistency trigger for handovers | Closes the 772-row hijack | **Done**: `detector_insists()` veto + P8 |
@@ -993,16 +1201,16 @@ physical things a person cares about, all year round, with nothing leaving the h
 ## 20. Demo
 
 The 3-minute demo is fully produced from real frames and measured numbers. Everything is in
-[`demo-claude/`](demo-claude/):
+[`demo/`](demo/):
 
-- **Video:** [`demo-claude/assets/video/final_demo.mp4`](demo-claude/assets/video/final_demo.mp4),
+- **Video:** [`demo/assets/video/final_demo_v2.mp4`](demo/assets/video/final_demo_v2.mp4),
   plus the generated clips `v01_cost_counter.mp4`, `v02_ball_push_in.mp4` and
   `v03_replay_tracker.mp4`.
-- **Script:** [`demo-claude/demo-script-claude.md`](demo-claude/demo-script-claude.md): every
+- **Script:** [`demo/demo-script.md`](demo/demo-script.md): every
   beat with its narration, format, asset, data source and motion notes.
-- **Narration and captions:** `demo-claude/assets/text/narration.txt` and `captions.srt`.
-- **Slides:** 22 slides in `demo-claude/assets/slides/`, rendered from HTML by
-  `demo-claude/scripts/build_slides.py`, which reads boxes from the run's own files rather
+- **Narration and captions:** `demo/assets/text/narration.txt` and `captions.srt`.
+- **Slides:** 22 slides in `demo/assets/slides/`, rendered from HTML by
+  `demo/scripts/build_slides.py`, which reads boxes from the run's own files rather
   than typing them in. Clips come from `build_videos.py`, text from `build_text.py`.
 
 The story in six moves: two near-identical cats and a ball the camera believed was a cat → the
@@ -1109,8 +1317,7 @@ this report. Start with the first group.
 | --- | --- |
 | [hackathon-guide.md](hackathon-guide.md) | Event rules, dates and judging criteria |
 | [project-plan.md](project-plan.md) · [project-plan.zh.md](project-plan.zh.md) | The team's plan for the event (English and Chinese) |
-| [demo-claude/demo-script-claude.md](demo-claude/demo-script-claude.md) | The produced 3-minute demo: beats, assets, sources |
-| [hackathon-project-report-muse.md](hackathon-project-report-muse.md) | The long-form companion report |
+| [demo/demo-script.md](demo/demo-script.md) | The produced 3-minute demo: beats, assets, sources |
 
 ---
 

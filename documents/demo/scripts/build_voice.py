@@ -1,6 +1,6 @@
 """Render the continuous voice-over (Kokoro neural TTS, voice af_heart) and its beat timings.
 
-Reads assets/text/voiceover.txt (one paragraph per beat), speaks every paragraph with the
+Reads assets/text/voiceover_v2.txt (one paragraph per beat), speaks every paragraph with the
 same voice and speed, and joins them with short natural pauses (longer at a new act) into
 one track. The video is then timed to this track (build_final_video.py).
 
@@ -8,9 +8,11 @@ Kokoro runs locally (model downloaded once from Hugging Face); it needs espeak-n
 (`brew install espeak-ng`) and Python 3.12:
 
     python3.12 -m venv .tts && .tts/bin/pip install "kokoro>=0.9.4" soundfile
-    .tts/bin/python documents/demo-claude/scripts/build_voice.py [--voice af_heart] [--speed 1.1]
+    .tts/bin/python documents/demo/scripts/build_voice.py [--voice af_heart] [--speed 1.1]
 
-Outputs assets/audio/voiceover.wav and assets/audio/voiceover_timings.json.
+Outputs assets/audio/voiceover_v2.wav and assets/audio/voiceover_v2_timings.json.
+Defaults reproduce the final cut: af_heart blended 20% with af_nicole, speed 1.2,
+0.15 s between sentences, 0.28 s between beats.
 """
 
 from __future__ import annotations
@@ -56,13 +58,13 @@ def trim(audio: np.ndarray, floor: float = 0.004) -> np.ndarray:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--voice", default="af_heart")
-    ap.add_argument("--blend", default="", help='softer mix, e.g. "af_nicole:0.2" (20%% of that voice)')
-    ap.add_argument("--speed", type=float, default=1.1)
-    ap.add_argument("--script", default="voiceover.txt", help="file in assets/text/")
-    ap.add_argument("--tag", default="", help='output suffix, e.g. "_v2" -> voiceover_v2.wav')
-    ap.add_argument("--sentence-gap", type=float, default=None,
+    ap.add_argument("--blend", default="af_nicole:0.2", help='softer mix, e.g. "af_nicole:0.2" (20%% of that voice)')
+    ap.add_argument("--speed", type=float, default=1.2)
+    ap.add_argument("--script", default="voiceover_v2.txt", help="file in assets/text/")
+    ap.add_argument("--tag", default="_v2", help='output suffix, e.g. "_v2" -> voiceover_v2.wav')
+    ap.add_argument("--sentence-gap", type=float, default=0.15,
                     help="render each sentence separately with this pause between them (v2); default: whole beat")
-    ap.add_argument("--beat-gap", type=float, default=None, help="pause between beats; default v1 gaps + holds")
+    ap.add_argument("--beat-gap", type=float, default=0.28, help="pause between beats; default v1 gaps + holds")
     args = ap.parse_args()
     lines = [l for l in (DEMO / "assets/text" / args.script).read_text().splitlines() if re.match(r"^\[\d+\]", l)]
     beats = [(int(re.match(r"^\[(\d+)\]", l).group(1)), re.sub(r"^\[\d+\]\s*", "", l)) for l in lines]

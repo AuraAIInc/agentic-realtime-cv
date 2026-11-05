@@ -1,7 +1,7 @@
 // Build a Google-Slides-ready .pptx from the demo slides: one full-bleed slide image per
 // slide, in video order, grouped into the demo's acts, with each beat's narration and the
 // slide's source line as speaker notes. Import: Google Drive -> New -> File upload -> open
-// with Google Slides.   node documents/demo-claude/scripts/build_gslides.js
+// with Google Slides.   node documents/demo/scripts/build_gslides.js
 const path = require("path");
 const fs = require("fs");
 const pptxgen = require("pptxgenjs");

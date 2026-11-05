@@ -1,4 +1,4 @@
-"""Derive narration.txt and captions.srt from demo-script-claude.md, so they never drift.
+"""Derive narration.txt and captions.srt from demo-script.md, so they never drift.
 
 Each beat heading looks like  ### Beat 7 · Title · 0:44–0:55 (11 s)
 followed by a                 > **VO:** "…"  line.
@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 DEMO = Path(__file__).resolve().parent.parent
-SCRIPT = DEMO / "demo-script-claude.md"
+SCRIPT = DEMO / "demo-script.md"
 TEXT = DEMO / "assets" / "text"
 
 HEAD = re.compile(r"^### Beat (\d+) · (.+?) · (\d+):(\d\d)–(\d+):(\d\d)")
